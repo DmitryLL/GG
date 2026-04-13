@@ -24,8 +24,9 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npx tsc --noEmit --project server/tsconfig.json
+      - run: npx prisma generate --schema=server/prisma/schema.prisma
       - run: npx tsc --noEmit --project shared/tsconfig.json
+      - run: npx tsc --noEmit --project server/tsconfig.json
 
   deploy:
     needs: check
@@ -45,10 +46,14 @@ jobs:
 
       - name: Build & restart on VPS
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: POSTGRES_PASSWORD,JWT_SECRET
           script: |
             set -e
             rm -rf /srv/gg/server /srv/gg/shared
@@ -60,6 +65,11 @@ jobs:
             cp /srv/gg-staging/deploy/Caddyfile /srv/gg/Caddyfile
             cp /srv/gg-staging/deploy/docker-compose.yml /srv/gg/docker-compose.yml
             rm -rf /srv/gg-staging
+            umask 077
+            cat > /srv/gg/.env <<ENVEOF
+            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            JWT_SECRET=${JWT_SECRET}
+            ENVEOF
             cd /srv/gg
             docker compose up -d --build
             docker image prune -f

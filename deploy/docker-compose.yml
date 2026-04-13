@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gg-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gg
+      POSTGRES_DB: gg
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gg -d gg"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - gg
+
   server:
     build:
       context: .
@@ -6,10 +24,15 @@ services:
     container_name: gg-server
     restart: unless-stopped
     environment:
-      - PORT=2567
-      - NODE_ENV=production
+      PORT: "2567"
+      NODE_ENV: production
+      DATABASE_URL: postgresql://gg:${POSTGRES_PASSWORD}@postgres:5432/gg
+      JWT_SECRET: ${JWT_SECRET}
     expose:
       - "2567"
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - gg
 
@@ -33,5 +56,6 @@ networks:
   gg:
 
 volumes:
+  pg_data:
   caddy_data:
   caddy_config:
