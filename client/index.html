@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MMO Prototype</title>
+    <style>
+      body { margin: 0; background: #111; color: #ccc; font-family: sans-serif; }
+      #game { display: block; margin: 0 auto; }
+      #info { position: fixed; top: 8px; left: 8px; font-size: 12px; z-index: 10; }
+    </style>
+  </head>
+  <body>
+    <div id="info">Клик мышкой — идти в точку. WASD — движение. Зелёный — ты, красные — другие.</div>
+    <div id="game"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
