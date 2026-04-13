@@ -1,5 +1,12 @@
 import * as Phaser from "phaser";
 import { Client, Room, getStateCallbacks } from "colyseus.js";
+import {
+  MAP_WIDTH,
+  MAP_HEIGHT,
+  PLAYER_SPEED,
+  ROOM_NAME,
+  type MoveMessage,
+} from "@gg/shared";
 
 const SERVER_URL = (() => {
   const env = (import.meta as any).env?.VITE_SERVER_WS_URL as string | undefined;
@@ -7,7 +14,6 @@ const SERVER_URL = (() => {
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
   return `${proto}://${window.location.host}/ws`;
 })();
-const SPEED = 200;
 
 class GameScene extends Phaser.Scene {
   private room?: Room;
@@ -38,7 +44,7 @@ class GameScene extends Phaser.Scene {
 
     const client = new Client(SERVER_URL);
     try {
-      this.room = await client.joinOrCreate("game_room");
+      this.room = await client.joinOrCreate(ROOM_NAME);
       console.log("joined room, session:", this.room.sessionId);
     } catch (e) {
       console.error("Join failed", e);
@@ -90,13 +96,13 @@ class GameScene extends Phaser.Scene {
       this.moveTarget = null;
       this.marker!.setVisible(false);
       const len = Math.hypot(dx, dy);
-      this.posX += (dx / len) * SPEED * dt;
-      this.posY += (dy / len) * SPEED * dt;
+      this.posX += (dx / len) * PLAYER_SPEED * dt;
+      this.posY += (dy / len) * PLAYER_SPEED * dt;
     } else if (this.moveTarget) {
       const tx = this.moveTarget.x - this.posX;
       const ty = this.moveTarget.y - this.posY;
       const dist = Math.hypot(tx, ty);
-      const step = SPEED * dt;
+      const step = PLAYER_SPEED * dt;
       if (dist <= step) {
         this.posX = this.moveTarget.x;
         this.posY = this.moveTarget.y;
@@ -110,11 +116,12 @@ class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.posX = Phaser.Math.Clamp(this.posX, 0, 800);
-    this.posY = Phaser.Math.Clamp(this.posY, 0, 600);
+    this.posX = Phaser.Math.Clamp(this.posX, 0, MAP_WIDTH);
+    this.posY = Phaser.Math.Clamp(this.posY, 0, MAP_HEIGHT);
     this.me.x = this.posX;
     this.me.y = this.posY;
-    this.room.send("move", { x: this.posX, y: this.posY });
+    const msg: MoveMessage = { x: this.posX, y: this.posY };
+    this.room.send("move", msg);
   }
 }
 

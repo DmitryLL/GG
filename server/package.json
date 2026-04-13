@@ -12,6 +12,7 @@
   "dependencies": {
     "@colyseus/schema": "^3.0.76",
     "@colyseus/ws-transport": "^0.16.5",
+    "@gg/shared": "*",
     "colyseus": "^0.16.5"
   },
   "devDependencies": {

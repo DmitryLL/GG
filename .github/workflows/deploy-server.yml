@@ -5,13 +5,16 @@ on:
     branches: [main]
     paths:
       - "server/**"
+      - "shared/**"
       - "deploy/**"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/deploy-server.yml"
   workflow_dispatch:
 
 jobs:
   check:
-    name: Typecheck server
+    name: Typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,11 +22,10 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: server/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
-        working-directory: server
-      - run: npx tsc --noEmit
-        working-directory: server
+      - run: npx tsc --noEmit --project server/tsconfig.json
+      - run: npx tsc --noEmit --project shared/tsconfig.json
 
   deploy:
     needs: check
@@ -31,13 +33,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync files to VPS
+      - name: Sync sources to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "server,deploy"
+          source: "server,shared,deploy,package.json,package-lock.json"
           target: "/srv/gg-staging"
           rm: true
 
@@ -49,9 +51,12 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -e
-            rm -rf /srv/gg/server /srv/gg/deploy
+            rm -rf /srv/gg/server /srv/gg/shared
             mkdir -p /srv/gg
             cp -r /srv/gg-staging/server /srv/gg/server
+            cp -r /srv/gg-staging/shared /srv/gg/shared
+            cp /srv/gg-staging/package.json /srv/gg/package.json
+            cp /srv/gg-staging/package-lock.json /srv/gg/package-lock.json
             cp /srv/gg-staging/deploy/Caddyfile /srv/gg/Caddyfile
             cp /srv/gg-staging/deploy/docker-compose.yml /srv/gg/docker-compose.yml
             rm -rf /srv/gg-staging

@@ -1,5 +1,11 @@
 import { Room, Client } from "colyseus";
 import { Schema, MapSchema, type } from "@colyseus/schema";
+import {
+  MAP_WIDTH,
+  MAP_HEIGHT,
+  MAX_STEP_PER_TICK,
+  type MoveMessage,
+} from "@gg/shared";
 
 export class Player extends Schema {
   @type("number") x: number = 400;
@@ -10,25 +16,19 @@ export class State extends Schema {
   @type({ map: Player }) players = new MapSchema<Player>();
 }
 
-type MoveMsg = { x: number; y: number };
-
-const MAP_W = 800;
-const MAP_H = 600;
-const MAX_STEP = 16;
-
 export class GameRoom extends Room<State> {
   maxClients = 50;
 
   onCreate() {
     this.setState(new State());
 
-    this.onMessage<MoveMsg>("move", (client, msg) => {
+    this.onMessage<MoveMessage>("move", (client, msg) => {
       const player = this.state.players.get(client.sessionId);
       if (!player) return;
-      const dx = Math.max(-MAX_STEP, Math.min(MAX_STEP, msg.x - player.x));
-      const dy = Math.max(-MAX_STEP, Math.min(MAX_STEP, msg.y - player.y));
-      player.x = Math.max(0, Math.min(MAP_W, player.x + dx));
-      player.y = Math.max(0, Math.min(MAP_H, player.y + dy));
+      const dx = Math.max(-MAX_STEP_PER_TICK, Math.min(MAX_STEP_PER_TICK, msg.x - player.x));
+      const dy = Math.max(-MAX_STEP_PER_TICK, Math.min(MAX_STEP_PER_TICK, msg.y - player.y));
+      player.x = Math.max(0, Math.min(MAP_WIDTH, player.x + dx));
+      player.y = Math.max(0, Math.min(MAP_HEIGHT, player.y + dy));
     });
   }
 

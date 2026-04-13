@@ -1,0 +1,6 @@
+{
+  "name": "gg",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": ["shared", "client", "server"]
+}
