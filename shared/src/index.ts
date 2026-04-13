@@ -15,6 +15,10 @@ export type JoinOptions = {
   token?: string;
 };
 
+export type AuthRequest = { email: string; password: string };
+export type AuthResponse = { token: string; userId: string };
+export type AuthError = { error: string };
+
 export type PlayerView = {
   x: number;
   y: number;
