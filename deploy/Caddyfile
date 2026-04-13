@@ -1,0 +1,4 @@
+193-238-134-75.sslip.io {
+	encode gzip
+	reverse_proxy server:2567
+}

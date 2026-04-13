@@ -1,0 +1,35 @@
+services:
+  server:
+    build: ./server
+    container_name: gg-server
+    restart: unless-stopped
+    environment:
+      - PORT=2567
+      - NODE_ENV=production
+    expose:
+      - "2567"
+    networks:
+      - gg
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: gg-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+    networks:
+      - gg
+
+networks:
+  gg:
+
+volumes:
+  caddy_data:
+  caddy_config:

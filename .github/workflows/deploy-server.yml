@@ -1,0 +1,45 @@
+name: Deploy server to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "deploy/**"
+      - ".github/workflows/deploy-server.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync files to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "server,deploy"
+          target: "/srv/gg-staging"
+          rm: true
+
+      - name: Build & restart on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            rm -rf /srv/gg/server /srv/gg/deploy
+            mkdir -p /srv/gg
+            cp -r /srv/gg-staging/server /srv/gg/server
+            cp /srv/gg-staging/deploy/Caddyfile /srv/gg/Caddyfile
+            cp /srv/gg-staging/deploy/docker-compose.yml /srv/gg/docker-compose.yml
+            rm -rf /srv/gg-staging
+            cd /srv/gg
+            docker compose up -d --build
+            docker image prune -f
+            docker compose ps
