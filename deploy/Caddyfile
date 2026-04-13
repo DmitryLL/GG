@@ -5,7 +5,9 @@
 		header Connection *Upgrade*
 		header Upgrade websocket
 	}
-	reverse_proxy @websocket server:2567
+	handle @websocket {
+		reverse_proxy server:2567
+	}
 
 	handle /matchmake/* {
 		reverse_proxy server:2567
