@@ -74,5 +74,6 @@ jobs:
             ENVEOF
             cd /srv/gg
             docker compose up -d --build
+            docker exec gg-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
             docker image prune -f
             docker compose ps
