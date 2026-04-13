@@ -3,15 +3,56 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MMO Prototype</title>
+    <title>GG</title>
     <style>
-      body { margin: 0; background: #111; color: #ccc; font-family: sans-serif; }
+      body { margin: 0; background: #111; color: #ccc; font-family: system-ui, sans-serif; }
       #game { display: block; margin: 0 auto; }
       #info { position: fixed; top: 8px; left: 8px; font-size: 12px; z-index: 10; }
+      #logout { position: fixed; top: 8px; right: 8px; z-index: 10; font-size: 12px; background: #333; color: #ccc; border: 1px solid #555; padding: 4px 8px; cursor: pointer; border-radius: 3px; }
+
+      #auth-overlay {
+        position: fixed; inset: 0;
+        background: #111;
+        display: flex; align-items: center; justify-content: center;
+        z-index: 20;
+      }
+      #auth-card {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 24px;
+        width: 300px;
+      }
+      #auth-card h1 { margin: 0 0 16px; font-size: 20px; color: #eee; }
+      #auth-card input {
+        width: 100%; padding: 8px; margin-bottom: 8px;
+        background: #222; color: #eee; border: 1px solid #444; border-radius: 3px;
+        box-sizing: border-box; font-size: 14px;
+      }
+      #auth-card button {
+        width: 100%; padding: 8px; margin-top: 4px;
+        background: #2a4a2a; color: #eee; border: 1px solid #3a6a3a;
+        border-radius: 3px; cursor: pointer; font-size: 14px;
+      }
+      #auth-card button:hover { background: #3a6a3a; }
+      #auth-card button.secondary { background: #222; border-color: #444; }
+      #auth-error { color: #e66; font-size: 12px; min-height: 16px; margin-top: 8px; }
     </style>
   </head>
   <body>
-    <div id="info">Клик мышкой — идти в точку. WASD — движение. Зелёный — ты, красные — другие.</div>
+    <div id="auth-overlay">
+      <div id="auth-card">
+        <h1 id="auth-title">Вход</h1>
+        <input id="auth-email" type="email" placeholder="email" autocomplete="email" />
+        <input id="auth-password" type="password" placeholder="пароль (6+ символов)" autocomplete="current-password" />
+        <button id="auth-submit">Войти</button>
+        <button id="auth-toggle" class="secondary" type="button">Нет аккаунта? Регистрация</button>
+        <div id="auth-error"></div>
+      </div>
+    </div>
+
+    <div id="info">Клик — идти. WASD — движение. Зелёный — ты, красные — другие.</div>
+    <button id="logout" style="display:none">Выйти</button>
     <div id="game"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

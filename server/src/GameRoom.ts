@@ -5,16 +5,22 @@ import {
   MAP_HEIGHT,
   MAX_STEP_PER_TICK,
   type MoveMessage,
+  type JoinOptions,
 } from "@gg/shared";
+import { verifyToken } from "./auth.js";
+import { prisma } from "./db.js";
 
 export class Player extends Schema {
   @type("number") x: number = 400;
   @type("number") y: number = 300;
+  @type("string") name: string = "";
 }
 
 export class State extends Schema {
   @type({ map: Player }) players = new MapSchema<Player>();
 }
+
+type AuthData = { userId: string; characterId: string };
 
 export class GameRoom extends Room<State> {
   maxClients = 50;
@@ -32,13 +38,38 @@ export class GameRoom extends Room<State> {
     });
   }
 
-  onJoin(client: Client) {
-    this.state.players.set(client.sessionId, new Player());
-    console.log(client.sessionId, "joined");
+  async onAuth(_client: Client, options: JoinOptions): Promise<AuthData> {
+    const token = options?.token;
+    if (!token) throw new Error("Auth token required");
+    const userId = verifyToken(token);
+    if (!userId) throw new Error("Invalid token");
+    const character = await prisma.character.findUnique({ where: { userId } });
+    if (!character) throw new Error("Character not found");
+    return { userId, characterId: character.id };
   }
 
-  onLeave(client: Client) {
+  async onJoin(client: Client, _opts: unknown, auth: AuthData) {
+    const character = await prisma.character.findUnique({ where: { id: auth.characterId } });
+    if (!character) return;
+    const player = new Player();
+    player.x = character.x;
+    player.y = character.y;
+    player.name = character.name;
+    this.state.players.set(client.sessionId, player);
+    client.userData = auth;
+    console.log(`${character.name} joined at ${player.x},${player.y}`);
+  }
+
+  async onLeave(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    const auth = client.userData as AuthData | undefined;
+    if (player && auth) {
+      await prisma.character.update({
+        where: { id: auth.characterId },
+        data: { x: Math.round(player.x), y: Math.round(player.y) },
+      });
+      console.log(`${player.name} saved at ${player.x},${player.y}`);
+    }
     this.state.players.delete(client.sessionId);
-    console.log(client.sessionId, "left");
   }
 }

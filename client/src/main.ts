@@ -6,7 +6,9 @@ import {
   PLAYER_SPEED,
   ROOM_NAME,
   type MoveMessage,
+  type JoinOptions,
 } from "@gg/shared";
+import { getStoredToken, mountAuthUI, mountLogoutButton } from "./auth";
 
 const SERVER_URL = (() => {
   const env = (import.meta as any).env?.VITE_SERVER_WS_URL as string | undefined;
@@ -16,6 +18,8 @@ const SERVER_URL = (() => {
 })();
 
 class GameScene extends Phaser.Scene {
+  constructor() { super("game"); }
+
   private room?: Room;
   private me?: Phaser.GameObjects.Rectangle;
   private others = new Map<string, Phaser.GameObjects.Rectangle>();
@@ -29,6 +33,11 @@ class GameScene extends Phaser.Scene {
   private posY = 300;
   private moveTarget: { x: number; y: number } | null = null;
   private marker?: Phaser.GameObjects.Arc;
+  private token!: string;
+
+  init(data: { token: string }) {
+    this.token = data.token;
+  }
 
   async create() {
     this.cameras.main.setBackgroundColor("#1e2a1e");
@@ -43,11 +52,16 @@ class GameScene extends Phaser.Scene {
     });
 
     const client = new Client(SERVER_URL);
+    const options: JoinOptions = { token: this.token };
     try {
-      this.room = await client.joinOrCreate(ROOM_NAME);
+      this.room = await client.joinOrCreate(ROOM_NAME, options);
       console.log("joined room, session:", this.room.sessionId);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Join failed", e);
+      if (String(e?.message || "").toLowerCase().includes("token")) {
+        localStorage.removeItem("gg_token");
+        location.reload();
+      }
       return;
     }
 
@@ -56,7 +70,6 @@ class GameScene extends Phaser.Scene {
 
     $(this.room.state).players.onAdd((player: any, sessionId: string) => {
       const isMe = sessionId === mySessionId;
-      console.log("player joined:", sessionId, "isMe:", isMe, "at", player.x, player.y);
       const rect = this.add.rectangle(
         player.x, player.y, 24, 24,
         isMe ? 0x55ff55 : 0xff5555
@@ -125,11 +138,23 @@ class GameScene extends Phaser.Scene {
   }
 }
 
-new Phaser.Game({
-  type: Phaser.AUTO,
-  width: 800,
-  height: 600,
-  parent: "game",
-  scene: GameScene,
-  backgroundColor: "#000",
-});
+function startGame(token: string) {
+  mountLogoutButton(() => location.reload());
+  const game = new Phaser.Game({
+    type: Phaser.AUTO,
+    width: 800,
+    height: 600,
+    parent: "game",
+    scene: GameScene,
+    backgroundColor: "#000",
+  });
+  game.scene.start("game", { token });
+}
+
+const existing = getStoredToken();
+if (existing) {
+  document.getElementById("auth-overlay")?.remove();
+  startGame(existing);
+} else {
+  mountAuthUI((token) => startGame(token));
+}
