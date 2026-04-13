@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "server/**"
+      - "client/**"
       - "shared/**"
       - "deploy/**"
       - "package.json"
@@ -40,7 +41,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "server,shared,deploy,package.json,package-lock.json"
+          source: "server,client,shared,deploy,package.json,package-lock.json"
           target: "/srv/gg-staging"
           rm: true
 
@@ -56,9 +57,10 @@ jobs:
           envs: POSTGRES_PASSWORD,JWT_SECRET
           script: |
             set -e
-            rm -rf /srv/gg/server /srv/gg/shared
+            rm -rf /srv/gg/server /srv/gg/client /srv/gg/shared
             mkdir -p /srv/gg
             cp -r /srv/gg-staging/server /srv/gg/server
+            cp -r /srv/gg-staging/client /srv/gg/client
             cp -r /srv/gg-staging/shared /srv/gg/shared
             cp /srv/gg-staging/package.json /srv/gg/package.json
             cp /srv/gg-staging/package-lock.json /srv/gg/package-lock.json

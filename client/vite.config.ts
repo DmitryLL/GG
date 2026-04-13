@@ -7,13 +7,5 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     allowedHosts: true,
-    proxy: {
-      "/ws": {
-        target: "ws://localhost:2567",
-        ws: true,
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/ws/, ""),
-      },
-    },
   },
 });

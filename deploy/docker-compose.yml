@@ -36,6 +36,17 @@ services:
     networks:
       - gg
 
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: gg-client
+    restart: "no"
+    volumes:
+      - client_dist:/out
+    networks:
+      - gg
+
   caddy:
     image: caddy:2-alpine
     container_name: gg-caddy
@@ -47,8 +58,12 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - client_dist:/srv:ro
     depends_on:
-      - server
+      client:
+        condition: service_completed_successfully
+      server:
+        condition: service_started
     networks:
       - gg
 
@@ -59,3 +74,4 @@ volumes:
   pg_data:
   caddy_data:
   caddy_config:
+  client_dist:

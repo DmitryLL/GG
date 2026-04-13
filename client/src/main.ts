@@ -14,7 +14,7 @@ const SERVER_URL = (() => {
   const env = (import.meta as any).env?.VITE_SERVER_WS_URL as string | undefined;
   if (env) return env;
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${proto}://${window.location.host}/ws`;
+  return `${proto}://${window.location.host}`;
 })();
 
 class GameScene extends Phaser.Scene {
