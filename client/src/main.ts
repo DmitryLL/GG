@@ -64,12 +64,11 @@ class GameScene extends Phaser.Scene {
   private posY = 300;
   private moveTarget: { x: number; y: number } | null = null;
   private marker?: Phaser.GameObjects.Arc;
-  private token!: string;
   private myFacing: Direction = "down";
   private myMoving = false;
 
-  init(data: { token: string }) {
-    this.token = data.token;
+  private get token(): string {
+    return authToken;
   }
 
   preload() {
@@ -249,9 +248,12 @@ class GameScene extends Phaser.Scene {
   }
 }
 
+let authToken = "";
+
 function startGame(token: string) {
+  authToken = token;
   mountLogoutButton(() => location.reload());
-  const game = new Phaser.Game({
+  new Phaser.Game({
     type: Phaser.AUTO,
     width: 800,
     height: 600,
@@ -260,7 +262,6 @@ function startGame(token: string) {
     backgroundColor: "#000",
     pixelArt: true,
   });
-  game.scene.start("game", { token });
 }
 
 const existing = getStoredToken();
