@@ -31,6 +31,8 @@ jobs:
           cache: "npm"
           cache-dependency-path: client/package-lock.json
       - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
       - name: Build
         env:
           VITE_SERVER_WS_URL: ${{ vars.VITE_SERVER_WS_URL }}
