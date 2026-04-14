@@ -38,6 +38,7 @@ func _ready() -> void:
 	name_label = Label.new()
 	name_label.text = "—"
 	name_label.add_theme_font_size_override("font_size", 18)
+	name_label.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95))
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(name_label)
 
@@ -71,10 +72,13 @@ func _ready() -> void:
 
 	hp_text = Label.new()
 	hp_text.text = "100 / 100"
-	hp_text.add_theme_font_size_override("font_size", 11)
-	hp_text.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+	hp_text.add_theme_font_size_override("font_size", 10)
+	hp_text.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95))
+	hp_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	hp_text.add_theme_constant_override("outline_size", 3)
 	hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hp_text.position = Vector2(0, -16)
+	hp_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hp_bar.add_child(hp_text)
 	hp_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
