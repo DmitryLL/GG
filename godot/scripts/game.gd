@@ -66,13 +66,14 @@ var attack_cooldown := 0.0
 
 func _ready() -> void:
 	logout_btn.pressed.connect(_on_logout)
-	hello_label.text = "Вошёл как %s" % _short_id(Session.auth.user_id)
+	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
+	hello_label.text = "Вошёл как %s" % display
 
 	world = WORLD_SCRIPT.new()
 	world_root.add_child(world)
 
 	me = PLAYER_SCRIPT.new()
-	me.setup(world, _short_id(Session.auth.user_id), PLAYER_SCRIPT.variant_from(Session.auth.user_id))
+	me.setup(world, display, PLAYER_SCRIPT.variant_from(Session.auth.user_id))
 	me.position = world.player_spawn()
 	entities.add_child(me)
 

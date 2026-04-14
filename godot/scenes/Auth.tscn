@@ -26,41 +26,37 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -160.0
-offset_top = -150.0
+offset_top = -120.0
 offset_right = 160.0
-offset_bottom = 150.0
+offset_bottom = 120.0
 grow_horizontal = 2
 grow_vertical = 2
 
 [node name="V" type="VBoxContainer" parent="Card"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 10
 
 [node name="Title" type="Label" parent="Card/V"]
 layout_mode = 2
-text = "Вход / Регистрация"
+text = "Введи имя"
 horizontal_alignment = 1
 
-[node name="EmailInput" type="LineEdit" parent="Card/V"]
-unique_name_in_owner = true
+[node name="Hint" type="Label" parent="Card/V"]
 layout_mode = 2
-placeholder_text = "email"
+text = "Тестовый режим — пароля нет"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 
-[node name="PasswordInput" type="LineEdit" parent="Card/V"]
+[node name="NameInput" type="LineEdit" parent="Card/V"]
 unique_name_in_owner = true
 layout_mode = 2
-placeholder_text = "пароль (6+ символов)"
-secret = true
+placeholder_text = "никнейм"
+max_length = 24
 
-[node name="LoginBtn" type="Button" parent="Card/V"]
+[node name="EnterBtn" type="Button" parent="Card/V"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Войти"
-
-[node name="RegisterBtn" type="Button" parent="Card/V"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Зарегистрироваться"
+text = "Играть"
 
 [node name="ErrorLabel" type="Label" parent="Card/V"]
 unique_name_in_owner = true

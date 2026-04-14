@@ -1,68 +1,53 @@
-# Simple email/password auth against Nakama. Emits auth_changed on success
-# so Main can swap to the Game scene.
+# Тестовый вход без пароля. Ввёл имя — получил персонаж 1 уровня.
+# Используем authenticateCustom: id = слаг от имени, username = имя.
 extends Control
 
 signal auth_changed
 
-@onready var email_input: LineEdit = %EmailInput
-@onready var password_input: LineEdit = %PasswordInput
-@onready var login_btn: Button = %LoginBtn
-@onready var register_btn: Button = %RegisterBtn
+@onready var name_input: LineEdit = %NameInput
+@onready var enter_btn: Button = %EnterBtn
 @onready var error_label: Label = %ErrorLabel
 @onready var busy_label: Label = %BusyLabel
 
 func _ready() -> void:
-	login_btn.pressed.connect(_on_login)
-	register_btn.pressed.connect(_on_register)
+	enter_btn.pressed.connect(_on_enter)
+	name_input.text_submitted.connect(func(_t): _on_enter())
 	busy_label.hide()
 	error_label.text = ""
+	name_input.grab_focus()
 
 func _set_busy(busy: bool) -> void:
-	login_btn.disabled = busy
-	register_btn.disabled = busy
+	enter_btn.disabled = busy
 	busy_label.visible = busy
 
-func _show_error(msg: String) -> void:
-	error_label.text = msg
+func _slug(s: String) -> String:
+	# Кастомный id Nakama: 6-128 символов, ASCII. Берём lower+латиницу/цифры/_,
+	# остальное — заменяем нижним подчёркиванием. Дополняем "_test" чтобы было ≥6.
+	var lo := s.to_lower().strip_edges()
+	var out := ""
+	for ch in lo:
+		var c := ch.unicode_at(0)
+		if (c >= 0x30 and c <= 0x39) or (c >= 0x61 and c <= 0x7a):
+			out += ch
+		else:
+			out += "_"
+	while out.length() < 6:
+		out += "_"
+	if out.length() > 64:
+		out = out.substr(0, 64)
+	return out
 
-func _validate() -> bool:
-	var email := email_input.text.strip_edges()
-	var password := password_input.text
-	if email.length() < 3 or not email.contains("@"):
-		_show_error("Введите корректный email")
-		return false
-	if password.length() < 6:
-		_show_error("Пароль минимум 6 символов")
-		return false
-	_show_error("")
-	return true
-
-func _on_login() -> void:
-	if not _validate(): return
+func _on_enter() -> void:
+	var raw := name_input.text.strip_edges()
+	if raw.length() < 2:
+		error_label.text = "Минимум 2 символа"
+		return
+	error_label.text = ""
 	_set_busy(true)
-	var session: NakamaSession = await Session.client.authenticate_email_async(
-		email_input.text.strip_edges(),
-		password_input.text,
-		null,   # username
-		false   # create=false, login only
-	)
-	_handle_auth(session)
-
-func _on_register() -> void:
-	if not _validate(): return
-	_set_busy(true)
-	var session: NakamaSession = await Session.client.authenticate_email_async(
-		email_input.text.strip_edges(),
-		password_input.text,
-		null,
-		true    # create=true
-	)
-	_handle_auth(session)
-
-func _handle_auth(session: NakamaSession) -> void:
+	var session: NakamaSession = await Session.client.authenticate_custom_async(_slug(raw), raw, true)
 	_set_busy(false)
 	if session.is_exception():
-		_show_error("Ошибка: " + session.get_exception().message)
+		error_label.text = "Ошибка: " + session.get_exception().message
 		return
 	Session.auth = session
 	auth_changed.emit()
