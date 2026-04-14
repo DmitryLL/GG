@@ -227,6 +227,8 @@ const OP_BUY          = 12;
 const OP_SELL         = 13;
 const OP_NPCS         = 14; // one-shot on join — static NPC list
 const OP_ARROW        = 15; // server → clients, visualise a bow shot
+const OP_CHAT_SEND    = 16; // client → server, chat line
+const OP_CHAT_RELAY   = 17; // server → clients, broadcast chat line
 
 const PLAYER_HP_BASE = 100;
 const PLAYER_ATTACK_DAMAGE = 10;
@@ -651,6 +653,21 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     if (!addToInventory(player, itemId, 1)) break;
                     player.gold -= def.price;
                     markMe(player);
+                } catch (_e) {}
+                break;
+            }
+            case OP_CHAT_SEND: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { text?: string };
+                    const text = String(body.text || "").slice(0, 140).trim();
+                    if (text.length === 0) break;
+                    dispatcher.broadcastMessage(OP_CHAT_RELAY, JSON.stringify({
+                        sid: player.sessionId,
+                        uid: player.userId,
+                        n: player.username,
+                        t: text,
+                        ts: t,
+                    }));
                 } catch (_e) {}
                 break;
             }

@@ -108,6 +108,33 @@ func flash() -> void:
 	_flash_t = 0.1
 	sprite.modulate = Color(1.5, 0.8, 0.8, 1.0)
 
+# Всплывающий пузырь с чатом над головой, 4 сек.
+var _bubble: Node = null
+var _bubble_timer: SceneTreeTimer = null
+func show_bubble(text: String) -> void:
+	if _bubble != null and is_instance_valid(_bubble):
+		_bubble.queue_free()
+	var panel := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0.75)
+	sb.set_corner_radius_all(3)
+	sb.set_content_margin_all(4)
+	panel.add_theme_stylebox_override("panel", sb)
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_color_override("font_color", Color.WHITE)
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.custom_minimum_size = Vector2(160, 0)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(lbl)
+	panel.position = Vector2(-80, -72)
+	add_child(panel)
+	_bubble = panel
+	_bubble_timer = get_tree().create_timer(4.0)
+	_bubble_timer.timeout.connect(func():
+		if is_instance_valid(panel): panel.queue_free()
+	)
+
 func _set_facing_from(delta: Vector2) -> void:
 	if abs(delta.x) < 0.01 and abs(delta.y) < 0.01:
 		return

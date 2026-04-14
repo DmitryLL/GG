@@ -9,6 +9,7 @@ const MOB_SCRIPT := preload("res://scripts/mob.gd")
 const DROP_SCRIPT := preload("res://scripts/drop.gd")
 const HUD_SCRIPT := preload("res://scripts/hud.gd")
 const SHOP_SCRIPT := preload("res://scripts/shop.gd")
+const CHAT_SCRIPT := preload("res://scripts/chat.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -31,6 +32,8 @@ const PLAYER_ATTACK_COOLDOWN := 0.6
 const CLICK_MOB_RADIUS := 24.0
 const CLICK_NPC_RADIUS := 28.0
 const OP_ARROW := 15
+const OP_CHAT_SEND := 16
+const OP_CHAT_RELAY := 17
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -45,6 +48,7 @@ var me: Player
 var camera: Camera2D
 var hud: Hud
 var shop: Shop
+var chat_panel: ChatPanel
 var match_id: String = ""
 var my_session_id: String = ""
 var remotes: Dictionary = {}    # session_id -> Player
@@ -89,6 +93,10 @@ func _ready() -> void:
 	add_child(shop)
 	shop.buy_requested.connect(_on_buy)
 	shop.sell_requested.connect(_on_sell)
+
+	chat_panel = CHAT_SCRIPT.new()
+	add_child(chat_panel)
+	chat_panel.send_requested.connect(_on_chat_send)
 
 	status_label.text = "Подключаюсь к real-time…"
 	_connect_and_join()
@@ -195,6 +203,7 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_ME:         _apply_me(body)
 		OP_NPCS:       _apply_npcs(body)
 		OP_ARROW:      _spawn_arrow(body)
+		OP_CHAT_RELAY: _apply_chat(body)
 
 func _apply_positions(body: Dictionary) -> void:
 	for p in body.get("players", []):
@@ -356,6 +365,22 @@ func _on_sell(slot_idx: int) -> void:
 	if match_id == "":
 		return
 	Session.socket.send_match_state_async(match_id, OP_SELL, JSON.stringify({"slot": slot_idx}))
+
+func _apply_chat(body: Dictionary) -> void:
+	var sid: String = String(body.get("sid", ""))
+	var who: String = String(body.get("n", "?"))
+	var text: String = String(body.get("t", ""))
+	if text.is_empty():
+		return
+	chat_panel.append_line(who, text)
+	var speaker: Player = me if sid == my_session_id else remotes.get(sid)
+	if speaker:
+		speaker.show_bubble(text)
+
+func _on_chat_send(text: String) -> void:
+	if match_id == "":
+		return
+	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text}))
 
 func _spawn_arrow(body: Dictionary) -> void:
 	var from := Vector2(float(body.get("fx", 0)), float(body.get("fy", 0)))
