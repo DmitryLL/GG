@@ -23,8 +23,13 @@ func _ready() -> void:
 	panel.anchor_top = 0.0
 	panel.offset_left = 8
 	panel.offset_top = 8
-	panel.offset_right = 240
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.offset_right = 248
+	panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0.65)
+	sb.set_corner_radius_all(4)
+	sb.set_content_margin_all(8)
+	panel.add_theme_stylebox_override("panel", sb)
 	root.add_child(panel)
 
 	var v := VBoxContainer.new()
