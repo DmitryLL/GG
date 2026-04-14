@@ -81,7 +81,28 @@ export function isWalkableAt(x: number, y: number): boolean {
   return isWalkableTile(tileAt(col, row));
 }
 
+export const PLAYER_HP_MAX = 100;
+export const PLAYER_ATTACK_DAMAGE = 10;
+export const PLAYER_ATTACK_RANGE = 48;
+export const PLAYER_ATTACK_COOLDOWN_MS = 450;
+
+export const MOB_HP_MAX = 30;
+export const MOB_TOUCH_DAMAGE = 5;
+export const MOB_TOUCH_RANGE = 26;
+export const MOB_TOUCH_COOLDOWN_MS = 900;
+export const MOB_WANDER_RADIUS = 80;
+export const MOB_SPEED = 40;
+export const MOB_RESPAWN_MS = 8000;
+
+export const MOB_SPAWNS = [
+  { x: 250, y: 250 },
+  { x: 550, y: 150 },
+  { x: 150, y: 450 },
+  { x: 650, y: 420 },
+];
+
 export type MoveMessage = { x: number; y: number };
+export type AttackMessage = { mobId: string };
 export type ChatSend = { text: string };
 export type ChatBroadcast = { sessionId: string; name: string; text: string; ts: number };
 

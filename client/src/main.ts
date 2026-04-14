@@ -8,9 +8,13 @@ import {
   MAP_TILES,
   TILE_SIZE,
   PLAYER_SPEED,
+  PLAYER_HP_MAX,
+  PLAYER_ATTACK_RANGE,
+  MOB_HP_MAX,
   ROOM_NAME,
   isWalkableAt,
   type MoveMessage,
+  type AttackMessage,
   type JoinOptions,
 } from "@gg/shared";
 import { getStoredToken, mountAuthUI, mountLogoutButton } from "./auth";
@@ -44,10 +48,16 @@ function dirFromDelta(dx: number, dy: number, prev: Direction): Direction {
   return dy > 0 ? "down" : "up";
 }
 
+type HpBar = {
+  bg: Phaser.GameObjects.Rectangle;
+  fill: Phaser.GameObjects.Rectangle;
+};
+
 type PlayerSprite = {
   container: Phaser.GameObjects.Container;
   sprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
+  hp: HpBar;
   bubble?: Phaser.GameObjects.Text;
   bubbleTimer?: Phaser.Time.TimerEvent;
   lastX: number;
@@ -56,12 +66,36 @@ type PlayerSprite = {
   variant: number;
 };
 
+type MobSprite = {
+  container: Phaser.GameObjects.Container;
+  sprite: Phaser.GameObjects.Sprite;
+  hp: HpBar;
+};
+
+const HP_BAR_W = 28;
+const HP_BAR_H = 4;
+
+function makeHpBar(scene: Phaser.Scene, yOffset: number, fillColor: number): HpBar {
+  const bg = scene.add.rectangle(0, yOffset, HP_BAR_W, HP_BAR_H, 0x000000, 0.7);
+  bg.setStrokeStyle(1, 0x222222, 0.8);
+  const fill = scene.add.rectangle(-HP_BAR_W / 2, yOffset, HP_BAR_W, HP_BAR_H, fillColor);
+  fill.setOrigin(0, 0.5);
+  return { bg, fill };
+}
+
+function setHp(hp: HpBar, ratio: number) {
+  const clamped = Math.max(0, Math.min(1, ratio));
+  hp.fill.width = HP_BAR_W * clamped;
+  hp.fill.setVisible(clamped > 0);
+}
+
 class GameScene extends Phaser.Scene {
   constructor() { super("game"); }
 
   private room?: Room;
   private me?: PlayerSprite;
   private others = new Map<string, PlayerSprite>();
+  private mobs = new Map<string, MobSprite>();
   private keys!: {
     W: Phaser.Input.Keyboard.Key;
     A: Phaser.Input.Keyboard.Key;
@@ -89,6 +123,10 @@ class GameScene extends Phaser.Scene {
     this.load.spritesheet("tiles", `${BASE}sprites/tiles.png`, {
       frameWidth: TILE_SIZE,
       frameHeight: TILE_SIZE,
+    });
+    this.load.spritesheet("slime", `${BASE}sprites/slime.png`, {
+      frameWidth: 32,
+      frameHeight: 32,
     });
   }
 
@@ -133,8 +171,31 @@ class GameScene extends Phaser.Scene {
       strokeThickness: 3,
     });
     label.setOrigin(0.5, 1);
-    const container = this.add.container(x, y, [sprite, label]);
-    return { container, sprite, label, lastX: x, lastY: y, facing: "down", variant };
+    const hp = makeHpBar(this, -34, 0x4ade80);
+    const container = this.add.container(x, y, [sprite, label, hp.bg, hp.fill]);
+    return { container, sprite, label, hp, lastX: x, lastY: y, facing: "down", variant };
+  }
+
+  private createMobSprite(x: number, y: number): MobSprite {
+    if (!this.anims.exists("slime_idle")) {
+      this.anims.create({
+        key: "slime_idle",
+        frames: this.anims.generateFrameNumbers("slime", { frames: [0, 0, 0, 1] }),
+        frameRate: 3,
+        repeat: -1,
+      });
+    }
+    const sprite = this.add.sprite(0, 0, "slime", 0);
+    sprite.setScale(1.3);
+    sprite.play("slime_idle");
+    const hp = makeHpBar(this, -22, 0xef4444);
+    const container = this.add.container(x, y, [sprite, hp.bg, hp.fill]);
+    return { container, sprite, hp };
+  }
+
+  private flashSprite(sprite: Phaser.GameObjects.Sprite) {
+    sprite.setTint(0xffffff);
+    this.time.delayedCall(90, () => sprite.clearTint());
   }
 
   private setFrame(ps: PlayerSprite, dir: Direction, moving: boolean) {
@@ -158,6 +219,18 @@ class GameScene extends Phaser.Scene {
     this.marker = this.add.circle(0, 0, 6, 0xffff00, 0.7).setVisible(false);
 
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
+      const mobHit = this.findMobAt(p.worldX, p.worldY);
+      if (mobHit && this.me) {
+        const dist = Math.hypot(mobHit.ms.container.x - this.me.container.x, mobHit.ms.container.y - this.me.container.y);
+        if (dist <= PLAYER_ATTACK_RANGE) {
+          const msg: AttackMessage = { mobId: mobHit.id };
+          this.room?.send("attack", msg);
+          return;
+        }
+        this.moveTarget = { x: mobHit.ms.container.x, y: mobHit.ms.container.y };
+        this.marker!.setPosition(mobHit.ms.container.x, mobHit.ms.container.y).setVisible(true);
+        return;
+      }
       this.moveTarget = { x: p.worldX, y: p.worldY };
       this.marker!.setPosition(p.worldX, p.worldY).setVisible(true);
     });
@@ -191,8 +264,23 @@ class GameScene extends Phaser.Scene {
         this.others.set(sessionId, ps);
       }
 
+      setHp(ps.hp, player.hp / PLAYER_HP_MAX);
+
       $(player).onChange(() => {
-        if (isMe) return;
+        setHp(ps.hp, player.hp / PLAYER_HP_MAX);
+        if (isMe) {
+          // Server-driven teleport (e.g., respawn) needs to sync local prediction.
+          const dist = Math.hypot(player.x - this.posX, player.y - this.posY);
+          if (dist > 64) {
+            this.posX = player.x;
+            this.posY = player.y;
+            ps.container.x = player.x;
+            ps.container.y = player.y;
+            this.moveTarget = null;
+            this.marker!.setVisible(false);
+          }
+          return;
+        }
         const dx = player.x - ps.lastX;
         const dy = player.y - ps.lastY;
         const dir = dirFromDelta(dx, dy, ps.facing);
@@ -211,12 +299,57 @@ class GameScene extends Phaser.Scene {
       this.others.delete(sessionId);
     });
 
+    $(this.room.state).mobs.onAdd((mob: any, mobId: string) => {
+      const ms = this.createMobSprite(mob.x, mob.y);
+      this.mobs.set(mobId, ms);
+      setHp(ms.hp, mob.hp / MOB_HP_MAX);
+      ms.container.setVisible(mob.state === "alive");
+
+      $(mob).onChange(() => {
+        ms.container.x = mob.x;
+        ms.container.y = mob.y;
+        setHp(ms.hp, mob.hp / MOB_HP_MAX);
+        ms.container.setVisible(mob.state === "alive");
+      });
+    });
+
+    $(this.room.state).mobs.onRemove((_m: any, mobId: string) => {
+      this.mobs.get(mobId)?.container.destroy();
+      this.mobs.delete(mobId);
+    });
+
+    this.room.onMessage("hit", (data: { mobId: string }) => {
+      const ms = this.mobs.get(data.mobId);
+      if (ms) this.flashSprite(ms.sprite);
+    });
+
+    this.room.onMessage("playerHit", (data: { sessionId: string }) => {
+      const ps = data.sessionId === mySessionId ? this.me : this.others.get(data.sessionId);
+      if (ps) this.flashSprite(ps.sprite);
+    });
+
     mountChat(this.room, (msg) => {
       const ps = msg.sessionId === mySessionId
         ? this.me
         : this.others.get(msg.sessionId);
       if (ps) this.showBubble(ps, msg.text);
     });
+  }
+
+  private findMobAt(x: number, y: number): { id: string; ms: MobSprite } | null {
+    let bestId = "";
+    let bestMs: MobSprite | null = null;
+    let bestDist = Infinity;
+    this.mobs.forEach((ms, id) => {
+      if (!ms.container.visible) return;
+      const d = Math.hypot(ms.container.x - x, ms.container.y - y);
+      if (d < 24 && d < bestDist) {
+        bestId = id;
+        bestMs = ms;
+        bestDist = d;
+      }
+    });
+    return bestMs ? { id: bestId, ms: bestMs } : null;
   }
 
   private showBubble(ps: PlayerSprite, text: string) {
