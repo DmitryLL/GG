@@ -1,13 +1,13 @@
-// Nakama runtime entry. Registers the persistent world match and an RPC
-// clients call to discover (or lazily create) its id. Top-level declarations
-// only — Nakama's goja loader wants InitModule as a global function.
+// Nakama runtime entry. All top-level function declarations so goja can
+// resolve them as global symbols (its script mode doesn't expose
+// const-bound arrow functions to host lookups the same way).
 
 const MATCH_MODULE = "world_match";
 const MATCH_LABEL = "world";
 const TICK_RATE = 10;
 
-const OP_POSITIONS = 1; // server → clients
-const OP_MOVE_INTENT = 2; // client → server
+const OP_POSITIONS = 1;
+const OP_MOVE_INTENT = 2;
 
 const PLAYER_SPAWN_X = 960;
 const PLAYER_SPAWN_Y = 720;
@@ -28,23 +28,18 @@ interface WorldState {
     players: { [sessionId: string]: MatchPlayer };
 }
 
-// --- match handlers -----------------------------------------------
-
-const matchInit: nkruntime.MatchInitFunction<WorldState> = function (_ctx, _logger, _nk, _params) {
+function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
     const state: WorldState = { players: {} };
-    return { state, tickRate: TICK_RATE, label: MATCH_LABEL };
-};
+    return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL };
+}
 
-const matchJoinAttempt: nkruntime.MatchJoinAttemptFunction<WorldState> = function (
-    _ctx, _logger, _nk, _dispatcher, _tick, state, _presence, _metadata,
-) {
-    return { state, accept: true };
-};
+function matchJoinAttempt(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, _presence: nkruntime.Presence, _metadata: { [key: string]: any }): { state: WorldState; accept: boolean; rejectMessage?: string } {
+    return { state: state, accept: true };
+}
 
-const matchJoin: nkruntime.MatchJoinFunction<WorldState> = function (
-    _ctx, _logger, _nk, _dispatcher, _tick, state, presences,
-) {
-    for (const p of presences) {
+function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
+    for (let i = 0; i < presences.length; i++) {
+        const p = presences[i];
         state.players[p.sessionId] = {
             userId: p.userId,
             sessionId: p.sessionId,
@@ -53,22 +48,19 @@ const matchJoin: nkruntime.MatchJoinFunction<WorldState> = function (
             dirty: true,
         };
     }
-    return { state };
-};
+    return { state: state };
+}
 
-const matchLeave: nkruntime.MatchLeaveFunction<WorldState> = function (
-    _ctx, _logger, _nk, _dispatcher, _tick, state, presences,
-) {
-    for (const p of presences) {
-        delete state.players[p.sessionId];
+function matchLeave(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
+    for (let i = 0; i < presences.length; i++) {
+        delete state.players[presences[i].sessionId];
     }
-    return { state };
-};
+    return { state: state };
+}
 
-const matchLoop: nkruntime.MatchLoopFunction<WorldState> = function (
-    _ctx, _logger, nk, dispatcher, _tick, state, messages,
-) {
-    for (const msg of messages) {
+function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, messages: nkruntime.MatchMessage[]): { state: WorldState } | null {
+    for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
         if (msg.opCode !== OP_MOVE_INTENT) continue;
         const player = state.players[msg.sender.sessionId];
         if (!player) continue;
@@ -96,40 +88,27 @@ const matchLoop: nkruntime.MatchLoopFunction<WorldState> = function (
     if (updates.length > 0) {
         dispatcher.broadcastMessage(OP_POSITIONS, JSON.stringify({ players: updates }));
     }
-    return { state };
-};
+    return { state: state };
+}
 
-const matchTerminate: nkruntime.MatchTerminateFunction<WorldState> = function (
-    _ctx, _logger, _nk, _dispatcher, _tick, state, _graceSeconds,
-) {
-    return { state };
-};
+function matchTerminate(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, _graceSeconds: number): { state: WorldState } | null {
+    return { state: state };
+}
 
-const matchSignal: nkruntime.MatchSignalFunction<WorldState> = function (
-    _ctx, _logger, _nk, _dispatcher, _tick, state, _data,
-) {
-    return { state };
-};
+function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, _data: string): { state: WorldState; data?: string } | null {
+    return { state: state };
+}
 
-// --- RPC: find or create the world match --------------------------
-
-const rpcGetWorldMatch: nkruntime.RpcFunction = function (_ctx, _logger, nk, _payload) {
+function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
     const existing = nk.matchList(1, true, MATCH_LABEL);
     if (existing.length > 0) {
         return JSON.stringify({ match_id: existing[0].matchId });
     }
     const matchId = nk.matchCreate(MATCH_MODULE, {});
     return JSON.stringify({ match_id: matchId });
-};
+}
 
-// --- init ---------------------------------------------------------
-
-function InitModule(
-    _ctx: nkruntime.Context,
-    logger: nkruntime.Logger,
-    _nk: nkruntime.Nakama,
-    initializer: nkruntime.Initializer,
-): void {
+function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkruntime.Nakama, initializer: nkruntime.Initializer): void {
     initializer.registerMatch(MATCH_MODULE, {
         matchInit: matchInit,
         matchJoinAttempt: matchJoinAttempt,
@@ -143,6 +122,5 @@ function InitModule(
     logger.info("GG runtime loaded.");
 }
 
-// IIFE bundle hides InitModule behind a closure; expose it on globalThis so
-// Nakama's goja loader can discover it.
-(globalThis as any).InitModule = InitModule;
+// Satisfy noUnusedLocals — Nakama discovers InitModule via goja global scope.
+!InitModule && InitModule;
