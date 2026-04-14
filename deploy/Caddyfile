@@ -19,6 +19,16 @@
 			reverse_proxy server:2567
 		}
 
+		handle_path /godot/* {
+			root * /srv-godot
+			header {
+				Cross-Origin-Opener-Policy "same-origin"
+				Cross-Origin-Embedder-Policy "require-corp"
+			}
+			try_files {path} /index.html
+			file_server
+		}
+
 		handle {
 			root * /srv
 			try_files {path} /index.html

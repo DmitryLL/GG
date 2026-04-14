@@ -107,6 +107,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
       - client_dist:/srv:ro
+      - /srv/gg-godot:/srv-godot:ro
     depends_on:
       client:
         condition: service_completed_successfully
