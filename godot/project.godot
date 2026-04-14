@@ -8,7 +8,7 @@ config_version=5
 config/name="GG"
 config/description="2D top-down MMORPG client (Godot 4 + Nakama)"
 run/main_scene="res://scenes/Main.tscn"
-config/features=PackedStringArray("4.3", "GL Compatibility")
+config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"
 
 [autoload]

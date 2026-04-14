@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
 
 env:
-  GODOT_VERSION: "4.3"
-  GODOT_TAG: "4.3-stable"
+  GODOT_VERSION: "4.4"
+  GODOT_TAG: "4.4-stable"
 
 jobs:
   export-deploy:
