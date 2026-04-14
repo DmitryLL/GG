@@ -176,6 +176,25 @@ export const MOB_WANDER_RADIUS = 80;
 export const MOB_SPEED = 40;
 export const MOB_RESPAWN_MS = 8000;
 
+export const INVENTORY_SLOTS = 6;
+export const ITEM_STACK_MAX = 99;
+export const PICKUP_RANGE = 40;
+export const DROP_LIFETIME_MS = 60000;
+
+export const ITEMS = {
+  slime_jelly: { id: "slime_jelly", name: "Слизь", icon: 0 },
+} as const;
+export type ItemId = keyof typeof ITEMS;
+
+export type InventorySlot = { itemId: ItemId; qty: number } | null;
+
+export const XP_PER_MOB = 12;
+export function xpForLevel(level: number): number {
+  return 50 * level;
+}
+export const PER_LEVEL_HP_BONUS = 10;
+export const PER_LEVEL_DAMAGE_BONUS = 2;
+
 export type MoveMessage = { x: number; y: number };
 export type AttackMessage = { mobId: string };
 export type ChatSend = { text: string };

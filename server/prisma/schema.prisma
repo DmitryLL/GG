@@ -20,8 +20,11 @@ model Character {
   userId    String   @unique
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
-  x         Int      @default(400)
-  y         Int      @default(300)
+  x         Int      @default(960)
+  y         Int      @default(720)
+  level     Int      @default(1)
+  xp        Int      @default(0)
+  inventory Json     @default("[]")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

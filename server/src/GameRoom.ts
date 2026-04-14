@@ -1,5 +1,5 @@
 import { Room, Client } from "colyseus";
-import { Schema, MapSchema, type } from "@colyseus/schema";
+import { Schema, MapSchema, ArraySchema, type } from "@colyseus/schema";
 import {
   MAP_WIDTH,
   MAP_HEIGHT,
@@ -18,38 +18,72 @@ import {
   MOB_RESPAWN_MS,
   MOB_SPAWNS,
   PLAYER_SPAWN,
+  INVENTORY_SLOTS,
+  ITEM_STACK_MAX,
+  PICKUP_RANGE,
+  DROP_LIFETIME_MS,
+  XP_PER_MOB,
+  PER_LEVEL_HP_BONUS,
+  PER_LEVEL_DAMAGE_BONUS,
+  xpForLevel,
   isWalkableAt,
   type MoveMessage,
   type ChatSend,
   type ChatBroadcast,
   type AttackMessage,
   type JoinOptions,
+  type ItemId,
+  type InventorySlot,
 } from "@gg/shared";
 import { verifyToken } from "./auth.js";
 import { prisma } from "./db.js";
+
+export class InvEntry extends Schema {
+  @type("string") itemId: string = "";
+  @type("number") qty: number = 0;
+}
 
 export class Player extends Schema {
   @type("number") x: number = PLAYER_SPAWN.x;
   @type("number") y: number = PLAYER_SPAWN.y;
   @type("number") hp: number = PLAYER_HP_MAX;
+  @type("number") hpMax: number = PLAYER_HP_MAX;
+  @type("number") level: number = 1;
+  @type("number") xp: number = 0;
   @type("string") name: string = "";
+  @type([InvEntry]) inventory = new ArraySchema<InvEntry>();
 }
 
 export class Mob extends Schema {
   @type("number") x: number = 0;
   @type("number") y: number = 0;
   @type("number") hp: number = MOB_HP_MAX;
-  @type("string") state: string = "alive"; // "alive" | "dead"
+  @type("string") state: string = "alive";
+}
+
+export class Drop extends Schema {
+  @type("number") x: number = 0;
+  @type("number") y: number = 0;
+  @type("string") itemId: string = "";
+  @type("number") qty: number = 1;
 }
 
 export class State extends Schema {
   @type({ map: Player }) players = new MapSchema<Player>();
   @type({ map: Mob }) mobs = new MapSchema<Mob>();
+  @type({ map: Drop }) drops = new MapSchema<Drop>();
 }
 
 type AuthData = { userId: string; characterId: string };
 
 const SIM_TICK_MS = 200;
+
+function playerDamage(level: number): number {
+  return PLAYER_ATTACK_DAMAGE + PER_LEVEL_DAMAGE_BONUS * (level - 1);
+}
+function playerMaxHp(level: number): number {
+  return PLAYER_HP_MAX + PER_LEVEL_HP_BONUS * (level - 1);
+}
 
 export class GameRoom extends Room<State> {
   maxClients = 50;
@@ -59,6 +93,8 @@ export class GameRoom extends Room<State> {
   private mobRespawnAt = new Map<string, number>();
   private mobHome = new Map<string, { x: number; y: number }>();
   private mobTarget = new Map<string, { x: number; y: number }>();
+  private dropExpireAt = new Map<string, number>();
+  private nextDropId = 0;
 
   onCreate() {
     this.setState(new State());
@@ -111,15 +147,59 @@ export class GameRoom extends Room<State> {
       const dist = Math.hypot(mob.x - player.x, mob.y - player.y);
       if (dist > PLAYER_ATTACK_RANGE) return;
       this.lastPlayerAttack.set(client.sessionId, now);
-      mob.hp = Math.max(0, mob.hp - PLAYER_ATTACK_DAMAGE);
+      mob.hp = Math.max(0, mob.hp - playerDamage(player.level));
       this.broadcast("hit", { mobId: msg.mobId, by: client.sessionId });
       if (mob.hp <= 0) {
         mob.state = "dead";
         this.mobRespawnAt.set(msg.mobId, now + MOB_RESPAWN_MS);
+        this.dropJelly(mob.x, mob.y);
+        this.grantXp(player, XP_PER_MOB);
       }
     });
 
     this.setSimulationInterval(() => this.tick(), SIM_TICK_MS);
+  }
+
+  private dropJelly(x: number, y: number) {
+    const id = `d${this.nextDropId++}`;
+    const drop = new Drop();
+    drop.x = x;
+    drop.y = y;
+    drop.itemId = "slime_jelly";
+    drop.qty = 1;
+    this.state.drops.set(id, drop);
+    this.dropExpireAt.set(id, Date.now() + DROP_LIFETIME_MS);
+  }
+
+  private grantXp(player: Player, amount: number) {
+    player.xp += amount;
+    while (player.xp >= xpForLevel(player.level)) {
+      player.xp -= xpForLevel(player.level);
+      player.level += 1;
+      player.hpMax = playerMaxHp(player.level);
+      player.hp = player.hpMax;
+    }
+  }
+
+  private addToInventory(player: Player, itemId: ItemId, qty: number): boolean {
+    for (const slot of player.inventory) {
+      if (slot.itemId === itemId && slot.qty < ITEM_STACK_MAX) {
+        const space = ITEM_STACK_MAX - slot.qty;
+        const take = Math.min(space, qty);
+        slot.qty += take;
+        qty -= take;
+        if (qty <= 0) return true;
+      }
+    }
+    while (qty > 0 && player.inventory.length < INVENTORY_SLOTS) {
+      const take = Math.min(ITEM_STACK_MAX, qty);
+      const entry = new InvEntry();
+      entry.itemId = itemId;
+      entry.qty = take;
+      player.inventory.push(entry);
+      qty -= take;
+    }
+    return qty === 0;
   }
 
   private tick() {
@@ -141,7 +221,6 @@ export class GameRoom extends Room<State> {
         return;
       }
 
-      // Wander AI
       let tgt = this.mobTarget.get(id);
       if (!tgt || Math.hypot(tgt.x - mob.x, tgt.y - mob.y) < 4) {
         const home = this.mobHome.get(id)!;
@@ -166,7 +245,6 @@ export class GameRoom extends Room<State> {
         else this.mobTarget.delete(id);
       }
 
-      // Touch damage
       this.state.players.forEach((player, sid) => {
         if (player.hp <= 0) return;
         const d = Math.hypot(player.x - mob.x, player.y - mob.y);
@@ -177,11 +255,30 @@ export class GameRoom extends Room<State> {
         player.hp = Math.max(0, player.hp - MOB_TOUCH_DAMAGE);
         this.broadcast("playerHit", { sessionId: sid, by: id });
         if (player.hp <= 0) {
-          // Respawn immediately at map center.
-          player.x = 400;
-          player.y = 304;
-          player.hp = PLAYER_HP_MAX;
+          player.x = PLAYER_SPAWN.x;
+          player.y = PLAYER_SPAWN.y;
+          player.hp = player.hpMax;
           this.broadcast("respawn", { sessionId: sid });
+        }
+      });
+    });
+
+    // Auto-pickup drops
+    this.state.drops.forEach((drop, id) => {
+      const expire = this.dropExpireAt.get(id);
+      if (expire && now >= expire) {
+        this.state.drops.delete(id);
+        this.dropExpireAt.delete(id);
+        return;
+      }
+      this.state.players.forEach((player) => {
+        if (player.hp <= 0) return;
+        const d = Math.hypot(player.x - drop.x, player.y - drop.y);
+        if (d > PICKUP_RANGE) return;
+        const ok = this.addToInventory(player, drop.itemId as ItemId, drop.qty);
+        if (ok) {
+          this.state.drops.delete(id);
+          this.dropExpireAt.delete(id);
         }
       });
     });
@@ -207,22 +304,40 @@ export class GameRoom extends Room<State> {
       player.x = PLAYER_SPAWN.x;
       player.y = PLAYER_SPAWN.y;
     }
-    player.hp = PLAYER_HP_MAX;
     player.name = character.name;
+    player.level = character.level;
+    player.xp = character.xp;
+    player.hpMax = playerMaxHp(player.level);
+    player.hp = player.hpMax;
+    const inv = Array.isArray(character.inventory) ? (character.inventory as InventorySlot[]) : [];
+    for (const slot of inv) {
+      if (!slot) continue;
+      const entry = new InvEntry();
+      entry.itemId = slot.itemId;
+      entry.qty = slot.qty;
+      player.inventory.push(entry);
+    }
     this.state.players.set(client.sessionId, player);
     client.userData = auth;
-    console.log(`${character.name} joined at ${player.x},${player.y}`);
+    console.log(`${character.name} (L${player.level}) joined at ${player.x},${player.y}`);
   }
 
   async onLeave(client: Client) {
     const player = this.state.players.get(client.sessionId);
     const auth = client.userData as AuthData | undefined;
     if (player && auth) {
+      const invJson = player.inventory.map((e) => ({ itemId: e.itemId, qty: e.qty }));
       await prisma.character.update({
         where: { id: auth.characterId },
-        data: { x: Math.round(player.x), y: Math.round(player.y) },
+        data: {
+          x: Math.round(player.x),
+          y: Math.round(player.y),
+          level: player.level,
+          xp: player.xp,
+          inventory: invJson,
+        },
       });
-      console.log(`${player.name} saved at ${player.x},${player.y}`);
+      console.log(`${player.name} saved L${player.level} xp${player.xp}`);
     }
     this.state.players.delete(client.sessionId);
     this.lastPlayerAttack.delete(client.sessionId);

@@ -22,6 +22,8 @@ import {
 } from "@gg/shared";
 import { getStoredToken, mountAuthUI, mountLogoutButton } from "./auth";
 import { mountChat } from "./chat";
+import { mountInventory, type InvSlotView } from "./inventory";
+import { xpForLevel, type ItemId } from "@gg/shared";
 
 const SERVER_URL = (() => {
   const env = (import.meta as any).env?.VITE_SERVER_WS_URL as string | undefined;
@@ -61,6 +63,7 @@ type PlayerSprite = {
   sprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
   hp: HpBar;
+  xp?: HpBar;
   bubble?: Phaser.GameObjects.Text;
   bubbleTimer?: Phaser.Time.TimerEvent;
   lastX: number;
@@ -73,6 +76,11 @@ type MobSprite = {
   container: Phaser.GameObjects.Container;
   sprite: Phaser.GameObjects.Sprite;
   hp: HpBar;
+};
+
+type DropSprite = {
+  container: Phaser.GameObjects.Container;
+  sprite: Phaser.GameObjects.Sprite;
 };
 
 const HP_BAR_W = 28;
@@ -99,6 +107,8 @@ class GameScene extends Phaser.Scene {
   private me?: PlayerSprite;
   private others = new Map<string, PlayerSprite>();
   private mobs = new Map<string, MobSprite>();
+  private drops = new Map<string, DropSprite>();
+  private inv?: ReturnType<typeof mountInventory>;
   private keys!: {
     W: Phaser.Input.Keyboard.Key;
     A: Phaser.Input.Keyboard.Key;
@@ -130,6 +140,10 @@ class GameScene extends Phaser.Scene {
     this.load.spritesheet("slime", `${BASE}sprites/slime.png`, {
       frameWidth: 32,
       frameHeight: 32,
+    });
+    this.load.spritesheet("items", `${BASE}sprites/items.png`, {
+      frameWidth: 16,
+      frameHeight: 16,
     });
   }
 
@@ -175,8 +189,10 @@ class GameScene extends Phaser.Scene {
     });
     label.setOrigin(0.5, 1);
     const hp = makeHpBar(this, -34, 0x4ade80);
-    const container = this.add.container(x, y, [sprite, label, hp.bg, hp.fill]);
-    return { container, sprite, label, hp, lastX: x, lastY: y, facing: "down", variant };
+    const xp = makeHpBar(this, -29, 0xfbbf24);
+    xp.bg.setAlpha(0.5);
+    const container = this.add.container(x, y, [sprite, label, hp.bg, hp.fill, xp.bg, xp.fill]);
+    return { container, sprite, label, hp, xp, lastX: x, lastY: y, facing: "down", variant };
   }
 
   private createMobSprite(x: number, y: number): MobSprite {
@@ -269,10 +285,18 @@ class GameScene extends Phaser.Scene {
         this.others.set(sessionId, ps);
       }
 
-      setHp(ps.hp, player.hp / PLAYER_HP_MAX);
+      const updateStats = () => {
+        setHp(ps.hp, player.hp / (player.hpMax || PLAYER_HP_MAX));
+        if (ps.xp) setHp(ps.xp, player.xp / Math.max(1, xpForLevel(player.level)));
+        const displayName = `${player.name} L${player.level}`;
+        if (ps.label.text !== displayName) ps.label.setText(displayName);
+      };
+      updateStats();
+      if (isMe) this.updateLocalInventory(player);
 
       $(player).onChange(() => {
-        setHp(ps.hp, player.hp / PLAYER_HP_MAX);
+        updateStats();
+        if (isMe) this.updateLocalInventory(player);
         if (isMe) {
           // Server-driven teleport (e.g., respawn) needs to sync local prediction.
           const dist = Math.hypot(player.x - this.posX, player.y - this.posY);
@@ -295,7 +319,6 @@ class GameScene extends Phaser.Scene {
         ps.lastX = player.x;
         ps.lastY = player.y;
         this.setFrame(ps, dir, moving);
-        if (player.name && ps.label.text !== player.name) ps.label.setText(player.name);
       });
     });
 
@@ -323,6 +346,30 @@ class GameScene extends Phaser.Scene {
       this.mobs.delete(mobId);
     });
 
+    $(this.room.state).drops.onAdd((drop: any, dropId: string) => {
+      const sprite = this.add.sprite(0, 0, "items", 0);
+      sprite.setScale(1);
+      const container = this.add.container(drop.x, drop.y, [sprite]);
+      this.tweens.add({
+        targets: container,
+        y: { from: drop.y - 4, to: drop.y + 2 },
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: "sine.inout",
+      });
+      this.drops.set(dropId, { container, sprite });
+      $(drop).onChange(() => {
+        container.x = drop.x;
+        container.y = drop.y;
+      });
+    });
+
+    $(this.room.state).drops.onRemove((_d: any, dropId: string) => {
+      this.drops.get(dropId)?.container.destroy();
+      this.drops.delete(dropId);
+    });
+
     this.room.onMessage("hit", (data: { mobId: string }) => {
       const ms = this.mobs.get(data.mobId);
       if (ms) this.flashSprite(ms.sprite);
@@ -333,12 +380,23 @@ class GameScene extends Phaser.Scene {
       if (ps) this.flashSprite(ps.sprite);
     });
 
+    this.inv = mountInventory();
+
     mountChat(this.room, (msg) => {
       const ps = msg.sessionId === mySessionId
         ? this.me
         : this.others.get(msg.sessionId);
       if (ps) this.showBubble(ps, msg.text);
     });
+  }
+
+  private updateLocalInventory(player: any) {
+    if (!this.inv) return;
+    const slots: InvSlotView[] = [];
+    for (const e of player.inventory) {
+      slots.push({ itemId: e.itemId as ItemId, qty: e.qty });
+    }
+    this.inv.update(slots);
   }
 
   private findMobAt(x: number, y: number): { id: string; ms: MobSprite } | null {
