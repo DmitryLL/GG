@@ -1,40 +1,17 @@
 193-238-134-75.sslip.io {
 	encode gzip
-
-	@websocket {
-		header Connection *Upgrade*
-		header Upgrade websocket
+	header {
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Embedder-Policy "require-corp"
 	}
 
-	route {
-		reverse_proxy @websocket server:2567
+	# Сохраняем старый /godot/* — редирект на корень, чтобы старые ссылки не ломались.
+	redir /godot{uri} / 301
+	redir /godot/{uri} / 301
 
-		handle /matchmake/* {
-			reverse_proxy server:2567
-		}
-		handle /auth/* {
-			reverse_proxy server:2567
-		}
-		handle /health {
-			reverse_proxy server:2567
-		}
-
-		handle_path /godot/* {
-			root * /srv-godot
-			header {
-				Cross-Origin-Opener-Policy "same-origin"
-				Cross-Origin-Embedder-Policy "require-corp"
-			}
-			try_files {path} /index.html
-			file_server
-		}
-
-		handle {
-			root * /srv
-			try_files {path} /index.html
-			file_server
-		}
-	}
+	root * /srv-godot
+	try_files {path} /index.html
+	file_server
 }
 
 # Nakama client API + WebSocket (for game client).

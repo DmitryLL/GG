@@ -4,9 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - "server/**"
-      - "client/**"
-      - "shared/**"
       - "deploy/**"
       - "nakama-server/**"
       - "package.json"
@@ -16,7 +13,7 @@ on:
 
 jobs:
   check:
-    name: Typecheck
+    name: Build Nakama runtime module
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,9 +23,6 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: cd server && npx prisma generate
-      - run: npx tsc --noEmit --project shared/tsconfig.json
-      - run: npx tsc --noEmit --project server/tsconfig.json
       - run: npm run build --workspace=nakama-server
 
   deploy:
@@ -36,6 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+      - run: npm ci
 
       - name: Rebuild Nakama module
         run: npm run build --workspace=nakama-server
@@ -45,50 +45,44 @@ jobs:
           mkdir -p deploy/nakama-modules
           cp nakama-server/build/index.js deploy/nakama-modules/index.js
 
-      - name: Sync sources to VPS
+      - name: Sync deploy assets to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "server,client,shared,deploy,package.json,package-lock.json"
+          source: "deploy"
           target: "/srv/gg-staging"
           rm: true
 
-      - name: Build & restart on VPS
+      - name: Apply on VPS
         uses: appleboy/ssh-action@v1.2.0
         env:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
           NAKAMA_CONSOLE_PASSWORD: ${{ secrets.NAKAMA_CONSOLE_PASSWORD }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: POSTGRES_PASSWORD,JWT_SECRET,NAKAMA_CONSOLE_PASSWORD
+          envs: POSTGRES_PASSWORD,NAKAMA_CONSOLE_PASSWORD
           script: |
             set -e
-            rm -rf /srv/gg/server /srv/gg/client /srv/gg/shared /srv/gg/nakama-modules
+            rm -rf /srv/gg/nakama-modules
             mkdir -p /srv/gg
-            cp -r /srv/gg-staging/server /srv/gg/server
-            cp -r /srv/gg-staging/client /srv/gg/client
-            cp -r /srv/gg-staging/shared /srv/gg/shared
             cp -r /srv/gg-staging/deploy/nakama-modules /srv/gg/nakama-modules
-            cp /srv/gg-staging/package.json /srv/gg/package.json
-            cp /srv/gg-staging/package-lock.json /srv/gg/package-lock.json
             cp /srv/gg-staging/deploy/Caddyfile /srv/gg/Caddyfile
             cp /srv/gg-staging/deploy/docker-compose.yml /srv/gg/docker-compose.yml
             rm -rf /srv/gg-staging
             umask 077
             cat > /srv/gg/.env <<ENVEOF
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-            JWT_SECRET=${JWT_SECRET}
             NAKAMA_CONSOLE_PASSWORD=${NAKAMA_CONSOLE_PASSWORD:-${POSTGRES_PASSWORD}}
             ENVEOF
             cd /srv/gg
-            docker compose up -d --build
+            # --remove-orphans убьёт старые контейнеры (Phaser server/client/postgres)
+            # которых больше нет в compose.
+            docker compose up -d --remove-orphans
             docker exec gg-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
-            # Nakama only loads runtime modules on boot; restart to pick up a fresh build/index.js.
             docker compose restart nakama
             docker image prune -f
             docker compose ps
