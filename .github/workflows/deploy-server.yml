@@ -8,6 +8,7 @@ on:
       - "client/**"
       - "shared/**"
       - "deploy/**"
+      - "nakama-server/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/deploy-server.yml"
