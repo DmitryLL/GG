@@ -1,0 +1,118 @@
+# Миникарта в правом верхнем углу канваса. Фон — тайлы пересчитанные в
+# 3px-квадратики (180×135). Каждые 200мс поверх рисуются точки: зелёная
+# — я, белые — другие игроки, красные — живые мобы, жёлтая — NPC.
+class_name Minimap
+extends CanvasLayer
+
+const TILE_PX := 3
+var world: World
+var get_me: Callable
+var get_others: Callable
+var get_mobs: Callable
+var get_npcs: Callable
+
+var tex_rect: TextureRect
+var tiles_image: Image
+var tiles_tex: ImageTexture
+var frame_image: Image
+var frame_tex: ImageTexture
+var last_update := 0.0
+
+var _scale: float
+var _width: int
+var _height: int
+
+const TILE_COLORS := {
+	0: Color(0.29, 0.49, 0.31),   # grass
+	1: Color(0.85, 0.77, 0.58),   # sand
+	2: Color(0.23, 0.43, 0.66),   # water
+	3: Color(0.16, 0.35, 0.20),   # tree
+	4: Color(0.52, 0.52, 0.63),   # stone
+	5: Color(0.66, 0.57, 0.42),   # path
+}
+
+func setup(p_world: World, me_cb: Callable, others_cb: Callable, mobs_cb: Callable, npcs_cb: Callable) -> void:
+	world = p_world
+	get_me = me_cb
+	get_others = others_cb
+	get_mobs = mobs_cb
+	get_npcs = npcs_cb
+
+func _ready() -> void:
+	_width = WorldData.MAP_COLS * TILE_PX
+	_height = WorldData.MAP_ROWS * TILE_PX
+	_scale = float(TILE_PX) / float(WorldData.TILE_SIZE)
+
+	tiles_image = Image.create(_width, _height, false, Image.FORMAT_RGBA8)
+	for r in WorldData.MAP_ROWS:
+		for c in WorldData.MAP_COLS:
+			var id: int = world.data.tiles[r * WorldData.MAP_COLS + c]
+			var col: Color = TILE_COLORS.get(id, Color(0, 0, 0, 1))
+			for dy in TILE_PX:
+				for dx in TILE_PX:
+					tiles_image.set_pixel(c * TILE_PX + dx, r * TILE_PX + dy, col)
+	tiles_tex = ImageTexture.create_from_image(tiles_image)
+	frame_image = tiles_image.duplicate()
+	frame_tex = ImageTexture.create_from_image(frame_image)
+
+	var root := Control.new()
+	root.anchor_right = 1.0
+	root.anchor_bottom = 1.0
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(root)
+
+	var panel := PanelContainer.new()
+	panel.anchor_left = 0.0
+	panel.anchor_top = 0.0
+	panel.offset_left = 8
+	panel.offset_top = 40
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(panel)
+
+	tex_rect = TextureRect.new()
+	tex_rect.texture = frame_tex
+	tex_rect.custom_minimum_size = Vector2(_width, _height)
+	tex_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	panel.add_child(tex_rect)
+
+func _process(delta: float) -> void:
+	last_update += delta
+	if last_update < 0.2:
+		return
+	last_update = 0.0
+	_redraw()
+
+func _dot(img: Image, wx: float, wy: float, size: int, color: Color) -> void:
+	var px := int(wx * _scale)
+	var py := int(wy * _scale)
+	var half := size / 2
+	for dy in range(-half, size - half):
+		for dx in range(-half, size - half):
+			var x := px + dx
+			var y := py + dy
+			if x < 0 or y < 0 or x >= _width or y >= _height:
+				continue
+			img.set_pixel(x, y, color)
+
+func _redraw() -> void:
+	frame_image.copy_from(tiles_image)
+	if get_npcs.is_valid():
+		for n in get_npcs.call():
+			var entry: Dictionary = n
+			_dot(frame_image, float(entry.get("x", 0)), float(entry.get("y", 0)), 4, Color(0.99, 0.89, 0.29))
+	if get_mobs.is_valid():
+		for mob_v in get_mobs.call():
+			var mob: Mob = mob_v
+			if not is_instance_valid(mob) or not mob.alive:
+				continue
+			_dot(frame_image, mob.position.x, mob.position.y, 3, Color(0.94, 0.27, 0.27))
+	if get_others.is_valid():
+		for p_v in get_others.call():
+			var p: Player = p_v
+			if not is_instance_valid(p):
+				continue
+			_dot(frame_image, p.position.x, p.position.y, 3, Color.WHITE)
+	if get_me.is_valid():
+		var m_pos: Vector2 = get_me.call()
+		_dot(frame_image, m_pos.x, m_pos.y, 5, Color(0.29, 0.87, 0.5))
+	frame_tex.update(frame_image)

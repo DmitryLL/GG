@@ -10,6 +10,7 @@ const DROP_SCRIPT := preload("res://scripts/drop.gd")
 const HUD_SCRIPT := preload("res://scripts/hud.gd")
 const SHOP_SCRIPT := preload("res://scripts/shop.gd")
 const CHAT_SCRIPT := preload("res://scripts/chat.gd")
+const MINIMAP_SCRIPT := preload("res://scripts/minimap.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -49,6 +50,7 @@ var camera: Camera2D
 var hud: Hud
 var shop: Shop
 var chat_panel: ChatPanel
+var minimap: Minimap
 var match_id: String = ""
 var my_session_id: String = ""
 var remotes: Dictionary = {}    # session_id -> Player
@@ -97,6 +99,16 @@ func _ready() -> void:
 	chat_panel = CHAT_SCRIPT.new()
 	add_child(chat_panel)
 	chat_panel.send_requested.connect(_on_chat_send)
+
+	minimap = MINIMAP_SCRIPT.new()
+	minimap.setup(
+		world,
+		Callable(self, "_mm_me"),
+		Callable(self, "_mm_others"),
+		Callable(self, "_mm_mobs"),
+		Callable(self, "_mm_npcs"),
+	)
+	add_child(minimap)
 
 	status_label.text = "Подключаюсь к real-time…"
 	_connect_and_join()
@@ -388,6 +400,15 @@ func _spawn_arrow(body: Dictionary) -> void:
 	var arrow: Arrow = ARROW_SCRIPT.new()
 	entities.add_child(arrow)
 	arrow.shoot(from, to)
+
+func _mm_me() -> Vector2:
+	return me.position if me != null else Vector2.ZERO
+func _mm_others() -> Array:
+	return remotes.values()
+func _mm_mobs() -> Array:
+	return mobs.values()
+func _mm_npcs() -> Array:
+	return npcs
 
 func _short_id(uid: String) -> String:
 	return uid.substr(0, 8)
