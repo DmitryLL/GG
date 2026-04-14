@@ -1,11 +1,15 @@
 export const TILE_SIZE = 32;
-export const MAP_COLS = 25;
-export const MAP_ROWS = 19;
-export const MAP_WIDTH = TILE_SIZE * MAP_COLS;   // 800
-export const MAP_HEIGHT = TILE_SIZE * MAP_ROWS;  // 608
+export const MAP_COLS = 60;
+export const MAP_ROWS = 45;
+export const MAP_WIDTH = TILE_SIZE * MAP_COLS;    // 1920
+export const MAP_HEIGHT = TILE_SIZE * MAP_ROWS;   // 1440
+
+export const VIEW_WIDTH = 800;
+export const VIEW_HEIGHT = 608;
 
 export const MAX_STEP_PER_TICK = 16;
 export const PLAYER_SPEED = 200;
+export const WORLD_SEED = 1337;
 
 export const ROOM_NAME = "game_room";
 
@@ -25,50 +29,128 @@ export function isWalkableTile(id: number): boolean {
   return !BLOCKED.has(id);
 }
 
-// Static map — 25 cols × 19 rows.
-// Legend:  .=grass  ,=path  s=sand  ~=water  T=tree  #=stone
-const MAP_ASCII: string[] = [
-  "TTTTTTTTTTTTTTTTTTTTTTTTT",
-  "T.......................T",
-  "T..........,,,,.........T",
-  "T.........,,..,,........T",
-  "T........,,....,,.......T",
-  "T.......,,......,,T.....T",
-  "T......,,.......,,......T",
-  "T.T...,,.........,,.....T",
-  "T....,,.###.......,,....T",
-  "T...,,..#.#........,,..TT",
-  "T...,,..###.........,,.TT",
-  "T...,,...............,,.T",
-  "T....,,...........T...,,T",
-  "TT....,,........sss.....T",
-  "TT.....,,......ss~~s....T",
-  "T.......,,....ss~~~~s...T",
-  "T........,,...s~~~~~s..TT",
-  "T.........,,..sss~ss...TT",
-  "TTTTTTTTTTTTTTTTTTTTTTTTT",
-];
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-const CHAR_TO_TILE: Record<string, number> = {
-  ".": TILE.GRASS,
-  ",": TILE.PATH,
-  s: TILE.SAND,
-  "~": TILE.WATER,
-  T: TILE.TREE,
-  "#": TILE.STONE,
-};
+function generateMap(): { tiles: number[]; mobSpawns: { x: number; y: number }[]; playerSpawn: { x: number; y: number } } {
+  const rnd = mulberry32(WORLD_SEED);
+  const tiles = new Array<number>(MAP_COLS * MAP_ROWS).fill(TILE.GRASS);
+  const setTile = (c: number, r: number, id: number) => {
+    if (c >= 0 && c < MAP_COLS && r >= 0 && r < MAP_ROWS) tiles[r * MAP_COLS + c] = id;
+  };
+  const getTile = (c: number, r: number): number => {
+    if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) return TILE.TREE;
+    return tiles[r * MAP_COLS + c]!;
+  };
 
-export const MAP_TILES: number[] = (() => {
-  const out: number[] = [];
+  // Border forest — 1 tile thick
+  for (let c = 0; c < MAP_COLS; c++) {
+    setTile(c, 0, TILE.TREE);
+    setTile(c, MAP_ROWS - 1, TILE.TREE);
+  }
   for (let r = 0; r < MAP_ROWS; r++) {
-    const row = MAP_ASCII[r] ?? "";
-    for (let c = 0; c < MAP_COLS; c++) {
-      const ch = row[c] ?? ".";
-      out.push(CHAR_TO_TILE[ch] ?? TILE.GRASS);
+    setTile(0, r, TILE.TREE);
+    setTile(MAP_COLS - 1, r, TILE.TREE);
+  }
+
+  // Water ponds
+  const pondCount = 5;
+  for (let i = 0; i < pondCount; i++) {
+    const cx = 6 + Math.floor(rnd() * (MAP_COLS - 12));
+    const cy = 6 + Math.floor(rnd() * (MAP_ROWS - 12));
+    const radius = 2 + Math.floor(rnd() * 3);
+    for (let dr = -radius - 1; dr <= radius + 1; dr++) {
+      for (let dc = -radius - 1; dc <= radius + 1; dc++) {
+        const d = Math.hypot(dc, dr);
+        if (d <= radius) setTile(cx + dc, cy + dr, TILE.WATER);
+        else if (d <= radius + 1 && getTile(cx + dc, cy + dr) === TILE.GRASS) setTile(cx + dc, cy + dr, TILE.SAND);
+      }
     }
   }
-  return out;
-})();
+
+  // Stone ruins
+  const ruinCount = 4;
+  for (let i = 0; i < ruinCount; i++) {
+    const cx = 4 + Math.floor(rnd() * (MAP_COLS - 10));
+    const cy = 4 + Math.floor(rnd() * (MAP_ROWS - 10));
+    const w = 3 + Math.floor(rnd() * 3);
+    const h = 3 + Math.floor(rnd() * 3);
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        const edge = dy === 0 || dy === h - 1 || dx === 0 || dx === w - 1;
+        const gapBottom = dy === h - 1 && dx === Math.floor(w / 2);
+        if (edge && !gapBottom && getTile(cx + dx, cy + dy) !== TILE.WATER) {
+          setTile(cx + dx, cy + dy, TILE.STONE);
+        }
+      }
+    }
+  }
+
+  // Scatter trees (groves)
+  for (let i = 0; i < 180; i++) {
+    const c = 2 + Math.floor(rnd() * (MAP_COLS - 4));
+    const r = 2 + Math.floor(rnd() * (MAP_ROWS - 4));
+    if (getTile(c, r) === TILE.GRASS) setTile(c, r, TILE.TREE);
+  }
+
+  // Paths — a couple of meandering roads
+  const pathCount = 3;
+  for (let i = 0; i < pathCount; i++) {
+    let c = 2 + Math.floor(rnd() * (MAP_COLS - 4));
+    let r = 2 + Math.floor(rnd() * (MAP_ROWS - 4));
+    const len = 30 + Math.floor(rnd() * 40);
+    for (let s = 0; s < len; s++) {
+      if (getTile(c, r) === TILE.GRASS || getTile(c, r) === TILE.TREE) setTile(c, r, TILE.PATH);
+      const dir = Math.floor(rnd() * 4);
+      if (dir === 0) c++;
+      else if (dir === 1) c--;
+      else if (dir === 2) r++;
+      else r--;
+      c = Math.max(1, Math.min(MAP_COLS - 2, c));
+      r = Math.max(1, Math.min(MAP_ROWS - 2, r));
+    }
+  }
+
+  // Clear spawn area — a safe plaza at map center
+  const playerSpawn = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+  const scx = Math.floor(playerSpawn.x / TILE_SIZE);
+  const scy = Math.floor(playerSpawn.y / TILE_SIZE);
+  for (let dr = -2; dr <= 2; dr++) {
+    for (let dc = -2; dc <= 2; dc++) {
+      setTile(scx + dc, scy + dr, TILE.GRASS);
+    }
+  }
+
+  // Mob spawns — scatter on grass tiles away from player spawn
+  const mobSpawns: { x: number; y: number }[] = [];
+  let attempts = 0;
+  while (mobSpawns.length < 16 && attempts < 500) {
+    attempts++;
+    const c = 2 + Math.floor(rnd() * (MAP_COLS - 4));
+    const r = 2 + Math.floor(rnd() * (MAP_ROWS - 4));
+    if (getTile(c, r) !== TILE.GRASS && getTile(c, r) !== TILE.PATH) continue;
+    const px = c * TILE_SIZE + TILE_SIZE / 2;
+    const py = r * TILE_SIZE + TILE_SIZE / 2;
+    if (Math.hypot(px - playerSpawn.x, py - playerSpawn.y) < 160) continue;
+    if (mobSpawns.some((s) => Math.hypot(s.x - px, s.y - py) < 160)) continue;
+    mobSpawns.push({ x: px, y: py });
+  }
+
+  return { tiles, mobSpawns, playerSpawn };
+}
+
+const WORLD = generateMap();
+export const MAP_TILES: readonly number[] = WORLD.tiles;
+export const MOB_SPAWNS: readonly { x: number; y: number }[] = WORLD.mobSpawns;
+export const PLAYER_SPAWN = WORLD.playerSpawn;
 
 export function tileAt(col: number, row: number): number {
   if (col < 0 || col >= MAP_COLS || row < 0 || row >= MAP_ROWS) return TILE.TREE;
@@ -93,13 +175,6 @@ export const MOB_TOUCH_COOLDOWN_MS = 900;
 export const MOB_WANDER_RADIUS = 80;
 export const MOB_SPEED = 40;
 export const MOB_RESPAWN_MS = 8000;
-
-export const MOB_SPAWNS = [
-  { x: 250, y: 250 },
-  { x: 550, y: 150 },
-  { x: 150, y: 450 },
-  { x: 650, y: 420 },
-];
 
 export type MoveMessage = { x: number; y: number };
 export type AttackMessage = { mobId: string };

@@ -7,9 +7,12 @@ import {
   MAP_ROWS,
   MAP_TILES,
   TILE_SIZE,
+  VIEW_WIDTH,
+  VIEW_HEIGHT,
   PLAYER_SPEED,
   PLAYER_HP_MAX,
   PLAYER_ATTACK_RANGE,
+  PLAYER_SPAWN,
   MOB_HP_MAX,
   ROOM_NAME,
   isWalkableAt,
@@ -102,8 +105,8 @@ class GameScene extends Phaser.Scene {
     S: Phaser.Input.Keyboard.Key;
     D: Phaser.Input.Keyboard.Key;
   };
-  private posX = 400;
-  private posY = 300;
+  private posX = PLAYER_SPAWN.x;
+  private posY = PLAYER_SPAWN.y;
   private moveTarget: { x: number; y: number } | null = null;
   private marker?: Phaser.GameObjects.Arc;
   private myFacing: Direction = "down";
@@ -213,6 +216,7 @@ class GameScene extends Phaser.Scene {
 
   async create() {
     this.cameras.main.setBackgroundColor("#000");
+    this.cameras.main.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
     this.renderMap();
 
     this.keys = this.input.keyboard!.addKeys("W,A,S,D") as typeof this.keys;
@@ -260,6 +264,7 @@ class GameScene extends Phaser.Scene {
         this.me = ps;
         this.posX = player.x;
         this.posY = player.y;
+        this.cameras.main.startFollow(ps.container, true, 0.15, 0.15);
       } else {
         this.others.set(sessionId, ps);
       }
@@ -440,8 +445,8 @@ function startGame(token: string) {
   mountLogoutButton(() => location.reload());
   new Phaser.Game({
     type: Phaser.AUTO,
-    width: MAP_WIDTH,
-    height: MAP_HEIGHT,
+    width: VIEW_WIDTH,
+    height: VIEW_HEIGHT,
     parent: "game",
     scene: GameScene,
     backgroundColor: "#000",

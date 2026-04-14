@@ -17,6 +17,7 @@ import {
   MOB_SPEED,
   MOB_RESPAWN_MS,
   MOB_SPAWNS,
+  PLAYER_SPAWN,
   isWalkableAt,
   type MoveMessage,
   type ChatSend,
@@ -28,8 +29,8 @@ import { verifyToken } from "./auth.js";
 import { prisma } from "./db.js";
 
 export class Player extends Schema {
-  @type("number") x: number = 400;
-  @type("number") y: number = 304;
+  @type("number") x: number = PLAYER_SPAWN.x;
+  @type("number") y: number = PLAYER_SPAWN.y;
   @type("number") hp: number = PLAYER_HP_MAX;
   @type("string") name: string = "";
 }
@@ -203,8 +204,8 @@ export class GameRoom extends Room<State> {
     player.x = character.x;
     player.y = character.y;
     if (!isWalkableAt(player.x, player.y)) {
-      player.x = 400;
-      player.y = 304;
+      player.x = PLAYER_SPAWN.x;
+      player.y = PLAYER_SPAWN.y;
     }
     player.hp = PLAYER_HP_MAX;
     player.name = character.name;
