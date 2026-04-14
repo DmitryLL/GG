@@ -58,27 +58,43 @@ func _ready() -> void:
 
 	var cols := HBoxContainer.new()
 	cols.add_theme_constant_override("separation", 12)
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(cols)
+	v.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	var left := VBoxContainer.new()
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cols.add_child(left)
 	var lh := Label.new()
 	lh.text = "Купить"
 	lh.add_theme_color_override("font_color", Color(0.67, 0.67, 0.67, 1))
 	left.add_child(lh)
+	var buy_scroll := ScrollContainer.new()
+	buy_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buy_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	buy_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left.add_child(buy_scroll)
 	buy_list = VBoxContainer.new()
-	left.add_child(buy_list)
+	buy_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buy_scroll.add_child(buy_list)
 
 	var right := VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cols.add_child(right)
 	var rh := Label.new()
 	rh.text = "Продать"
 	rh.add_theme_color_override("font_color", Color(0.67, 0.67, 0.67, 1))
 	right.add_child(rh)
+	var sell_scroll := ScrollContainer.new()
+	sell_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sell_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sell_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right.add_child(sell_scroll)
 	sell_list = VBoxContainer.new()
-	right.add_child(sell_list)
+	sell_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sell_scroll.add_child(sell_list)
 
 func open(npc_id: String, stock: Array, player: Dictionary) -> void:
 	open_npc_id = npc_id
