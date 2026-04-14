@@ -47,6 +47,54 @@ services:
     networks:
       - gg
 
+  nakama-postgres:
+    image: postgres:16-alpine
+    container_name: gg-nakama-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nakama
+      POSTGRES_DB: nakama
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - nakama_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nakama -d nakama"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - gg
+
+  nakama:
+    image: heroiclabs/nakama:3.22.0
+    container_name: gg-nakama
+    restart: unless-stopped
+    entrypoint:
+      - "/bin/sh"
+      - "-ecx"
+      - >
+        /nakama/nakama migrate up
+        --database.address nakama:${POSTGRES_PASSWORD}@nakama-postgres:5432/nakama
+        && exec /nakama/nakama
+        --name nakama1
+        --database.address nakama:${POSTGRES_PASSWORD}@nakama-postgres:5432/nakama
+        --logger.level INFO
+        --session.token_expiry_sec 7200
+        --console.username admin
+        --console.password ${NAKAMA_CONSOLE_PASSWORD}
+        --runtime.path /nakama/data/modules
+    depends_on:
+      nakama-postgres:
+        condition: service_healthy
+    expose:
+      - "7349"
+      - "7350"
+      - "7351"
+    volumes:
+      - ./nakama-modules:/nakama/data/modules:ro
+    networks:
+      - gg
+
   caddy:
     image: caddy:2-alpine
     container_name: gg-caddy
@@ -64,6 +112,8 @@ services:
         condition: service_completed_successfully
       server:
         condition: service_started
+      nakama:
+        condition: service_started
     networks:
       - gg
 
@@ -75,3 +125,4 @@ volumes:
   caddy_data:
   caddy_config:
   client_dist:
+  nakama_pg_data:

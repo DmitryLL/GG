@@ -50,18 +50,20 @@ jobs:
         env:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          NAKAMA_CONSOLE_PASSWORD: ${{ secrets.NAKAMA_CONSOLE_PASSWORD }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: POSTGRES_PASSWORD,JWT_SECRET
+          envs: POSTGRES_PASSWORD,JWT_SECRET,NAKAMA_CONSOLE_PASSWORD
           script: |
             set -e
-            rm -rf /srv/gg/server /srv/gg/client /srv/gg/shared
+            rm -rf /srv/gg/server /srv/gg/client /srv/gg/shared /srv/gg/nakama-modules
             mkdir -p /srv/gg
             cp -r /srv/gg-staging/server /srv/gg/server
             cp -r /srv/gg-staging/client /srv/gg/client
             cp -r /srv/gg-staging/shared /srv/gg/shared
+            cp -r /srv/gg-staging/deploy/nakama-modules /srv/gg/nakama-modules
             cp /srv/gg-staging/package.json /srv/gg/package.json
             cp /srv/gg-staging/package-lock.json /srv/gg/package-lock.json
             cp /srv/gg-staging/deploy/Caddyfile /srv/gg/Caddyfile
@@ -71,6 +73,7 @@ jobs:
             cat > /srv/gg/.env <<ENVEOF
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
             JWT_SECRET=${JWT_SECRET}
+            NAKAMA_CONSOLE_PASSWORD=${NAKAMA_CONSOLE_PASSWORD:-${POSTGRES_PASSWORD}}
             ENVEOF
             cd /srv/gg
             docker compose up -d --build

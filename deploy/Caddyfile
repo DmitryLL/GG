@@ -26,3 +26,22 @@
 		}
 	}
 }
+
+# Nakama client API + WebSocket (for game client).
+nk.193-238-134-75.sslip.io {
+	encode gzip
+
+	@ws {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	route {
+		reverse_proxy @ws nakama:7350
+		reverse_proxy nakama:7350
+	}
+}
+
+# Nakama admin console.
+admin.193-238-134-75.sslip.io {
+	reverse_proxy nakama:7351
+}
