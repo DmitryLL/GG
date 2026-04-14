@@ -49,6 +49,26 @@
       }
       #game canvas { display: block; width: 100% !important; height: 100% !important; }
 
+      /* Minimap — overlay inside game-col, top-left */
+      #minimap {
+        position: absolute;
+        top: 6px; left: 6px;
+        z-index: 5;
+        background: rgba(0,0,0,0.5);
+        border: 1px solid #333;
+        border-radius: 3px;
+        padding: 2px;
+        pointer-events: none;
+      }
+      #minimap canvas {
+        display: block;
+        image-rendering: pixelated;
+        width: 180px; height: 135px;
+      }
+      @media (max-width: 900px) {
+        #minimap canvas { width: 120px; height: 90px; }
+      }
+
       /* Chat — overlay inside game-col, bottom-left */
       #chat {
         position: absolute; left: 6px; bottom: 6px;

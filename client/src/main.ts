@@ -24,6 +24,7 @@ import { getStoredToken, mountAuthUI, mountLogoutButton } from "./auth";
 import { mountChat } from "./chat";
 import { mountHud, type InvSlotView } from "./inventory";
 import { mountShop } from "./shop";
+import { mountMinimap } from "./minimap";
 import { xpForLevel, MOB_TYPES, NPCS, type ItemId } from "@gg/shared";
 
 const SERVER_URL = (() => {
@@ -111,6 +112,7 @@ class GameScene extends Phaser.Scene {
   private drops = new Map<string, DropSprite>();
   private hud?: ReturnType<typeof mountHud>;
   private shop?: ReturnType<typeof mountShop>;
+  private minimap?: ReturnType<typeof mountMinimap>;
   private npcContainers = new Map<string, Phaser.GameObjects.Container>();
   private keys!: {
     W: Phaser.Input.Keyboard.Key;
@@ -420,6 +422,8 @@ class GameScene extends Phaser.Scene {
 
     this.hud = mountHud(this.room);
     this.shop = mountShop(this.room);
+    this.minimap = mountMinimap();
+    this.time.addEvent({ delay: 200, loop: true, callback: () => this.refreshMinimap() });
 
     mountChat(this.room, (msg) => {
       const ps = msg.sessionId === mySessionId
@@ -442,6 +446,20 @@ class GameScene extends Phaser.Scene {
       slots,
     });
     this.shop?.refresh(player);
+  }
+
+  private refreshMinimap() {
+    if (!this.minimap || !this.me) return;
+    const others: { x: number; y: number }[] = [];
+    this.others.forEach((ps) => others.push({ x: ps.container.x, y: ps.container.y }));
+    const mobs: { x: number; y: number; alive: boolean }[] = [];
+    this.mobs.forEach((ms) => mobs.push({ x: ms.container.x, y: ms.container.y, alive: ms.container.visible }));
+    this.minimap.update({
+      meX: this.me.container.x,
+      meY: this.me.container.y,
+      others,
+      mobs,
+    });
   }
 
   private findNpcAt(x: number, y: number) {
