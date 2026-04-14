@@ -28,59 +28,54 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 
-	# === Compact panel ===
+	# === Compact panel — без фона, ввод приклеен к низу экрана ===
 	compact_panel = PanelContainer.new()
 	compact_panel.anchor_left = 0.0
 	compact_panel.anchor_top = 1.0
 	compact_panel.anchor_right = 0.0
 	compact_panel.anchor_bottom = 1.0
 	compact_panel.offset_left = 8
-	compact_panel.offset_top = -190
-	compact_panel.offset_right = 340
+	compact_panel.offset_top = -200
+	compact_panel.offset_right = 360
 	compact_panel.offset_bottom = -8
 	compact_panel.mouse_filter = Control.MOUSE_FILTER_PASS
-	var cp_sb := StyleBoxFlat.new()
-	cp_sb.bg_color = Color(0.06, 0.05, 0.04, 0.75)
-	cp_sb.border_color = Color(0.40, 0.32, 0.20, 1.0)
-	cp_sb.set_border_width_all(1)
-	cp_sb.set_corner_radius_all(4)
-	cp_sb.set_content_margin_all(6)
-	compact_panel.add_theme_stylebox_override("panel", cp_sb)
 	root.add_child(compact_panel)
 
 	var cv := VBoxContainer.new()
 	cv.add_theme_constant_override("separation", 4)
+	cv.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	compact_panel.add_child(cv)
 
-	var top_row := HBoxContainer.new()
-	cv.add_child(top_row)
-	var chat_label := Label.new()
-	chat_label.text = "Чат"
-	chat_label.add_theme_font_size_override("font_size", 11)
-	chat_label.add_theme_color_override("font_color", Color(0.55, 0.50, 0.40, 1))
-	chat_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top_row.add_child(chat_label)
-	var expand_btn := Button.new()
-	expand_btn.text = "↗"
-	expand_btn.tooltip_text = "Показать всю историю"
-	expand_btn.custom_minimum_size = Vector2(24, 18)
-	expand_btn.add_theme_font_size_override("font_size", 11)
-	expand_btn.pressed.connect(open_history)
-	top_row.add_child(expand_btn)
-
+	# Лог сообщений: занимает всё доступное место, новые приходят снизу,
+	# старые уезжают вверх и обрезаются.
 	compact_log = VBoxContainer.new()
 	compact_log.add_theme_constant_override("separation", 2)
+	compact_log.alignment = BoxContainer.ALIGNMENT_END
 	compact_log.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	compact_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cv.add_child(compact_log)
+
+	# Нижняя строка: поле ввода + кнопка истории «↗».
+	var bottom_row := HBoxContainer.new()
+	bottom_row.add_theme_constant_override("separation", 4)
+	cv.add_child(bottom_row)
 
 	input = LineEdit.new()
 	input.placeholder_text = "Enter — написать"
 	input.max_length = 140
-	input.modulate = Color(1, 1, 1, 0.7)
-	cv.add_child(input)
+	input.modulate = Color(1, 1, 1, 0.85)
+	input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottom_row.add_child(input)
 	input.text_submitted.connect(_on_submit)
 	input.focus_entered.connect(func(): input.modulate = Color(1, 1, 1, 1.0))
-	input.focus_exited.connect(func(): input.modulate = Color(1, 1, 1, 0.7))
+	input.focus_exited.connect(func(): input.modulate = Color(1, 1, 1, 0.85))
+
+	var expand_btn := Button.new()
+	expand_btn.text = "↗"
+	expand_btn.tooltip_text = "Показать всю историю"
+	expand_btn.custom_minimum_size = Vector2(28, 24)
+	expand_btn.pressed.connect(open_history)
+	bottom_row.add_child(expand_btn)
 
 	# === History modal ===
 	history_overlay = ColorRect.new()
@@ -185,28 +180,25 @@ func append_line(name: String, text: String) -> void:
 		_scroll_history_to_bottom()
 
 func _make_message_row(name: String, text: String, full: bool) -> Control:
-	var panel_bg := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0, 0, 0, 0.0 if full else 0.55)
-	sb.set_corner_radius_all(3)
-	sb.set_content_margin_all(4)
-	panel_bg.add_theme_stylebox_override("panel", sb)
-
+	# Чат прозрачный — текст с чёрной обводкой чтобы читался на любом фоне.
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 6)
-	panel_bg.add_child(h)
 	var who := Label.new()
 	who.text = name + ":"
-	who.add_theme_color_override("font_color", Color(0.6, 0.76, 0.95, 1.0))
+	who.add_theme_color_override("font_color", Color(0.55, 0.78, 0.98, 1.0))
+	who.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+	who.add_theme_constant_override("outline_size", 3)
 	h.add_child(who)
 	var body := Label.new()
 	body.text = text
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.custom_minimum_size.x = (520 if full else 220)
-	body.add_theme_color_override("font_color", Color(0.93, 0.93, 0.93, 1.0))
+	body.custom_minimum_size.x = (520 if full else 280)
+	body.add_theme_color_override("font_color", Color(0.97, 0.97, 0.97, 1.0))
+	body.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+	body.add_theme_constant_override("outline_size", 3)
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(body)
-	return panel_bg
+	return h
 
 func open_history() -> void:
 	for c in history_log.get_children():
