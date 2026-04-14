@@ -4,7 +4,7 @@
   "private": true,
   "description": "Nakama runtime module — match handlers and RPCs for the GG world.",
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --platform=neutral --format=iife --target=es2017 --outfile=build/index.js"
+    "build": "npx esbuild src/main.ts --bundle --platform=neutral --format=iife --target=es2017 --outfile=build/index.js"
   },
   "dependencies": {
     "nakama-runtime": "github:heroiclabs/nakama-common#master"
