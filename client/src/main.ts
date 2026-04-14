@@ -24,7 +24,7 @@ import { getStoredToken, mountAuthUI, mountLogoutButton } from "./auth";
 import { mountChat } from "./chat";
 import { mountHud, type InvSlotView } from "./inventory";
 import { mountShop } from "./shop";
-import { xpForLevel, MOB_TYPES, NPCS, NPC_INTERACT_RANGE, type ItemId } from "@gg/shared";
+import { xpForLevel, MOB_TYPES, NPCS, type ItemId } from "@gg/shared";
 
 const SERVER_URL = (() => {
   const env = (import.meta as any).env?.VITE_SERVER_WS_URL as string | undefined;
@@ -273,14 +273,8 @@ class GameScene extends Phaser.Scene {
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
       const npcHit = this.findNpcAt(p.worldX, p.worldY);
       if (npcHit && this.me && this.shop) {
-        const dist = Math.hypot(npcHit.x - this.me.container.x, npcHit.y - this.me.container.y);
-        if (dist <= NPC_INTERACT_RANGE) {
-          const me = this.room?.state.players.get(this.room.sessionId);
-          this.shop.open(npcHit, me);
-          return;
-        }
-        this.moveTarget = { x: npcHit.x, y: npcHit.y };
-        this.marker!.setPosition(npcHit.x, npcHit.y).setVisible(true);
+        const me = this.room?.state.players.get(this.room.sessionId);
+        this.shop.open(npcHit, me);
         return;
       }
       const mobHit = this.findMobAt(p.worldX, p.worldY);
