@@ -65,18 +65,29 @@
       #chat-input:focus { border-color: #8a8; }
       #chat-input.idle { opacity: 0.55; }
 
-      #inv {
+      #hud {
         position: fixed; top: 40px; right: 8px; z-index: 10;
+        display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+        font-family: system-ui, sans-serif; color: #eee;
+      }
+      #gold { font-size: 13px; color: #fde68a; }
+      .eq-row { display: flex; gap: 4px; align-items: center; }
+      .eq-label { font-size: 10px; color: #888; width: 18px; text-align: right; }
+      #inv {
         display: grid; grid-template-columns: repeat(6, 36px); gap: 4px;
       }
-      .inv-slot {
+      .inv-slot, .eq-slot {
         width: 36px; height: 36px;
         background: rgba(0,0,0,0.6);
         border: 1px solid #333;
         border-radius: 3px;
         position: relative;
         image-rendering: pixelated;
+        cursor: pointer;
       }
+      .inv-slot.equippable { border-color: #6b7280; }
+      .inv-slot:hover, .eq-slot:hover { border-color: #8a8; }
+      .eq-slot.empty { opacity: 0.4; cursor: default; }
       .inv-slot .icon {
         width: 28px; height: 28px;
         margin: 3px auto 0;
@@ -102,9 +113,13 @@
       </div>
     </div>
 
-    <div id="info">Клик — идти / атака по слайму. WASD — движение. Enter — чат.</div>
     <button id="logout" style="display:none">Выйти</button>
-    <div id="inv" style="display:none"></div>
+    <div id="hud" style="display:none">
+      <div id="gold">0 зол.</div>
+      <div class="eq-row"><span class="eq-label">Оруж.</span><div id="eq-weapon" class="eq-slot empty"></div></div>
+      <div class="eq-row"><span class="eq-label">Броня</span><div id="eq-armor" class="eq-slot empty"></div></div>
+      <div id="inv"></div>
+    </div>
     <div id="game"></div>
     <div id="chat" style="display:none">
       <div id="chat-log"></div>

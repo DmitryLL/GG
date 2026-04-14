@@ -24,7 +24,9 @@ model Character {
   y         Int      @default(720)
   level     Int      @default(1)
   xp        Int      @default(0)
+  gold      Int      @default(0)
   inventory Json     @default("[]")
+  equipment Json     @default("{}")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

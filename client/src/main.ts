@@ -22,8 +22,8 @@ import {
 } from "@gg/shared";
 import { getStoredToken, mountAuthUI, mountLogoutButton } from "./auth";
 import { mountChat } from "./chat";
-import { mountInventory, type InvSlotView } from "./inventory";
-import { xpForLevel, type ItemId } from "@gg/shared";
+import { mountHud, type InvSlotView } from "./inventory";
+import { xpForLevel, MOB_TYPES, type ItemId } from "@gg/shared";
 
 const SERVER_URL = (() => {
   const env = (import.meta as any).env?.VITE_SERVER_WS_URL as string | undefined;
@@ -108,7 +108,7 @@ class GameScene extends Phaser.Scene {
   private others = new Map<string, PlayerSprite>();
   private mobs = new Map<string, MobSprite>();
   private drops = new Map<string, DropSprite>();
-  private inv?: ReturnType<typeof mountInventory>;
+  private hud?: ReturnType<typeof mountHud>;
   private keys!: {
     W: Phaser.Input.Keyboard.Key;
     A: Phaser.Input.Keyboard.Key;
@@ -138,6 +138,10 @@ class GameScene extends Phaser.Scene {
       frameHeight: TILE_SIZE,
     });
     this.load.spritesheet("slime", `${BASE}sprites/slime.png`, {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
+    this.load.spritesheet("goblin", `${BASE}sprites/goblin.png`, {
       frameWidth: 32,
       frameHeight: 32,
     });
@@ -195,18 +199,21 @@ class GameScene extends Phaser.Scene {
     return { container, sprite, label, hp, xp, lastX: x, lastY: y, facing: "down", variant };
   }
 
-  private createMobSprite(x: number, y: number): MobSprite {
-    if (!this.anims.exists("slime_idle")) {
+  private createMobSprite(kind: string, x: number, y: number): MobSprite {
+    const def = (MOB_TYPES as any)[kind] ?? MOB_TYPES.slime;
+    const key = kind === "goblin" ? "goblin" : "slime";
+    const animKey = `${key}_idle`;
+    if (!this.anims.exists(animKey)) {
       this.anims.create({
-        key: "slime_idle",
-        frames: this.anims.generateFrameNumbers("slime", { frames: [0, 0, 0, 1] }),
-        frameRate: 3,
+        key: animKey,
+        frames: this.anims.generateFrameNumbers(key, { frames: [0, 0, 0, 1] }),
+        frameRate: key === "goblin" ? 4 : 3,
         repeat: -1,
       });
     }
-    const sprite = this.add.sprite(0, 0, "slime", 0);
-    sprite.setScale(1.3);
-    sprite.play("slime_idle");
+    const sprite = this.add.sprite(0, 0, key, 0);
+    sprite.setScale(def.scale);
+    sprite.play(animKey);
     const hp = makeHpBar(this, -22, 0xef4444);
     const container = this.add.container(x, y, [sprite, hp.bg, hp.fill]);
     return { container, sprite, hp };
@@ -328,15 +335,15 @@ class GameScene extends Phaser.Scene {
     });
 
     $(this.room.state).mobs.onAdd((mob: any, mobId: string) => {
-      const ms = this.createMobSprite(mob.x, mob.y);
+      const ms = this.createMobSprite(mob.kind, mob.x, mob.y);
       this.mobs.set(mobId, ms);
-      setHp(ms.hp, mob.hp / MOB_HP_MAX);
+      setHp(ms.hp, mob.hp / (mob.hpMax || MOB_HP_MAX));
       ms.container.setVisible(mob.state === "alive");
 
       $(mob).onChange(() => {
         ms.container.x = mob.x;
         ms.container.y = mob.y;
-        setHp(ms.hp, mob.hp / MOB_HP_MAX);
+        setHp(ms.hp, mob.hp / (mob.hpMax || MOB_HP_MAX));
         ms.container.setVisible(mob.state === "alive");
       });
     });
@@ -380,7 +387,7 @@ class GameScene extends Phaser.Scene {
       if (ps) this.flashSprite(ps.sprite);
     });
 
-    this.inv = mountInventory();
+    this.hud = mountHud(this.room);
 
     mountChat(this.room, (msg) => {
       const ps = msg.sessionId === mySessionId
@@ -391,12 +398,17 @@ class GameScene extends Phaser.Scene {
   }
 
   private updateLocalInventory(player: any) {
-    if (!this.inv) return;
+    if (!this.hud) return;
     const slots: InvSlotView[] = [];
     for (const e of player.inventory) {
       slots.push({ itemId: e.itemId as ItemId, qty: e.qty });
     }
-    this.inv.update(slots);
+    this.hud.update({
+      gold: player.gold ?? 0,
+      weapon: player.eqWeapon ?? "",
+      armor: player.eqArmor ?? "",
+      slots,
+    });
   }
 
   private findMobAt(x: number, y: number): { id: string; ms: MobSprite } | null {
