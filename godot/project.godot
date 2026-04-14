@@ -10,6 +10,8 @@ config/description="2D top-down MMORPG client (Godot 4 + Nakama)"
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"
+boot_splash/show_image=false
+boot_splash/bg_color=Color(0.06, 0.06, 0.06, 1)
 
 [autoload]
 
