@@ -5,9 +5,9 @@
 		Cross-Origin-Embedder-Policy "require-corp"
 	}
 
-	# Сохраняем старый /godot/* — редирект на корень, чтобы старые ссылки не ломались.
-	redir /godot{uri} / 301
-	redir /godot/{uri} / 301
+	# Старые ссылки /godot/* — редирект на корень, чтобы не ломались.
+	@old_godot path /godot /godot/*
+	redir @old_godot / 301
 
 	root * /srv-godot
 	try_files {path} /index.html
