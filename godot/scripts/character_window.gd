@@ -184,10 +184,10 @@ func _make_slot_button(label: String, slot_key: String) -> Button:
 	var b := Button.new()
 	b.custom_minimum_size = Vector2(52, 52)
 	b.tooltip_text = label
-	b.flat = true
 	b.add_theme_stylebox_override("normal", _slot_sb(false, slot_key))
 	b.add_theme_stylebox_override("hover", _slot_sb(true, slot_key))
 	b.add_theme_stylebox_override("pressed", _slot_sb(true, slot_key))
+	b.add_theme_stylebox_override("focus", _slot_sb(true, slot_key))
 	return b
 
 func _slot_sb(hover: bool, slot_key: String) -> StyleBoxFlat:
