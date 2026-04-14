@@ -12,6 +12,7 @@ const SHOP_SCRIPT := preload("res://scripts/shop.gd")
 const CHAT_SCRIPT := preload("res://scripts/chat.gd")
 const MINIMAP_SCRIPT := preload("res://scripts/minimap.gd")
 const NAMEPLATE_SCRIPT := preload("res://scripts/nameplate.gd")
+const CHARACTER_SCRIPT := preload("res://scripts/character_window.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -51,6 +52,7 @@ var shop: Shop
 var chat_panel: ChatPanel
 var minimap: Minimap
 var nameplate: Nameplate
+var character_win: CharacterWindow
 var match_id: String = ""
 var my_session_id: String = ""
 var remotes: Dictionary = {}    # session_id -> Player
@@ -88,7 +90,6 @@ func _ready() -> void:
 	hud = HUD_SCRIPT.new()
 	add_child(hud)
 	hud.equip_slot_clicked.connect(_on_inv_click)
-	hud.unequip_slot_clicked.connect(_on_unequip)
 
 	shop = SHOP_SCRIPT.new()
 	add_child(shop)
@@ -113,6 +114,12 @@ func _ready() -> void:
 	add_child(nameplate)
 	nameplate.set_player_name(display)
 	nameplate.logout_requested.connect(_on_logout)
+
+	character_win = CHARACTER_SCRIPT.new()
+	add_child(character_win)
+	character_win.set_doll(PLAYER_SCRIPT.variant_from(Session.auth.user_id))
+	character_win.unequip_requested.connect(_on_unequip)
+	hud.character_button_pressed.connect(_on_character_button)
 
 	status_label.text = "Подключаюсь к real-time…"
 	_connect_and_join()
@@ -295,8 +302,13 @@ func _apply_me(body: Dictionary) -> void:
 	hud.update_me(body)
 	if nameplate:
 		nameplate.update_me(body)
+	if character_win:
+		character_win.refresh(body)
 	shop.refresh(body)
 	me.set_hp(float(body.get("hp", 0)), float(body.get("hpMax", 100)))
+
+func _on_character_button() -> void:
+	character_win.open(last_me)
 
 func _apply_npcs(body: Dictionary) -> void:
 	for n in body.get("npcs", []):

@@ -5,6 +5,14 @@
     "_pos_note": "Карта 1920×1440. Центр (где спавн игрока) = 960, 720. Тайл = 32px.",
     "x": 1024,
     "y": 720,
-    "stock": ["health_potion", "wood_sword", "iron_sword", "cloth_armor", "iron_armor"]
+    "stock": [
+      "health_potion",
+      "wood_sword", "iron_sword",
+      "cloth_armor", "iron_armor",
+      "leather_helmet", "iron_helmet",
+      "leather_boots", "iron_boots",
+      "leather_belt", "wool_cloak",
+      "silver_ring", "ruby_ring", "bronze_amulet"
+    ]
   }
 ]

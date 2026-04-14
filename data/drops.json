@@ -1,21 +1,30 @@
 {
-  "_comment": "missWeight = шанс что вообще ничего не выпадет (относительный вес). Сумма всех весов + missWeight = 100% поля.",
+  "_comment": "missWeight = шанс что вообще ничего не выпадет (относительный вес).",
   "slime": {
     "missWeight": 50,
     "table": [
-      { "itemId": "slime_jelly", "weight": 80 },
-      { "itemId": "wood_sword",  "weight": 4  },
-      { "itemId": "cloth_armor", "weight": 3  }
+      { "itemId": "slime_jelly",    "weight": 80 },
+      { "itemId": "wood_sword",     "weight": 4  },
+      { "itemId": "cloth_armor",    "weight": 3  },
+      { "itemId": "leather_helmet", "weight": 3  },
+      { "itemId": "leather_boots",  "weight": 3  },
+      { "itemId": "leather_belt",   "weight": 4  }
     ]
   },
   "goblin": {
     "missWeight": 20,
     "table": [
-      { "itemId": "slime_jelly", "weight": 30 },
-      { "itemId": "wood_sword",  "weight": 15 },
-      { "itemId": "iron_sword",  "weight": 8  },
-      { "itemId": "cloth_armor", "weight": 10 },
-      { "itemId": "iron_armor",  "weight": 5  }
+      { "itemId": "slime_jelly",    "weight": 30 },
+      { "itemId": "wood_sword",     "weight": 12 },
+      { "itemId": "iron_sword",     "weight": 6  },
+      { "itemId": "cloth_armor",    "weight": 8  },
+      { "itemId": "iron_armor",     "weight": 4  },
+      { "itemId": "iron_helmet",    "weight": 5  },
+      { "itemId": "iron_boots",     "weight": 5  },
+      { "itemId": "wool_cloak",     "weight": 5  },
+      { "itemId": "silver_ring",    "weight": 4  },
+      { "itemId": "ruby_ring",      "weight": 2  },
+      { "itemId": "bronze_amulet",  "weight": 3  }
     ]
   }
 }

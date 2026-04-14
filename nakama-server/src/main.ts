@@ -152,12 +152,25 @@ interface MatchPlayer {
     xp: number;
     gold: number;
     inventory: InvEntry[];
-    eqWeapon: string;
-    eqArmor: string;
+    equipment: { [slot: string]: string };
     dirtyPos: boolean;
     dirtyMe: boolean;
     lastAttackAt: number;
     lastTouchedByMob: { [mobId: string]: number };
+}
+
+const EQUIP_SLOTS = ["head", "body", "weapon", "boots", "belt", "ring1", "ring2", "cloak", "amulet"];
+
+function targetSlotFor(itemId: string, equipment: { [slot: string]: string }): string | null {
+    const def = ITEMS[itemId];
+    if (!def || !(def as any).slot) return null;
+    const slot = String((def as any).slot);
+    if (slot === "ring") {
+        if (!equipment.ring1) return "ring1";
+        if (!equipment.ring2) return "ring2";
+        return "ring1"; // оба заняты — заменяем первое
+    }
+    return slot;
 }
 
 interface MatchMob {
@@ -199,14 +212,22 @@ function playerBaseDamage(level: number): number { return PLAYER_ATTACK_DAMAGE +
 
 function computeHpMax(p: MatchPlayer): number {
     let total = playerBaseHp(p.level);
-    const armor = ITEMS[p.eqArmor];
-    if (armor && armor.hp) total += armor.hp;
+    for (const slot of EQUIP_SLOTS) {
+        const id = p.equipment[slot];
+        if (!id) continue;
+        const def = ITEMS[id];
+        if (def && def.hp) total += def.hp;
+    }
     return total;
 }
 function computeDamage(p: MatchPlayer): number {
     let total = playerBaseDamage(p.level);
-    const w = ITEMS[p.eqWeapon];
-    if (w && w.damage) total += w.damage;
+    for (const slot of EQUIP_SLOTS) {
+        const id = p.equipment[slot];
+        if (!id) continue;
+        const def = ITEMS[id];
+        if (def && def.damage) total += def.damage;
+    }
     return total;
 }
 function markMe(p: MatchPlayer): void { p.dirtyMe = true; }
@@ -275,8 +296,10 @@ interface StoredProgress {
     xp: number;
     gold: number;
     inventory: InvEntry[];
-    eqWeapon: string;
-    eqArmor: string;
+    equipment?: { [slot: string]: string };
+    // legacy
+    eqWeapon?: string;
+    eqArmor?: string;
 }
 
 function loadProgress(nk: nkruntime.Nakama, userId: string): StoredProgress | null {
@@ -293,7 +316,7 @@ function saveProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
     try {
         const payload: StoredProgress = {
             level: p.level, xp: p.xp, gold: p.gold,
-            inventory: p.inventory, eqWeapon: p.eqWeapon, eqArmor: p.eqArmor,
+            inventory: p.inventory, equipment: p.equipment,
         };
         nk.storageWrite([{
             collection: STORAGE_COLLECTION,
@@ -328,6 +351,17 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     for (let i = 0; i < presences.length; i++) {
         const p = presences[i];
         const saved = loadProgress(nk, p.userId);
+        const equipment: { [slot: string]: string } = {};
+        for (const s of EQUIP_SLOTS) equipment[s] = "";
+        if (saved && saved.equipment) {
+            for (const s of EQUIP_SLOTS) {
+                if (saved.equipment[s]) equipment[s] = saved.equipment[s];
+            }
+        } else if (saved) {
+            // миграция со старого формата (eqWeapon / eqArmor → weapon/body)
+            if (saved.eqWeapon) equipment.weapon = saved.eqWeapon;
+            if (saved.eqArmor) equipment.body = saved.eqArmor;
+        }
         const player: MatchPlayer = {
             userId: p.userId, sessionId: p.sessionId, username: p.username,
             presence: p,
@@ -337,8 +371,7 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             xp: saved ? saved.xp : 0,
             gold: saved ? saved.gold : 0,
             inventory: saved ? saved.inventory : [],
-            eqWeapon: saved ? saved.eqWeapon : "",
-            eqArmor: saved ? saved.eqArmor : "",
+            equipment: equipment,
             dirtyPos: true, dirtyMe: true,
             lastAttackAt: 0,
             lastTouchedByMob: {},
@@ -405,8 +438,9 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         hp: p.hp, hpMax: p.hpMax,
         level: p.level, xp: p.xp, xpNeed: XP_FOR_LEVEL(p.level),
         gold: p.gold,
+        damage: computeDamage(p),
         inv: p.inventory,
-        eqW: p.eqWeapon, eqA: p.eqArmor,
+        eq: p.equipment,
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
 }
@@ -481,12 +515,10 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     const idx = Number(body.slot);
                     if (!isFinite(idx) || idx < 0 || idx >= player.inventory.length) break;
                     const entry = player.inventory[idx];
-                    const def = ITEMS[entry.itemId];
-                    if (!def) break;
-                    if (def.kind !== "weapon" && def.kind !== "armor") break;
-                    const slotKey: "eqWeapon" | "eqArmor" = def.kind === "weapon" ? "eqWeapon" : "eqArmor";
-                    const prev = player[slotKey];
-                    player[slotKey] = entry.itemId;
+                    const target = targetSlotFor(entry.itemId, player.equipment);
+                    if (!target) break;
+                    const prev = player.equipment[target];
+                    player.equipment[target] = entry.itemId;
                     entry.qty -= 1;
                     if (entry.qty <= 0) player.inventory.splice(idx, 1);
                     if (prev) addToInventory(player, prev, 1);
@@ -500,11 +532,11 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 try {
                     const body = JSON.parse(nk.binaryToString(msg.data)) as { slot?: string };
                     const slot = String(body.slot || "");
-                    const slotKey: "eqWeapon" | "eqArmor" = slot === "weapon" ? "eqWeapon" : "eqArmor";
-                    const id = player[slotKey];
+                    if (EQUIP_SLOTS.indexOf(slot) < 0) break;
+                    const id = player.equipment[slot];
                     if (!id) break;
                     if (!addToInventory(player, id, 1)) break;
-                    player[slotKey] = "";
+                    player.equipment[slot] = "";
                     player.hpMax = computeHpMax(player);
                     if (player.hp > player.hpMax) player.hp = player.hpMax;
                     markMe(player);

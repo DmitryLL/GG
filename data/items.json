@@ -1,8 +1,27 @@
 {
+  "_comment": "slot — какой слот персонажа: head, body, weapon, boots, belt, ring, cloak, amulet. consumable/material — без слота.",
+
   "slime_jelly":   { "kind": "material",   "sellPrice": 2 },
-  "wood_sword":    { "kind": "weapon",     "damage": 4,  "sellPrice": 5,  "price": 12 },
-  "iron_sword":    { "kind": "weapon",     "damage": 10, "sellPrice": 18, "price": 50 },
-  "cloth_armor":   { "kind": "armor",      "hp": 20,     "sellPrice": 8,  "price": 20 },
-  "iron_armor":    { "kind": "armor",      "hp": 45,     "sellPrice": 22, "price": 70 },
-  "health_potion": { "kind": "consumable", "heal": 40,   "sellPrice": 3,  "price": 8  }
+  "health_potion": { "kind": "consumable", "heal": 40,   "sellPrice": 3,  "price": 8 },
+
+  "wood_sword":    { "kind": "weapon", "slot": "weapon", "damage": 4,  "sellPrice": 5,  "price": 12 },
+  "iron_sword":    { "kind": "weapon", "slot": "weapon", "damage": 10, "sellPrice": 18, "price": 50 },
+
+  "cloth_armor":   { "kind": "armor",  "slot": "body",   "hp": 20,  "sellPrice": 8,  "price": 20 },
+  "iron_armor":    { "kind": "armor",  "slot": "body",   "hp": 45,  "sellPrice": 22, "price": 70 },
+
+  "leather_helmet":{ "kind": "armor",  "slot": "head",   "hp": 8,   "sellPrice": 4,  "price": 12 },
+  "iron_helmet":   { "kind": "armor",  "slot": "head",   "hp": 18,  "sellPrice": 12, "price": 35 },
+
+  "leather_boots": { "kind": "armor",  "slot": "boots",  "hp": 6,   "sellPrice": 3,  "price": 10 },
+  "iron_boots":    { "kind": "armor",  "slot": "boots",  "hp": 14,  "sellPrice": 9,  "price": 28 },
+
+  "leather_belt":  { "kind": "armor",  "slot": "belt",   "hp": 4,   "sellPrice": 2,  "price": 8  },
+
+  "wool_cloak":    { "kind": "armor",  "slot": "cloak",  "hp": 10,  "sellPrice": 5,  "price": 15 },
+
+  "silver_ring":   { "kind": "armor",  "slot": "ring",   "hp": 5,  "damage": 1, "sellPrice": 6,  "price": 18 },
+  "ruby_ring":     { "kind": "armor",  "slot": "ring",   "hp": 0,  "damage": 4, "sellPrice": 16, "price": 45 },
+
+  "bronze_amulet": { "kind": "armor",  "slot": "amulet", "hp": 5,  "damage": 2, "sellPrice": 7,  "price": 22 }
 }
