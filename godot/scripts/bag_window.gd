@@ -28,10 +28,10 @@ func _ready() -> void:
 	card.anchor_top = 0.5
 	card.anchor_right = 0.5
 	card.anchor_bottom = 0.5
-	card.offset_left = -200
-	card.offset_top = -160
-	card.offset_right = 200
-	card.offset_bottom = 160
+	card.offset_left = -210
+	card.offset_top = -240
+	card.offset_right = 210
+	card.offset_bottom = 240
 	var card_sb := StyleBoxFlat.new()
 	card_sb.bg_color = Color(0.10, 0.09, 0.08, 1.0)
 	card_sb.border_color = Color(0.65, 0.50, 0.20, 1.0)
@@ -78,13 +78,13 @@ func _ready() -> void:
 
 	v.add_child(HSeparator.new())
 
-	# Инвентарь
+	# Инвентарь — 25 ячеек, 5×5
 	var grid := GridContainer.new()
-	grid.columns = 6
+	grid.columns = 5
 	grid.add_theme_constant_override("h_separation", 6)
 	grid.add_theme_constant_override("v_separation", 6)
 	v.add_child(grid)
-	for i in range(6):
+	for i in range(25):
 		var b := _make_slot_button()
 		var idx := i
 		b.pressed.connect(func(): use_or_equip.emit(idx))
@@ -165,7 +165,7 @@ func refresh(me: Dictionary) -> void:
 		return
 	gold_label.text = "%d" % int(me.get("gold", 0))
 	var inv: Array = me.get("inv", [])
-	for i in range(6):
+	for i in range(25):
 		if i < inv.size():
 			var e: Dictionary = inv[i]
 			_set_slot_icon(inv_buttons[i], String(e.get("itemId", "")), int(e.get("qty", 1)))

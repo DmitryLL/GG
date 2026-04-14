@@ -326,6 +326,8 @@ func _on_bag_button() -> void:
 	bag_win.open(last_me)
 
 func _apply_npcs(body: Dictionary) -> void:
+	if body.has("prices") and shop:
+		shop.set_prices(body.get("prices", {}))
 	for n in body.get("npcs", []):
 		var entry: Dictionary = n
 		var id: String = String(entry.get("id", ""))

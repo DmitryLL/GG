@@ -381,7 +381,12 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         state.players[p.sessionId] = player;
 
         // Send one-shot snapshots to the newcomer.
-        dispatcher.broadcastMessage(OP_NPCS, JSON.stringify({ npcs: NPCS }), [p]);
+        const prices: { [id: string]: { buy: number | null; sell: number | null } } = {};
+        for (const id of Object.keys(ITEMS)) {
+            const def = ITEMS[id];
+            prices[id] = { buy: def.price || null, sell: def.sellPrice || null };
+        }
+        dispatcher.broadcastMessage(OP_NPCS, JSON.stringify({ npcs: NPCS, prices: prices }), [p]);
         const mobsAll = snapshotMobsAll(state);
         dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: mobsAll, full: true }), [p]);
         const dropsAll = snapshotDropsAll(state);

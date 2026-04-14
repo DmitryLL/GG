@@ -1,27 +1,55 @@
 {
   "_comment": "slot — какой слот персонажа: head, body, weapon, boots, belt, ring, cloak, amulet. consumable/material — без слота.",
 
-  "slime_jelly":   { "kind": "material",   "sellPrice": 2 },
-  "health_potion": { "kind": "consumable", "heal": 40,   "sellPrice": 3,  "price": 8 },
+  "slime_jelly":     { "kind": "material",   "sellPrice": 2 },
+  "wolf_pelt":       { "kind": "material",   "sellPrice": 4 },
+  "goblin_ear":      { "kind": "material",   "sellPrice": 5 },
 
-  "wood_sword":    { "kind": "weapon", "slot": "weapon", "damage": 4,  "sellPrice": 5,  "price": 12 },
-  "iron_sword":    { "kind": "weapon", "slot": "weapon", "damage": 10, "sellPrice": 18, "price": 50 },
+  "small_potion":    { "kind": "consumable", "heal": 25,  "sellPrice": 2,  "price": 5  },
+  "health_potion":   { "kind": "consumable", "heal": 50,  "sellPrice": 4,  "price": 10 },
+  "great_potion":    { "kind": "consumable", "heal": 120, "sellPrice": 10, "price": 25 },
 
-  "cloth_armor":   { "kind": "armor",  "slot": "body",   "hp": 20,  "sellPrice": 8,  "price": 20 },
-  "iron_armor":    { "kind": "armor",  "slot": "body",   "hp": 45,  "sellPrice": 22, "price": 70 },
+  "wood_sword":      { "kind": "weapon", "slot": "weapon", "damage": 4,  "sellPrice": 5,  "price": 12 },
+  "bronze_sword":    { "kind": "weapon", "slot": "weapon", "damage": 7,  "sellPrice": 12, "price": 30 },
+  "iron_sword":      { "kind": "weapon", "slot": "weapon", "damage": 10, "sellPrice": 18, "price": 50 },
+  "steel_sword":     { "kind": "weapon", "slot": "weapon", "damage": 15, "sellPrice": 30, "price": 90 },
+  "golden_sword":    { "kind": "weapon", "slot": "weapon", "damage": 22, "sellPrice": 60, "price": 180 },
 
-  "leather_helmet":{ "kind": "armor",  "slot": "head",   "hp": 8,   "sellPrice": 4,  "price": 12 },
-  "iron_helmet":   { "kind": "armor",  "slot": "head",   "hp": 18,  "sellPrice": 12, "price": 35 },
+  "cloth_armor":     { "kind": "armor",  "slot": "body",   "hp": 12, "sellPrice": 6,  "price": 16 },
+  "leather_armor":   { "kind": "armor",  "slot": "body",   "hp": 22, "sellPrice": 10, "price": 28 },
+  "bronze_armor":    { "kind": "armor",  "slot": "body",   "hp": 32, "sellPrice": 16, "price": 45 },
+  "iron_armor":      { "kind": "armor",  "slot": "body",   "hp": 45, "sellPrice": 22, "price": 70 },
+  "steel_armor":     { "kind": "armor",  "slot": "body",   "hp": 65, "sellPrice": 36, "price": 120 },
+  "golden_armor":    { "kind": "armor",  "slot": "body",   "hp": 90, "damage": 2, "sellPrice": 70, "price": 220 },
 
-  "leather_boots": { "kind": "armor",  "slot": "boots",  "hp": 6,   "sellPrice": 3,  "price": 10 },
-  "iron_boots":    { "kind": "armor",  "slot": "boots",  "hp": 14,  "sellPrice": 9,  "price": 28 },
+  "leather_helmet":  { "kind": "armor",  "slot": "head",   "hp": 8,  "sellPrice": 4,  "price": 12 },
+  "bronze_helmet":   { "kind": "armor",  "slot": "head",   "hp": 12, "sellPrice": 7,  "price": 22 },
+  "iron_helmet":     { "kind": "armor",  "slot": "head",   "hp": 18, "sellPrice": 12, "price": 35 },
+  "steel_helmet":    { "kind": "armor",  "slot": "head",   "hp": 25, "sellPrice": 18, "price": 60 },
+  "golden_helmet":   { "kind": "armor",  "slot": "head",   "hp": 35, "damage": 1, "sellPrice": 32, "price": 110 },
 
-  "leather_belt":  { "kind": "armor",  "slot": "belt",   "hp": 4,   "sellPrice": 2,  "price": 8  },
+  "leather_boots":   { "kind": "armor",  "slot": "boots",  "hp": 6,  "sellPrice": 3,  "price": 10 },
+  "bronze_boots":    { "kind": "armor",  "slot": "boots",  "hp": 9,  "sellPrice": 6,  "price": 18 },
+  "iron_boots":      { "kind": "armor",  "slot": "boots",  "hp": 14, "sellPrice": 9,  "price": 28 },
+  "steel_boots":     { "kind": "armor",  "slot": "boots",  "hp": 20, "sellPrice": 14, "price": 50 },
+  "golden_boots":    { "kind": "armor",  "slot": "boots",  "hp": 28, "sellPrice": 26, "price": 90 },
 
-  "wool_cloak":    { "kind": "armor",  "slot": "cloak",  "hp": 10,  "sellPrice": 5,  "price": 15 },
+  "leather_belt":    { "kind": "armor",  "slot": "belt",   "hp": 4,  "sellPrice": 2,  "price": 8  },
+  "iron_belt":       { "kind": "armor",  "slot": "belt",   "hp": 8,  "sellPrice": 5,  "price": 18 },
+  "golden_belt":     { "kind": "armor",  "slot": "belt",   "hp": 14, "damage": 1, "sellPrice": 14, "price": 50 },
 
-  "silver_ring":   { "kind": "armor",  "slot": "ring",   "hp": 5,  "damage": 1, "sellPrice": 6,  "price": 18 },
-  "ruby_ring":     { "kind": "armor",  "slot": "ring",   "hp": 0,  "damage": 4, "sellPrice": 16, "price": 45 },
+  "wool_cloak":      { "kind": "armor",  "slot": "cloak",  "hp": 8,  "sellPrice": 4,  "price": 14 },
+  "leather_cloak":   { "kind": "armor",  "slot": "cloak",  "hp": 14, "sellPrice": 7,  "price": 22 },
+  "silk_cloak":      { "kind": "armor",  "slot": "cloak",  "hp": 20, "damage": 1, "sellPrice": 14, "price": 50 },
+  "royal_cloak":     { "kind": "armor",  "slot": "cloak",  "hp": 30, "damage": 3, "sellPrice": 28, "price": 110 },
 
-  "bronze_amulet": { "kind": "armor",  "slot": "amulet", "hp": 5,  "damage": 2, "sellPrice": 7,  "price": 22 }
+  "silver_ring":     { "kind": "armor",  "slot": "ring",   "hp": 5,  "damage": 1, "sellPrice": 6,  "price": 18 },
+  "sapphire_ring":   { "kind": "armor",  "slot": "ring",   "hp": 12, "damage": 1, "sellPrice": 11, "price": 32 },
+  "ruby_ring":       { "kind": "armor",  "slot": "ring",   "hp": 4,  "damage": 4, "sellPrice": 16, "price": 45 },
+  "emerald_ring":    { "kind": "armor",  "slot": "ring",   "hp": 18, "damage": 2, "sellPrice": 24, "price": 70 },
+  "golden_ring":     { "kind": "armor",  "slot": "ring",   "hp": 12, "damage": 6, "sellPrice": 40, "price": 130 },
+
+  "bronze_amulet":   { "kind": "armor",  "slot": "amulet", "hp": 5,  "damage": 2, "sellPrice": 7,  "price": 22 },
+  "silver_amulet":   { "kind": "armor",  "slot": "amulet", "hp": 10, "damage": 4, "sellPrice": 16, "price": 50 },
+  "golden_amulet":   { "kind": "armor",  "slot": "amulet", "hp": 18, "damage": 8, "sellPrice": 40, "price": 140 }
 }

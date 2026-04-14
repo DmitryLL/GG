@@ -2,17 +2,27 @@
   {
     "id": "merchant",
     "name": "Торговец",
-    "_pos_note": "Карта 1920×1440. Центр (где спавн игрока) = 960, 720. Тайл = 32px.",
+    "_pos_note": "Карта 1920×1440. Центр (где спавн игрока) = 960, 720.",
     "x": 1024,
     "y": 720,
     "stock": [
-      "health_potion",
-      "wood_sword", "iron_sword",
-      "cloth_armor", "iron_armor",
-      "leather_helmet", "iron_helmet",
-      "leather_boots", "iron_boots",
-      "leather_belt", "wool_cloak",
-      "silver_ring", "ruby_ring", "bronze_amulet"
+      "small_potion", "health_potion", "great_potion",
+
+      "wood_sword", "bronze_sword", "iron_sword", "steel_sword", "golden_sword",
+
+      "cloth_armor", "leather_armor", "bronze_armor", "iron_armor", "steel_armor", "golden_armor",
+
+      "leather_helmet", "bronze_helmet", "iron_helmet", "steel_helmet", "golden_helmet",
+
+      "leather_boots", "bronze_boots", "iron_boots", "steel_boots", "golden_boots",
+
+      "leather_belt", "iron_belt", "golden_belt",
+
+      "wool_cloak", "leather_cloak", "silk_cloak", "royal_cloak",
+
+      "silver_ring", "sapphire_ring", "ruby_ring", "emerald_ring", "golden_ring",
+
+      "bronze_amulet", "silver_amulet", "golden_amulet"
     ]
   }
 ]

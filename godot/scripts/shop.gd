@@ -7,14 +7,9 @@ signal sell_requested(slot_index: int)
 signal closed
 
 const ITEMS_TEX := preload("res://assets/sprites/items.png")
-const PRICES := {
-	"slime_jelly":   { "buy": null, "sell": 2 },
-	"wood_sword":    { "buy": 12,   "sell": 5 },
-	"iron_sword":    { "buy": 50,   "sell": 18 },
-	"cloth_armor":   { "buy": 20,   "sell": 8 },
-	"iron_armor":    { "buy": 70,   "sell": 22 },
-	"health_potion": { "buy": 8,    "sell": 3 },
-}
+
+# Цены приходят с сервера через OP_NPCS (one-shot при join).
+var prices: Dictionary = {}
 
 var overlay: ColorRect
 var card: PanelContainer
@@ -100,15 +95,17 @@ func close() -> void:
 func is_open() -> bool:
 	return overlay.visible
 
+func set_prices(p: Dictionary) -> void:
+	prices = p
+
 func refresh(player: Dictionary) -> void:
 	if not overlay.visible or open_npc_id == "":
 		return
 	last_player_state = player
-	# We don't have stock info without passing it again — infer from PRICES.
 	var stock: Array = []
-	for id in PRICES.keys():
-		var p = PRICES[id].get("buy", null)
-		if p != null:
+	for id in prices.keys():
+		var entry: Dictionary = prices[id]
+		if entry.get("buy", null) != null:
 			stock.append(id)
 	_fill_buy(stock, player)
 	_fill_sell(player)
@@ -119,7 +116,7 @@ func _fill_buy(stock: Array, player: Dictionary) -> void:
 	var gold := int(player.get("gold", 0))
 	for id in stock:
 		var sid := String(id)
-		var price = PRICES.get(sid, {}).get("buy", null)
+		var price = prices.get(sid, {}).get("buy", null)
 		if price == null:
 			continue
 		var btn := _entry_button(sid, int(price), gold >= int(price))
@@ -140,7 +137,7 @@ func _fill_sell(player: Dictionary) -> void:
 		var e: Dictionary = inv[i]
 		var item_id := String(e.get("itemId", ""))
 		var qty := int(e.get("qty", 1))
-		var sell_price = PRICES.get(item_id, {}).get("sell", null)
+		var sell_price = prices.get(item_id, {}).get("sell", null)
 		if sell_price == null:
 			continue
 		var btn := _entry_button(item_id, int(sell_price), true, qty)
