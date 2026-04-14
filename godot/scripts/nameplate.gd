@@ -103,7 +103,7 @@ func _ready() -> void:
 	xp_bar.add_theme_stylebox_override("background", xp_bg)
 	v.add_child(xp_bar)
 
-func set_name(n: String) -> void:
+func set_player_name(n: String) -> void:
 	name_label.text = n
 
 func update_me(me: Dictionary) -> void:

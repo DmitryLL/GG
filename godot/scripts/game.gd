@@ -111,7 +111,7 @@ func _ready() -> void:
 
 	nameplate = NAMEPLATE_SCRIPT.new()
 	add_child(nameplate)
-	nameplate.set_name(display)
+	nameplate.set_player_name(display)
 	nameplate.logout_requested.connect(_on_logout)
 
 	status_label.text = "Подключаюсь к real-time…"
