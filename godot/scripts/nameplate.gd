@@ -2,11 +2,14 @@
 class_name Nameplate
 extends CanvasLayer
 
+signal logout_requested
+
 var name_label: Label
 var level_label: Label
 var hp_text: Label
 var hp_bar: ProgressBar
 var xp_bar: ProgressBar
+var logout_btn: Button
 
 func _ready() -> void:
 	var root := Control.new()
@@ -42,6 +45,13 @@ func _ready() -> void:
 	level_label.text = "Ур. 1"
 	level_label.add_theme_color_override("font_color", Color(0.99, 0.89, 0.51, 1))
 	top.add_child(level_label)
+
+	logout_btn = Button.new()
+	logout_btn.text = "×"
+	logout_btn.tooltip_text = "Выйти"
+	logout_btn.custom_minimum_size = Vector2(24, 22)
+	logout_btn.pressed.connect(func(): logout_requested.emit())
+	top.add_child(logout_btn)
 
 	hp_bar = ProgressBar.new()
 	hp_bar.min_value = 0

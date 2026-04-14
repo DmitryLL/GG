@@ -11,26 +11,6 @@ script = ExtResource("1_game")
 
 [node name="UI" type="CanvasLayer" parent="."]
 
-[node name="TopBar" type="HBoxContainer" parent="UI"]
-anchors_preset = 10
-anchor_right = 1.0
-offset_left = 8.0
-offset_top = 8.0
-offset_right = -8.0
-offset_bottom = 32.0
-
-[node name="HelloLabel" type="Label" parent="UI/TopBar"]
-unique_name_in_owner = true
-size_flags_horizontal = 3
-text = "…"
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 3
-
-[node name="LogoutBtn" type="Button" parent="UI/TopBar"]
-unique_name_in_owner = true
-text = "Выйти"
-
 [node name="StatusLabel" type="Label" parent="UI"]
 unique_name_in_owner = true
 anchors_preset = 7

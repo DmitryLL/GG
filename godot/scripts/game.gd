@@ -41,8 +41,6 @@ const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
 @onready var world_root: Node2D = $World
 @onready var entities: Node2D = $Entities
-@onready var hello_label: Label = %HelloLabel
-@onready var logout_btn: Button = %LogoutBtn
 @onready var status_label: Label = %StatusLabel
 
 var world: World
@@ -67,10 +65,7 @@ var attack_target: Mob = null
 var attack_cooldown := 0.0
 
 func _ready() -> void:
-	logout_btn.pressed.connect(_on_logout)
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
-	hello_label.text = ""  # старая верхняя строка убрана, ник теперь в nameplate
-	hello_label.visible = false
 
 	world = WORLD_SCRIPT.new()
 	world_root.add_child(world)
@@ -117,6 +112,7 @@ func _ready() -> void:
 	nameplate = NAMEPLATE_SCRIPT.new()
 	add_child(nameplate)
 	nameplate.set_name(display)
+	nameplate.logout_requested.connect(_on_logout)
 
 	status_label.text = "Подключаюсь к real-time…"
 	_connect_and_join()
