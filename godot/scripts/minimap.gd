@@ -39,14 +39,14 @@ func setup(p_world: World, me_cb: Callable, others_cb: Callable, mobs_cb: Callab
 	get_npcs = npcs_cb
 
 func _ready() -> void:
-	_width = WorldData.MAP_COLS * TILE_PX
-	_height = WorldData.MAP_ROWS * TILE_PX
+	_width = world.data.map_cols * TILE_PX
+	_height = world.data.map_rows * TILE_PX
 	_scale = float(TILE_PX) / float(WorldData.TILE_SIZE)
 
 	tiles_image = Image.create(_width, _height, false, Image.FORMAT_RGBA8)
-	for r in WorldData.MAP_ROWS:
-		for c in WorldData.MAP_COLS:
-			var id: int = world.data.tiles[r * WorldData.MAP_COLS + c]
+	for r in world.data.map_rows:
+		for c in world.data.map_cols:
+			var id: int = world.data.tiles[r * world.data.map_cols + c]
 			var col: Color = TILE_COLORS.get(id, Color(0, 0, 0, 1))
 			for dy in TILE_PX:
 				for dx in TILE_PX:

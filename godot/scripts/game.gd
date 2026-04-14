@@ -80,8 +80,8 @@ func _ready() -> void:
 	camera = Camera2D.new()
 	camera.limit_left = 0
 	camera.limit_top = 0
-	camera.limit_right = WorldData.MAP_WIDTH
-	camera.limit_bottom = WorldData.MAP_HEIGHT
+	camera.limit_right = world.data.map_cols * WorldData.TILE_SIZE
+	camera.limit_bottom = world.data.map_rows * WorldData.TILE_SIZE
 	camera.position_smoothing_enabled = true
 	camera.position_smoothing_speed = 8.0
 	me.add_child(camera)

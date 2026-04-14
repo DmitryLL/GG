@@ -25,118 +25,31 @@ interface Vec2 { x: number; y: number; }
 interface MobSpawn { x: number; y: number; type: string; }
 interface GenResult { tiles: number[]; mobSpawns: MobSpawn[]; playerSpawn: Vec2; }
 
-function imul(a: number, b: number): number {
-    a = a | 0; b = b | 0;
-    const ah = (a >>> 16) & 0xffff;
-    const al = a & 0xffff;
-    const bh = (b >>> 16) & 0xffff;
-    const bl = b & 0xffff;
-    return (al * bl + (((ah * bl + al * bh) << 16) >>> 0)) | 0;
-}
+function loadTiledWorld(): GenResult {
+    // Tiled gid'ы 1-based, наш firstgid=1 → tile_id = gid - 1.
+    const tilesRaw = (WORLD_MAP_DATA.layers as any[]).find((l) => l.name === "Tiles");
+    const tiles = (tilesRaw.data as number[]).map((g) => Math.max(0, g - 1));
 
-function makeRand(seed: number): () => number {
-    let state = seed >>> 0;
-    return function () {
-        state = (state + 0x6d2b79f5) >>> 0;
-        let t = state;
-        t = imul(t ^ (t >>> 15), t | 1);
-        t = (t ^ (t + imul(t ^ (t >>> 7), t | 61))) >>> 0;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
+    const mobsLayer = (WORLD_MAP_DATA.layers as any[]).find((l) => l.name === "Mobs");
+    const mobSpawns: MobSpawn[] = ((mobsLayer && mobsLayer.objects) || []).map((o: any) => ({
+        x: o.x + (o.width || TILE_SIZE) / 2,
+        y: o.y + (o.height || TILE_SIZE) / 2,
+        type: String(o.type || "slime"),
+    }));
 
-function generateWorld(): GenResult {
-    const rnd = makeRand(WORLD_SEED);
-    const tiles = new Array<number>(MAP_COLS * MAP_ROWS).fill(TILE_GRASS);
-    function setTile(c: number, r: number, id: number): void {
-        if (c >= 0 && c < MAP_COLS && r >= 0 && r < MAP_ROWS) tiles[r * MAP_COLS + c] = id;
-    }
-    function getTile(c: number, r: number): number {
-        if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) return TILE_TREE;
-        return tiles[r * MAP_COLS + c];
-    }
-
-    for (let c = 0; c < MAP_COLS; c++) { setTile(c, 0, TILE_TREE); setTile(c, MAP_ROWS - 1, TILE_TREE); }
-    for (let r = 0; r < MAP_ROWS; r++) { setTile(0, r, TILE_TREE); setTile(MAP_COLS - 1, r, TILE_TREE); }
-
-    for (let i = 0; i < 5; i++) {
-        const cx = 6 + Math.floor(rnd() * (MAP_COLS - 12));
-        const cy = 6 + Math.floor(rnd() * (MAP_ROWS - 12));
-        const radius = 2 + Math.floor(rnd() * 3);
-        for (let dr = -radius - 1; dr <= radius + 1; dr++) {
-            for (let dc = -radius - 1; dc <= radius + 1; dc++) {
-                const d = Math.sqrt(dc * dc + dr * dr);
-                if (d <= radius) setTile(cx + dc, cy + dr, TILE_WATER);
-                else if (d <= radius + 1 && getTile(cx + dc, cy + dr) === TILE_GRASS) setTile(cx + dc, cy + dr, TILE_SAND);
+    const npcLayer = (WORLD_MAP_DATA.layers as any[]).find((l) => l.name === "NPCs");
+    let playerSpawn: Vec2 = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+    if (npcLayer && npcLayer.objects) {
+        for (const o of npcLayer.objects as any[]) {
+            if (o.type === "spawn" || o.name === "player_spawn") {
+                playerSpawn = {
+                    x: o.x + (o.width || TILE_SIZE) / 2,
+                    y: o.y + (o.height || TILE_SIZE) / 2,
+                };
+                break;
             }
         }
     }
-    for (let i = 0; i < 4; i++) {
-        const cx = 4 + Math.floor(rnd() * (MAP_COLS - 10));
-        const cy = 4 + Math.floor(rnd() * (MAP_ROWS - 10));
-        const w = 3 + Math.floor(rnd() * 3);
-        const h = 3 + Math.floor(rnd() * 3);
-        for (let dy = 0; dy < h; dy++) {
-            for (let dx = 0; dx < w; dx++) {
-                const edge = dy === 0 || dy === h - 1 || dx === 0 || dx === w - 1;
-                const gapBottom = dy === h - 1 && dx === Math.floor(w / 2);
-                if (edge && !gapBottom && getTile(cx + dx, cy + dy) !== TILE_WATER) setTile(cx + dx, cy + dy, TILE_STONE);
-            }
-        }
-    }
-    for (let i = 0; i < 180; i++) {
-        const c = 2 + Math.floor(rnd() * (MAP_COLS - 4));
-        const r = 2 + Math.floor(rnd() * (MAP_ROWS - 4));
-        if (getTile(c, r) === TILE_GRASS) setTile(c, r, TILE_TREE);
-    }
-    for (let i = 0; i < 3; i++) {
-        let c = 2 + Math.floor(rnd() * (MAP_COLS - 4));
-        let r = 2 + Math.floor(rnd() * (MAP_ROWS - 4));
-        const length = 30 + Math.floor(rnd() * 40);
-        for (let s = 0; s < length; s++) {
-            const cur = getTile(c, r);
-            if (cur === TILE_GRASS || cur === TILE_TREE) setTile(c, r, TILE_PATH);
-            const dir = Math.floor(rnd() * 4);
-            if (dir === 0) c++;
-            else if (dir === 1) c--;
-            else if (dir === 2) r++;
-            else r--;
-            c = Math.max(1, Math.min(MAP_COLS - 2, c));
-            r = Math.max(1, Math.min(MAP_ROWS - 2, r));
-        }
-    }
-
-    const playerSpawn: Vec2 = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
-    const scx = Math.floor(playerSpawn.x / TILE_SIZE);
-    const scy = Math.floor(playerSpawn.y / TILE_SIZE);
-    for (let dr = -2; dr <= 2; dr++)
-        for (let dc = -2; dc <= 2; dc++)
-            setTile(scx + dc, scy + dr, TILE_GRASS);
-
-    const mobSpawns: MobSpawn[] = [];
-    let attempts = 0;
-    while (mobSpawns.length < 20 && attempts < 800) {
-        attempts++;
-        const c = 2 + Math.floor(rnd() * (MAP_COLS - 4));
-        const r = 2 + Math.floor(rnd() * (MAP_ROWS - 4));
-        const cur = getTile(c, r);
-        if (cur !== TILE_GRASS && cur !== TILE_PATH) continue;
-        const px = c * TILE_SIZE + TILE_SIZE / 2;
-        const py = r * TILE_SIZE + TILE_SIZE / 2;
-        const dx = px - playerSpawn.x;
-        const dy = py - playerSpawn.y;
-        const distToSpawn = Math.sqrt(dx * dx + dy * dy);
-        if (distToSpawn < 160) continue;
-        let tooClose = false;
-        for (const s of mobSpawns) {
-            const sdx = s.x - px;
-            const sdy = s.y - py;
-            if (Math.sqrt(sdx * sdx + sdy * sdy) < 140) { tooClose = true; break; }
-        }
-        if (tooClose) continue;
-        mobSpawns.push({ x: px, y: py, type: distToSpawn > 500 ? "goblin" : "slime" });
-    }
-
     return { tiles: tiles, mobSpawns: mobSpawns, playerSpawn: playerSpawn };
 }
 
@@ -151,7 +64,7 @@ function isWalkableAt(tiles: number[], x: number, y: number): boolean {
     return isWalkableTile(tiles[row * MAP_COLS + col]);
 }
 
-const WORLD = generateWorld();
+const WORLD = loadTiledWorld();
 
 // ================================================================== //
 // Items, drop tables, mobs, NPCs

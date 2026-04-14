@@ -34,6 +34,7 @@ const mobs = loadJson("mobs.json");
 const drops = loadJson("drops.json");
 const npcs = loadJson("npcs.json");
 const balance = loadJson("balance.json");
+const worldMap = loadJson(path.join("maps", "world.tmj"));
 
 const json = (v) => JSON.stringify(v, null, 4);
 
@@ -57,7 +58,8 @@ const out =
     `const MOBS_DATA: { [id: string]: MobTypeDataX } = ${json(mobs)};\n\n` +
     `const DROPS_DATA: { [mobType: string]: DropTableData } = ${json(drops)};\n\n` +
     `const NPCS_DATA: NpcData[] = ${json(npcs)};\n\n` +
-    `const BALANCE_DATA: BalanceData = ${json(balance)};\n`;
+    `const BALANCE_DATA: BalanceData = ${json(balance)};\n\n` +
+    `const WORLD_MAP_DATA: any = ${json(worldMap)};\n`;
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, out);

@@ -46,6 +46,11 @@ jobs:
         run: |
           ls -la "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/" || true
 
+      - name: Sync world map
+        run: |
+          mkdir -p godot/assets
+          cp data/maps/world.tmj godot/assets/world.tmj
+
       - name: Import project
         run: |
           cd godot

@@ -13,9 +13,9 @@ func _ready() -> void:
 	_render_tiles()
 
 func _render_tiles() -> void:
-	for r in WorldData.MAP_ROWS:
-		for c in WorldData.MAP_COLS:
-			var id: int = data.tiles[r * WorldData.MAP_COLS + c]
+	for r in data.map_rows:
+		for c in data.map_cols:
+			var id: int = data.tiles[r * data.map_cols + c]
 			var sprite := Sprite2D.new()
 			sprite.texture = TILES_TEX
 			sprite.region_enabled = true
