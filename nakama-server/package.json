@@ -4,7 +4,7 @@
   "private": true,
   "description": "Nakama runtime module — match handlers and RPCs for the GG world.",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc && mv build/main.js build/index.js"
   },
   "dependencies": {
     "nakama-runtime": "github:heroiclabs/nakama-common#master"
