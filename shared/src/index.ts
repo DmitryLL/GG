@@ -82,9 +82,14 @@ export function isWalkableAt(x: number, y: number): boolean {
 }
 
 export type MoveMessage = { x: number; y: number };
+export type ChatSend = { text: string };
+export type ChatBroadcast = { sessionId: string; name: string; text: string; ts: number };
+
+export const CHAT_MAX_LEN = 140;
 
 export type ClientMessages = {
   move: MoveMessage;
+  chat: ChatSend;
 };
 
 export type JoinOptions = {

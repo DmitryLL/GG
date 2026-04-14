@@ -14,6 +14,7 @@ import {
   type JoinOptions,
 } from "@gg/shared";
 import { getStoredToken, mountAuthUI, mountLogoutButton } from "./auth";
+import { mountChat } from "./chat";
 
 const SERVER_URL = (() => {
   const env = (import.meta as any).env?.VITE_SERVER_WS_URL as string | undefined;
@@ -47,6 +48,8 @@ type PlayerSprite = {
   container: Phaser.GameObjects.Container;
   sprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
+  bubble?: Phaser.GameObjects.Text;
+  bubbleTimer?: Phaser.Time.TimerEvent;
   lastX: number;
   lastY: number;
   facing: Direction;
@@ -206,6 +209,34 @@ class GameScene extends Phaser.Scene {
     $(this.room.state).players.onRemove((_p: any, sessionId: string) => {
       this.others.get(sessionId)?.container.destroy();
       this.others.delete(sessionId);
+    });
+
+    mountChat(this.room, (msg) => {
+      const ps = msg.sessionId === mySessionId
+        ? this.me
+        : this.others.get(msg.sessionId);
+      if (ps) this.showBubble(ps, msg.text);
+    });
+  }
+
+  private showBubble(ps: PlayerSprite, text: string) {
+    ps.bubbleTimer?.remove();
+    ps.bubble?.destroy();
+    const bubble = this.add.text(0, -46, text, {
+      fontFamily: "system-ui, sans-serif",
+      fontSize: "12px",
+      color: "#ffffff",
+      backgroundColor: "rgba(0,0,0,0.7)",
+      padding: { x: 6, y: 3 },
+      wordWrap: { width: 180, useAdvancedWrap: true },
+      align: "center",
+    });
+    bubble.setOrigin(0.5, 1);
+    ps.container.add(bubble);
+    ps.bubble = bubble;
+    ps.bubbleTimer = this.time.delayedCall(4000, () => {
+      bubble.destroy();
+      if (ps.bubble === bubble) ps.bubble = undefined;
     });
   }
 

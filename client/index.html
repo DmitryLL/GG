@@ -37,6 +37,33 @@
       #auth-card button:hover { background: #3a6a3a; }
       #auth-card button.secondary { background: #222; border-color: #444; }
       #auth-error { color: #e66; font-size: 12px; min-height: 16px; margin-top: 8px; }
+
+      #chat {
+        position: fixed; bottom: 8px; left: 8px; z-index: 10;
+        width: 320px; max-width: calc(100vw - 16px);
+        display: flex; flex-direction: column; gap: 4px;
+        font-size: 13px; pointer-events: none;
+      }
+      #chat-log {
+        display: flex; flex-direction: column; gap: 2px;
+        max-height: 160px; overflow: hidden;
+      }
+      #chat-log .msg {
+        background: rgba(0,0,0,0.55);
+        padding: 3px 8px; border-radius: 3px;
+        color: #eee; line-height: 1.35;
+        word-break: break-word;
+      }
+      #chat-log .msg .who { color: #9ae; margin-right: 6px; }
+      #chat-input {
+        pointer-events: auto;
+        background: rgba(0,0,0,0.7);
+        color: #eee; border: 1px solid #444; border-radius: 3px;
+        padding: 6px 8px; font-size: 13px; font-family: inherit;
+        outline: none;
+      }
+      #chat-input:focus { border-color: #8a8; }
+      #chat-input.idle { opacity: 0.55; }
     </style>
   </head>
   <body>
@@ -51,9 +78,13 @@
       </div>
     </div>
 
-    <div id="info">Клик — идти. WASD — движение. Зелёный — ты, красные — другие.</div>
+    <div id="info">Клик — идти. WASD — движение. Enter — чат.</div>
     <button id="logout" style="display:none">Выйти</button>
     <div id="game"></div>
+    <div id="chat" style="display:none">
+      <div id="chat-log"></div>
+      <input id="chat-input" class="idle" type="text" maxlength="140" placeholder="Enter — написать" />
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

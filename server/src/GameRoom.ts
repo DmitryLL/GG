@@ -4,8 +4,11 @@ import {
   MAP_WIDTH,
   MAP_HEIGHT,
   MAX_STEP_PER_TICK,
+  CHAT_MAX_LEN,
   isWalkableAt,
   type MoveMessage,
+  type ChatSend,
+  type ChatBroadcast,
   type JoinOptions,
 } from "@gg/shared";
 import { verifyToken } from "./auth.js";
@@ -39,6 +42,20 @@ export class GameRoom extends Room<State> {
       // Axis-separated collision: move along each axis only if destination tile is walkable.
       if (isWalkableAt(nx, player.y)) player.x = nx;
       if (isWalkableAt(player.x, ny)) player.y = ny;
+    });
+
+    this.onMessage<ChatSend>("chat", (client, msg) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const text = (msg?.text ?? "").toString().trim().slice(0, CHAT_MAX_LEN);
+      if (!text) return;
+      const payload: ChatBroadcast = {
+        sessionId: client.sessionId,
+        name: player.name,
+        text,
+        ts: Date.now(),
+      };
+      this.broadcast("chat", payload);
     });
   }
 
