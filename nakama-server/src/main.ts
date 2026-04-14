@@ -226,11 +226,12 @@ const OP_USE          = 11;
 const OP_BUY          = 12;
 const OP_SELL         = 13;
 const OP_NPCS         = 14; // one-shot on join — static NPC list
+const OP_ARROW        = 15; // server → clients, visualise a bow shot
 
 const PLAYER_HP_BASE = 100;
 const PLAYER_ATTACK_DAMAGE = 10;
-const PLAYER_ATTACK_RANGE = 48;
-const PLAYER_ATTACK_COOLDOWN_MS = 450;
+const PLAYER_ATTACK_RANGE = 220;           // bow range
+const PLAYER_ATTACK_COOLDOWN_MS = 600;
 const PER_LEVEL_HP_BONUS = 10;
 const PER_LEVEL_DAMAGE_BONUS = 2;
 const XP_FOR_LEVEL = (L: number): number => 50 * L;
@@ -567,6 +568,10 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     player.lastAttackAt = t;
                     mob.hp -= computeDamage(player);
                     mob.dirty = true;
+                    dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
+                        fx: player.pos.x, fy: player.pos.y,
+                        tx: mob.pos.x, ty: mob.pos.y,
+                    }));
                     dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mobId }));
                     if (mob.hp <= 0) {
                         mob.hp = 0; mob.state = "dead";

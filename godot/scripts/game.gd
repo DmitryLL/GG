@@ -26,9 +26,13 @@ const OP_SELL         := 13
 const OP_NPCS         := 14
 
 const MOVE_SEND_HZ := 10.0
-const PLAYER_ATTACK_RANGE := 48.0
+const PLAYER_ATTACK_RANGE := 220.0
+const PLAYER_ATTACK_COOLDOWN := 0.6
 const CLICK_MOB_RADIUS := 24.0
 const CLICK_NPC_RADIUS := 28.0
+const OP_ARROW := 15
+
+const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
 @onready var world_root: Node2D = $World
 @onready var entities: Node2D = $Entities
@@ -51,6 +55,8 @@ var npc_nodes: Array = []
 var last_me: Dictionary = {}
 var send_accum := 0.0
 var last_sent_pos: Vector2 = Vector2.INF
+var attack_target: Mob = null
+var attack_cooldown := 0.0
 
 func _ready() -> void:
 	logout_btn.pressed.connect(_on_logout)
@@ -93,6 +99,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# NPC takes priority over mobs/move.
 		var npc := _npc_at(world_pos)
 		if not npc.is_empty():
+			attack_target = null
 			var d_n: float = me.position.distance_to(Vector2(float(npc["x"]), float(npc["y"])))
 			if d_n <= 80.0:
 				shop.open(String(npc["id"]), npc.get("stock", []), last_me)
@@ -100,18 +107,34 @@ func _unhandled_input(event: InputEvent) -> void:
 			me.request_move_to(Vector2(float(npc["x"]), float(npc["y"])))
 			return
 		var mob_hit := _mob_at(world_pos)
-		if mob_hit != null and match_id != "":
-			var d: float = me.position.distance_to(mob_hit.position)
-			if d <= PLAYER_ATTACK_RANGE:
-				Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": mob_hit.mob_id}))
-				return
-			me.request_move_to(mob_hit.position)
+		if mob_hit != null:
+			# Lock onto the mob — pursue + auto-attack.
+			attack_target = mob_hit
 			return
+		# Bare-ground click → just move, drop any current target.
+		attack_target = null
 		me.request_move_to(world_pos)
 
 func _process(delta: float) -> void:
 	if match_id == "" or Session.socket == null:
 		return
+
+	# Auto-pursuit: keep walking toward the locked target and shoot when in range.
+	if attack_target != null:
+		if not is_instance_valid(attack_target) or not attack_target.alive:
+			attack_target = null
+		else:
+			var d: float = me.position.distance_to(attack_target.position)
+			if d <= PLAYER_ATTACK_RANGE:
+				me.has_target = false
+				if attack_cooldown <= 0.0:
+					Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": attack_target.mob_id}))
+					attack_cooldown = PLAYER_ATTACK_COOLDOWN
+			else:
+				me.request_move_to(attack_target.position)
+	if attack_cooldown > 0.0:
+		attack_cooldown -= delta
+
 	send_accum += delta
 	if send_accum < 1.0 / MOVE_SEND_HZ:
 		return
@@ -171,6 +194,7 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_DROPS:      _apply_drops(body)
 		OP_ME:         _apply_me(body)
 		OP_NPCS:       _apply_npcs(body)
+		OP_ARROW:      _spawn_arrow(body)
 
 func _apply_positions(body: Dictionary) -> void:
 	for p in body.get("players", []):
@@ -332,6 +356,13 @@ func _on_sell(slot_idx: int) -> void:
 	if match_id == "":
 		return
 	Session.socket.send_match_state_async(match_id, OP_SELL, JSON.stringify({"slot": slot_idx}))
+
+func _spawn_arrow(body: Dictionary) -> void:
+	var from := Vector2(float(body.get("fx", 0)), float(body.get("fy", 0)))
+	var to := Vector2(float(body.get("tx", 0)), float(body.get("ty", 0)))
+	var arrow: Arrow = ARROW_SCRIPT.new()
+	entities.add_child(arrow)
+	arrow.shoot(from, to)
 
 func _short_id(uid: String) -> String:
 	return uid.substr(0, 8)

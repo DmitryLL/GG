@@ -72,19 +72,10 @@ func _process(delta: float) -> void:
 			sprite.modulate = Color(1, 1, 1, 1)
 	if not local:
 		return
-	var input := Vector2.ZERO
-	if Input.is_action_pressed("move_left"): input.x -= 1
-	if Input.is_action_pressed("move_right"): input.x += 1
-	if Input.is_action_pressed("move_up"): input.y -= 1
-	if Input.is_action_pressed("move_down"): input.y += 1
 
 	var step := Vector2.ZERO
 	var now_moving := false
-	if input != Vector2.ZERO:
-		has_target = false
-		step = input.normalized() * SPEED * delta
-		now_moving = true
-	elif has_target:
+	if has_target:
 		var to := move_target - position
 		var dist := to.length()
 		var s := SPEED * delta
