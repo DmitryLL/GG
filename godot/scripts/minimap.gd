@@ -62,10 +62,12 @@ func _ready() -> void:
 	add_child(root)
 
 	var panel := PanelContainer.new()
-	panel.anchor_left = 0.0
+	panel.anchor_left = 1.0
+	panel.anchor_right = 1.0
 	panel.anchor_top = 0.0
-	panel.offset_left = 8
-	panel.offset_top = 40
+	panel.offset_left = -(_width + 16)
+	panel.offset_right = -8
+	panel.offset_top = 8
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(panel)
 

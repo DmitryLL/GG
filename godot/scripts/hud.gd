@@ -27,9 +27,9 @@ func _ready() -> void:
 	panel.anchor_left = 1.0
 	panel.anchor_right = 1.0
 	panel.offset_left = -260
-	panel.offset_top = 40
+	panel.offset_top = 170     # ниже миникарты (8 + 135 + padding)
 	panel.offset_right = -6
-	panel.offset_bottom = 280
+	panel.offset_bottom = 410
 	panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	root.add_child(panel)
 
@@ -43,23 +43,14 @@ func _ready() -> void:
 	gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	v.add_child(gold_label)
 
+	# Уровень/HP/XP теперь в nameplate (top-left). Здесь оставляем только
+	# золото, экипировку и инвентарь.
 	level_label = Label.new()
-	level_label.text = "Ур. 1"
-	level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	v.add_child(level_label)
-
+	level_label.visible = false
 	xp_bar = ProgressBar.new()
-	xp_bar.min_value = 0
-	xp_bar.max_value = 50
-	xp_bar.value = 0
-	xp_bar.show_percentage = false
-	xp_bar.custom_minimum_size = Vector2(0, 8)
-	v.add_child(xp_bar)
-
+	xp_bar.visible = false
 	hp_label = Label.new()
-	hp_label.text = "HP 100/100"
-	hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	v.add_child(hp_label)
+	hp_label.visible = false
 
 	var eq_row := HBoxContainer.new()
 	eq_row.alignment = BoxContainer.ALIGNMENT_END

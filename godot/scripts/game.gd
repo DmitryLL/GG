@@ -11,6 +11,7 @@ const HUD_SCRIPT := preload("res://scripts/hud.gd")
 const SHOP_SCRIPT := preload("res://scripts/shop.gd")
 const CHAT_SCRIPT := preload("res://scripts/chat.gd")
 const MINIMAP_SCRIPT := preload("res://scripts/minimap.gd")
+const NAMEPLATE_SCRIPT := preload("res://scripts/nameplate.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -51,6 +52,7 @@ var hud: Hud
 var shop: Shop
 var chat_panel: ChatPanel
 var minimap: Minimap
+var nameplate: Nameplate
 var match_id: String = ""
 var my_session_id: String = ""
 var remotes: Dictionary = {}    # session_id -> Player
@@ -67,7 +69,8 @@ var attack_cooldown := 0.0
 func _ready() -> void:
 	logout_btn.pressed.connect(_on_logout)
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
-	hello_label.text = "Вошёл как %s" % display
+	hello_label.text = ""  # старая верхняя строка убрана, ник теперь в nameplate
+	hello_label.visible = false
 
 	world = WORLD_SCRIPT.new()
 	world_root.add_child(world)
@@ -110,6 +113,10 @@ func _ready() -> void:
 		Callable(self, "_mm_npcs"),
 	)
 	add_child(minimap)
+
+	nameplate = NAMEPLATE_SCRIPT.new()
+	add_child(nameplate)
+	nameplate.set_name(display)
 
 	status_label.text = "Подключаюсь к real-time…"
 	_connect_and_join()
@@ -290,6 +297,8 @@ func _apply_drops(body: Dictionary) -> void:
 func _apply_me(body: Dictionary) -> void:
 	last_me = body
 	hud.update_me(body)
+	if nameplate:
+		nameplate.update_me(body)
 	shop.refresh(body)
 	me.set_hp(float(body.get("hp", 0)), float(body.get("hpMax", 100)))
 
