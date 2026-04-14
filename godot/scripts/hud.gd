@@ -26,10 +26,10 @@ func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.anchor_left = 1.0
 	panel.anchor_right = 1.0
-	panel.offset_left = -220
+	panel.offset_left = -260
 	panel.offset_top = 40
-	panel.offset_right = -8
-	panel.offset_bottom = 260
+	panel.offset_right = -6
+	panel.offset_bottom = 280
 	panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	root.add_child(panel)
 

@@ -23,7 +23,9 @@ window/size/viewport_width=800
 window/size/viewport_height=608
 window/size/mode=0
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
+window/stretch/aspect="expand"
+window/stretch/scale=1.0
+window/stretch/scale_mode="fractional"
 window/handheld/orientation=1
 
 [input]
