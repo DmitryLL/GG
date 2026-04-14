@@ -28,12 +28,21 @@ jobs:
       - run: cd server && npx prisma generate
       - run: npx tsc --noEmit --project shared/tsconfig.json
       - run: npx tsc --noEmit --project server/tsconfig.json
+      - run: npm run build --workspace=nakama-server
 
   deploy:
     needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Rebuild Nakama module
+        run: npm run build --workspace=nakama-server
+
+      - name: Stage Nakama module bundle
+        run: |
+          mkdir -p deploy/nakama-modules
+          cp nakama-server/build/index.js deploy/nakama-modules/index.js
 
       - name: Sync sources to VPS
         uses: appleboy/scp-action@v0.1.7
@@ -78,5 +87,7 @@ jobs:
             cd /srv/gg
             docker compose up -d --build
             docker exec gg-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+            # Nakama only loads runtime modules on boot; restart to pick up a fresh build/index.js.
+            docker compose restart nakama
             docker image prune -f
             docker compose ps

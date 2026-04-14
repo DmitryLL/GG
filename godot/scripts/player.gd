@@ -13,6 +13,7 @@ enum Dir { DOWN = 0, LEFT = 1, RIGHT = 2, UP = 3 }
 
 @export var display_name: String = ""
 @export var variant: int = 0
+@export var local: bool = true
 
 var world: World
 var sprite: Sprite2D
@@ -49,6 +50,8 @@ func _ready() -> void:
 	add_child(label)
 
 func _process(delta: float) -> void:
+	if not local:
+		return
 	var input := Vector2.ZERO
 	if Input.is_action_pressed("move_left"): input.x -= 1
 	if Input.is_action_pressed("move_right"): input.x += 1
