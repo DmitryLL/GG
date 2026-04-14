@@ -42,16 +42,21 @@ jobs:
           unzip -q /tmp/templates.tpz -d /tmp/templates-extract
           mv /tmp/templates-extract/templates/* "$TEMPLATE_DIR"/
 
+      - name: List templates
+        run: |
+          ls -la "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/" || true
+
       - name: Import project
         run: |
           cd godot
-          /opt/godot/godot --headless --import || true
+          /opt/godot/godot --headless --import --verbose 2>&1 | tail -60 || true
 
       - name: Export Web build
         run: |
           cd godot
           mkdir -p dist
-          /opt/godot/godot --headless --export-release "Web" dist/index.html
+          /opt/godot/godot --headless --export-release "Web" dist/index.html --verbose 2>&1 | tail -80
+          echo --- result ---
           ls -la dist/
 
       - name: Sync build to VPS
