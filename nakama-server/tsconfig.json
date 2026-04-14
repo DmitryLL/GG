@@ -1,14 +1,18 @@
 {
-  "files": ["./src/main.ts"],
+  "files": [
+    "../node_modules/nakama-runtime/index.d.ts",
+    "./src/main.ts"
+  ],
   "compilerOptions": {
-    "target": "es5",
+    "target": "es2017",
     "outFile": "./build/index.js",
+    "rootDir": "./src",
     "strict": true,
     "noUnusedLocals": true,
     "noImplicitReturns": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["nakama-runtime"]
+    "types": []
   }
 }
