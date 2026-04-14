@@ -13,6 +13,7 @@ const CHAT_SCRIPT := preload("res://scripts/chat.gd")
 const MINIMAP_SCRIPT := preload("res://scripts/minimap.gd")
 const NAMEPLATE_SCRIPT := preload("res://scripts/nameplate.gd")
 const CHARACTER_SCRIPT := preload("res://scripts/character_window.gd")
+const BAG_SCRIPT := preload("res://scripts/bag_window.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -53,6 +54,7 @@ var chat_panel: ChatPanel
 var minimap: Minimap
 var nameplate: Nameplate
 var character_win: CharacterWindow
+var bag_win: BagWindow
 var match_id: String = ""
 var my_session_id: String = ""
 var remotes: Dictionary = {}    # session_id -> Player
@@ -89,7 +91,8 @@ func _ready() -> void:
 
 	hud = HUD_SCRIPT.new()
 	add_child(hud)
-	hud.equip_slot_clicked.connect(_on_inv_click)
+	# (старая связь HUD.equip_slot_clicked → _on_inv_click убрана,
+	# теперь клики идут из bag_win)
 
 	shop = SHOP_SCRIPT.new()
 	add_child(shop)
@@ -120,6 +123,11 @@ func _ready() -> void:
 	character_win.set_doll(PLAYER_SCRIPT.variant_from(Session.auth.user_id))
 	character_win.unequip_requested.connect(_on_unequip)
 	hud.character_button_pressed.connect(_on_character_button)
+
+	bag_win = BAG_SCRIPT.new()
+	add_child(bag_win)
+	bag_win.use_or_equip.connect(_on_inv_click)
+	hud.bag_button_pressed.connect(_on_bag_button)
 
 	status_label.text = "Подключаюсь к real-time…"
 	_connect_and_join()
@@ -304,11 +312,18 @@ func _apply_me(body: Dictionary) -> void:
 		nameplate.update_me(body)
 	if character_win:
 		character_win.refresh(body)
+	if bag_win:
+		bag_win.refresh(body)
+	if minimap:
+		minimap.set_gold(int(body.get("gold", 0)))
 	shop.refresh(body)
 	me.set_hp(float(body.get("hp", 0)), float(body.get("hpMax", 100)))
 
 func _on_character_button() -> void:
 	character_win.open(last_me)
+
+func _on_bag_button() -> void:
+	bag_win.open(last_me)
 
 func _apply_npcs(body: Dictionary) -> void:
 	for n in body.get("npcs", []):

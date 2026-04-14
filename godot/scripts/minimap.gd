@@ -17,6 +17,7 @@ var tiles_tex: ImageTexture
 var frame_image: Image
 var frame_tex: ImageTexture
 var last_update := 0.0
+var gold_label: Label
 
 var _scale: float
 var _width: int
@@ -61,21 +62,47 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 
+	var v := VBoxContainer.new()
+	v.anchor_left = 1.0
+	v.anchor_right = 1.0
+	v.anchor_top = 0.0
+	v.offset_left = -(_width + 16)
+	v.offset_right = -8
+	v.offset_top = 8
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_theme_constant_override("separation", 4)
+	root.add_child(v)
+
 	var panel := PanelContainer.new()
-	panel.anchor_left = 1.0
-	panel.anchor_right = 1.0
-	panel.anchor_top = 0.0
-	panel.offset_left = -(_width + 16)
-	panel.offset_right = -8
-	panel.offset_top = 8
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(panel)
+	v.add_child(panel)
 
 	tex_rect = TextureRect.new()
 	tex_rect.texture = frame_tex
 	tex_rect.custom_minimum_size = Vector2(_width, _height)
 	tex_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	panel.add_child(tex_rect)
+
+	# Маленький бейдж золота под миникартой.
+	var gold_panel := PanelContainer.new()
+	var gp_sb := StyleBoxFlat.new()
+	gp_sb.bg_color = Color(0.07, 0.06, 0.05, 0.85)
+	gp_sb.border_color = Color(0.65, 0.50, 0.20, 1.0)
+	gp_sb.set_border_width_all(1)
+	gp_sb.set_corner_radius_all(4)
+	gp_sb.set_content_margin_all(6)
+	gold_panel.add_theme_stylebox_override("panel", gp_sb)
+	gold_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(gold_panel)
+	gold_label = Label.new()
+	gold_label.text = "0 зол."
+	gold_label.add_theme_color_override("font_color", Color(0.99, 0.85, 0.45, 1))
+	gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	gold_panel.add_child(gold_label)
+
+func set_gold(amount: int) -> void:
+	if gold_label:
+		gold_label.text = "%d зол." % amount
 
 func _process(delta: float) -> void:
 	last_update += delta
