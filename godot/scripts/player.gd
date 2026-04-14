@@ -18,11 +18,16 @@ enum Dir { DOWN = 0, LEFT = 1, RIGHT = 2, UP = 3 }
 var world: World
 var sprite: Sprite2D
 var label: Label
+var hp_bg: ColorRect
+var hp_fill: ColorRect
+var hp: float = 100.0
+var hp_max: float = 100.0
 var move_target: Vector2 = Vector2.ZERO
 var has_target: bool = false
 var facing: int = Dir.DOWN
 var moving: bool = false
 var anim_t: float = 0.0
+var _flash_t: float = 0.0
 
 func setup(p_world: World, p_name: String, p_variant: int) -> void:
 	world = p_world
@@ -46,10 +51,25 @@ func _ready() -> void:
 	label.add_theme_constant_override("outline_size", 3)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.size = Vector2(120, 16)
-	label.position = Vector2(-60, -36)
+	label.position = Vector2(-60, -42)
 	add_child(label)
 
+	hp_bg = ColorRect.new()
+	hp_bg.color = Color(0, 0, 0, 0.7)
+	hp_bg.size = Vector2(28, 4)
+	hp_bg.position = Vector2(-14, -26)
+	add_child(hp_bg)
+	hp_fill = ColorRect.new()
+	hp_fill.color = Color(0.29, 0.87, 0.5, 1.0)
+	hp_fill.size = Vector2(28, 4)
+	hp_fill.position = Vector2(-14, -26)
+	add_child(hp_fill)
+
 func _process(delta: float) -> void:
+	if _flash_t > 0.0:
+		_flash_t -= delta
+		if _flash_t <= 0.0:
+			sprite.modulate = Color(1, 1, 1, 1)
 	if not local:
 		return
 	var input := Vector2.ZERO
@@ -86,6 +106,16 @@ func _process(delta: float) -> void:
 		moved.emit(position)
 	moving = now_moving
 	_animate(delta)
+
+func set_hp(v: float, vmax: float) -> void:
+	hp = max(0.0, v)
+	hp_max = max(1.0, vmax)
+	var ratio: float = clamp(hp / hp_max, 0.0, 1.0)
+	hp_fill.size.x = 28.0 * ratio
+
+func flash() -> void:
+	_flash_t = 0.1
+	sprite.modulate = Color(1.5, 0.8, 0.8, 1.0)
 
 func _set_facing_from(delta: Vector2) -> void:
 	if abs(delta.x) < 0.01 and abs(delta.y) < 0.01:
