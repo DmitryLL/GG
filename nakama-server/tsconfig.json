@@ -1,6 +1,6 @@
 {
   "files": [
-    "../node_modules/nakama-runtime/index.d.ts",
+    "./nakama-runtime.d.ts",
     "./src/main.ts"
   ],
   "compilerOptions": {
