@@ -1,10 +1,10 @@
 // Nakama runtime entry. Single file — every top-level `function` is hoisted
 // into goja's global scope so Nakama can discover `InitModule` by name.
 
-// ------------------------------------------------------------------ //
+// ================================================================== //
 // World generation — mirrors godot/scripts/world_data.gd so the server
 // can reason about walkability and place authoritative mob spawns.
-// ------------------------------------------------------------------ //
+// ================================================================== //
 
 const TILE_SIZE = 32;
 const MAP_COLS = 60;
@@ -23,15 +23,10 @@ const BLOCKED = [TILE_WATER, TILE_TREE, TILE_STONE];
 
 interface Vec2 { x: number; y: number; }
 interface MobSpawn { x: number; y: number; type: string; }
-interface GenResult {
-    tiles: number[];
-    mobSpawns: MobSpawn[];
-    playerSpawn: Vec2;
-}
+interface GenResult { tiles: number[]; mobSpawns: MobSpawn[]; playerSpawn: Vec2; }
 
 function imul(a: number, b: number): number {
-    a = a | 0;
-    b = b | 0;
+    a = a | 0; b = b | 0;
     const ah = (a >>> 16) & 0xffff;
     const al = a & 0xffff;
     const bh = (b >>> 16) & 0xffff;
@@ -61,11 +56,9 @@ function generateWorld(): GenResult {
         return tiles[r * MAP_COLS + c];
     }
 
-    // Border forest
     for (let c = 0; c < MAP_COLS; c++) { setTile(c, 0, TILE_TREE); setTile(c, MAP_ROWS - 1, TILE_TREE); }
     for (let r = 0; r < MAP_ROWS; r++) { setTile(0, r, TILE_TREE); setTile(MAP_COLS - 1, r, TILE_TREE); }
 
-    // Water ponds
     for (let i = 0; i < 5; i++) {
         const cx = 6 + Math.floor(rnd() * (MAP_COLS - 12));
         const cy = 6 + Math.floor(rnd() * (MAP_ROWS - 12));
@@ -78,8 +71,6 @@ function generateWorld(): GenResult {
             }
         }
     }
-
-    // Stone ruins
     for (let i = 0; i < 4; i++) {
         const cx = 4 + Math.floor(rnd() * (MAP_COLS - 10));
         const cy = 4 + Math.floor(rnd() * (MAP_ROWS - 10));
@@ -93,15 +84,11 @@ function generateWorld(): GenResult {
             }
         }
     }
-
-    // Scattered trees
     for (let i = 0; i < 180; i++) {
         const c = 2 + Math.floor(rnd() * (MAP_COLS - 4));
         const r = 2 + Math.floor(rnd() * (MAP_ROWS - 4));
         if (getTile(c, r) === TILE_GRASS) setTile(c, r, TILE_TREE);
     }
-
-    // Meandering paths
     for (let i = 0; i < 3; i++) {
         let c = 2 + Math.floor(rnd() * (MAP_COLS - 4));
         let r = 2 + Math.floor(rnd() * (MAP_ROWS - 4));
@@ -119,7 +106,6 @@ function generateWorld(): GenResult {
         }
     }
 
-    // Clear spawn area
     const playerSpawn: Vec2 = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
     const scx = Math.floor(playerSpawn.x / TILE_SIZE);
     const scy = Math.floor(playerSpawn.y / TILE_SIZE);
@@ -127,7 +113,6 @@ function generateWorld(): GenResult {
         for (let dc = -2; dc <= 2; dc++)
             setTile(scx + dc, scy + dr, TILE_GRASS);
 
-    // Mob spawns
     const mobSpawns: MobSpawn[] = [];
     let attempts = 0;
     while (mobSpawns.length < 20 && attempts < 800) {
@@ -159,7 +144,6 @@ function isWalkableTile(id: number): boolean {
     for (const b of BLOCKED) if (b === id) return false;
     return true;
 }
-
 function isWalkableAt(tiles: number[], x: number, y: number): boolean {
     const col = Math.floor(x / TILE_SIZE);
     const row = Math.floor(y / TILE_SIZE);
@@ -169,31 +153,91 @@ function isWalkableAt(tiles: number[], x: number, y: number): boolean {
 
 const WORLD = generateWorld();
 
-// ------------------------------------------------------------------ //
-// Match state + config
-// ------------------------------------------------------------------ //
+// ================================================================== //
+// Items, drop tables, mobs, NPCs
+// ================================================================== //
+
+type ItemKind = "material" | "weapon" | "armor" | "consumable";
+interface ItemDef {
+    id: string;
+    kind: ItemKind;
+    damage?: number;   // weapon
+    hp?: number;       // armor
+    heal?: number;     // consumable
+    price?: number;    // NPC sells for
+    sellPrice?: number;// NPC buys for
+}
+const ITEMS: { [id: string]: ItemDef } = {
+    slime_jelly:   { id: "slime_jelly",   kind: "material",   sellPrice: 2 },
+    wood_sword:    { id: "wood_sword",    kind: "weapon",     damage: 4,  sellPrice: 5,  price: 12 },
+    iron_sword:    { id: "iron_sword",    kind: "weapon",     damage: 10, sellPrice: 18, price: 50 },
+    cloth_armor:   { id: "cloth_armor",   kind: "armor",      hp: 20,     sellPrice: 8,  price: 20 },
+    iron_armor:    { id: "iron_armor",    kind: "armor",      hp: 45,     sellPrice: 22, price: 70 },
+    health_potion: { id: "health_potion", kind: "consumable", heal: 40,   sellPrice: 3,  price: 8 },
+};
+const INVENTORY_SLOTS = 6;
+const STACK_MAX = 99;
+
+interface DropEntry { itemId: string; weight: number; }
+const DROP_TABLES: { [mob: string]: DropEntry[] } = {
+    slime:  [{ itemId: "slime_jelly", weight: 80 }, { itemId: "wood_sword",  weight: 4  }, { itemId: "cloth_armor", weight: 3  }],
+    goblin: [{ itemId: "slime_jelly", weight: 30 }, { itemId: "wood_sword",  weight: 15 }, { itemId: "iron_sword",  weight: 8  }, { itemId: "cloth_armor", weight: 10 }, { itemId: "iron_armor",  weight: 5  }],
+};
+const DROP_MISS_WEIGHT: { [mob: string]: number } = { slime: 50, goblin: 20 };
+
+interface MobTypeDef { hpMax: number; touchDamage: number; speed: number; wanderRadius: number; touchRange: number; touchCooldownMs: number; respawnMs: number; xp: number; gold: number; }
+const MOB_TYPES: { [k: string]: MobTypeDef } = {
+    slime:  { hpMax: 30, touchDamage: 5,  speed: 40, wanderRadius: 80, touchRange: 26, touchCooldownMs: 900, respawnMs: 8000, xp: 12, gold: 1 },
+    goblin: { hpMax: 60, touchDamage: 10, speed: 55, wanderRadius: 80, touchRange: 26, touchCooldownMs: 900, respawnMs: 8000, xp: 28, gold: 4 },
+};
+
+interface NpcDef { id: string; name: string; x: number; y: number; stock: string[]; }
+const NPCS: NpcDef[] = [
+    {
+        id: "merchant",
+        name: "Торговец",
+        x: WORLD.playerSpawn.x + 64,
+        y: WORLD.playerSpawn.y,
+        stock: ["health_potion", "wood_sword", "iron_sword", "cloth_armor", "iron_armor"],
+    },
+];
+const NPC_INTERACT_RANGE = 60;
+
+// ================================================================== //
+// Player / match state
+// ================================================================== //
 
 const MATCH_MODULE = "world_match";
 const MATCH_LABEL = "world";
-const TICK_RATE = 10; // 10 Hz
+const TICK_RATE = 10;
 const TICK_DT = 1 / TICK_RATE;
 
-const OP_POSITIONS    = 1; // server → clients — player positions + hp
+const OP_POSITIONS    = 1; // server → clients — positions + hp + xp + gold
 const OP_MOVE_INTENT  = 2; // client → server
-const OP_MOBS         = 3; // server → clients — mob states
-const OP_ATTACK       = 4; // client → server
-const OP_HIT_FLASH    = 5; // server → clients — hit feedback
-const OP_PLAYER_HIT   = 6; // server → clients — a player got hit
+const OP_MOBS         = 3;
+const OP_ATTACK       = 4;
+const OP_HIT_FLASH    = 5;
+const OP_PLAYER_HIT   = 6;
+const OP_DROPS        = 7; // drops state
+const OP_ME           = 8; // full local view (inventory + equipment) direct to recipient
+const OP_EQUIP        = 9; // client → server
+const OP_UNEQUIP      = 10;
+const OP_USE          = 11;
+const OP_BUY          = 12;
+const OP_SELL         = 13;
+const OP_NPCS         = 14; // one-shot on join — static NPC list
 
-const PLAYER_HP_MAX = 100;
+const PLAYER_HP_BASE = 100;
 const PLAYER_ATTACK_DAMAGE = 10;
 const PLAYER_ATTACK_RANGE = 48;
 const PLAYER_ATTACK_COOLDOWN_MS = 450;
+const PER_LEVEL_HP_BONUS = 10;
+const PER_LEVEL_DAMAGE_BONUS = 2;
+const XP_FOR_LEVEL = (L: number): number => 50 * L;
+const PICKUP_RANGE = 40;
+const DROP_LIFETIME_MS = 60000;
 
-const MOB_TYPES: { [k: string]: { hpMax: number; touchDamage: number; speed: number; wanderRadius: number; touchRange: number; touchCooldownMs: number; respawnMs: number } } = {
-    slime:  { hpMax: 30, touchDamage: 5,  speed: 40, wanderRadius: 80, touchRange: 26, touchCooldownMs: 900, respawnMs: 8000 },
-    goblin: { hpMax: 60, touchDamage: 10, speed: 55, wanderRadius: 80, touchRange: 26, touchCooldownMs: 900, respawnMs: 8000 },
-};
+interface InvEntry { itemId: string; qty: number; }
 
 interface MatchPlayer {
     userId: string;
@@ -201,7 +245,15 @@ interface MatchPlayer {
     username: string;
     pos: Vec2;
     hp: number;
-    dirty: boolean;
+    hpMax: number;
+    level: number;
+    xp: number;
+    gold: number;
+    inventory: InvEntry[];
+    eqWeapon: string;
+    eqArmor: string;
+    dirtyPos: boolean;
+    dirtyMe: boolean;
     lastAttackAt: number;
     lastTouchedByMob: { [mobId: string]: number };
 }
@@ -213,40 +265,148 @@ interface MatchMob {
     pos: Vec2;
     hp: number;
     hpMax: number;
-    state: string; // "alive" | "dead"
+    state: string;
     respawnAt: number;
     target: Vec2 | null;
     dirty: boolean;
 }
 
+interface MatchDrop {
+    id: string;
+    itemId: string;
+    qty: number;
+    pos: Vec2;
+    expireAt: number;
+    dirty: boolean; // true until first broadcast; dropped entries only broadcast once
+}
+
 interface WorldState {
     players: { [sessionId: string]: MatchPlayer };
     mobs: { [mobId: string]: MatchMob };
+    drops: { [dropId: string]: MatchDrop };
     tick: number;
+    nextDropId: number;
 }
 
 function now(): number { return Date.now(); }
+function dist(a: Vec2, b: Vec2): number { const dx = a.x - b.x; const dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
+function clamp(v: number, lo: number, hi: number): number { return v < lo ? lo : v > hi ? hi : v; }
+
+function playerBaseHp(level: number): number { return PLAYER_HP_BASE + PER_LEVEL_HP_BONUS * (level - 1); }
+function playerBaseDamage(level: number): number { return PLAYER_ATTACK_DAMAGE + PER_LEVEL_DAMAGE_BONUS * (level - 1); }
+
+function computeHpMax(p: MatchPlayer): number {
+    let total = playerBaseHp(p.level);
+    const armor = ITEMS[p.eqArmor];
+    if (armor && armor.hp) total += armor.hp;
+    return total;
+}
+function computeDamage(p: MatchPlayer): number {
+    let total = playerBaseDamage(p.level);
+    const w = ITEMS[p.eqWeapon];
+    if (w && w.damage) total += w.damage;
+    return total;
+}
+function markMe(p: MatchPlayer): void { p.dirtyMe = true; }
+
+function addToInventory(p: MatchPlayer, itemId: string, qty: number): boolean {
+    const def = ITEMS[itemId];
+    if (!def) return false;
+    const stackable = def.kind === "material" || def.kind === "consumable";
+    if (stackable) {
+        for (const slot of p.inventory) {
+            if (slot.itemId === itemId && slot.qty < STACK_MAX) {
+                const space = STACK_MAX - slot.qty;
+                const take = Math.min(space, qty);
+                slot.qty += take;
+                qty -= take;
+                if (qty <= 0) { markMe(p); return true; }
+            }
+        }
+    }
+    while (qty > 0 && p.inventory.length < INVENTORY_SLOTS) {
+        const take = stackable ? Math.min(STACK_MAX, qty) : 1;
+        p.inventory.push({ itemId: itemId, qty: take });
+        qty -= take;
+    }
+    markMe(p);
+    return qty === 0;
+}
 
 function spawnMob(id: string, spec: MobSpawn): MatchMob {
     const type = MOB_TYPES[spec.type] ? spec.type : "slime";
     const def = MOB_TYPES[type];
     return {
-        id: id,
-        type: type,
+        id: id, type: type,
         home: { x: spec.x, y: spec.y },
         pos: { x: spec.x, y: spec.y },
-        hp: def.hpMax,
-        hpMax: def.hpMax,
-        state: "alive",
-        respawnAt: 0,
-        target: null,
-        dirty: true,
+        hp: def.hpMax, hpMax: def.hpMax,
+        state: "alive", respawnAt: 0, target: null, dirty: true,
     };
 }
 
-// ------------------------------------------------------------------ //
+function rollDrop(mobType: string): string | null {
+    const table = DROP_TABLES[mobType];
+    if (!table) return null;
+    const missWeight = DROP_MISS_WEIGHT[mobType] || 0;
+    let total = missWeight;
+    for (const e of table) total += e.weight;
+    let r = Math.random() * total;
+    for (const e of table) {
+        if (r < e.weight) return e.itemId;
+        r -= e.weight;
+    }
+    return null;
+}
+
+function spawnDrop(state: WorldState, pos: Vec2, itemId: string, qty: number): void {
+    const id = "d" + state.nextDropId++;
+    state.drops[id] = { id: id, itemId: itemId, qty: qty, pos: { x: pos.x, y: pos.y }, expireAt: now() + DROP_LIFETIME_MS, dirty: true };
+}
+
+// ---------- persistence via Nakama storage ----------
+const STORAGE_COLLECTION = "gg";
+const STORAGE_KEY = "progress";
+
+interface StoredProgress {
+    level: number;
+    xp: number;
+    gold: number;
+    inventory: InvEntry[];
+    eqWeapon: string;
+    eqArmor: string;
+}
+
+function loadProgress(nk: nkruntime.Nakama, userId: string): StoredProgress | null {
+    try {
+        const objs = nk.storageRead([{ collection: STORAGE_COLLECTION, key: STORAGE_KEY, userId: userId }]);
+        if (objs.length === 0) return null;
+        return objs[0].value as StoredProgress;
+    } catch (_e) {
+        return null;
+    }
+}
+
+function saveProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
+    try {
+        const payload: StoredProgress = {
+            level: p.level, xp: p.xp, gold: p.gold,
+            inventory: p.inventory, eqWeapon: p.eqWeapon, eqArmor: p.eqArmor,
+        };
+        nk.storageWrite([{
+            collection: STORAGE_COLLECTION,
+            key: STORAGE_KEY,
+            userId: p.userId,
+            value: payload as unknown as { [k: string]: any },
+            permissionRead: 1,
+            permissionWrite: 0,
+        }]);
+    } catch (_e) { /* swallow */ }
+}
+
+// ================================================================== //
 // Match handlers
-// ------------------------------------------------------------------ //
+// ================================================================== //
 
 function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
     const mobs: { [id: string]: MatchMob } = {};
@@ -254,7 +414,7 @@ function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkru
         const mobId = "m" + i;
         mobs[mobId] = spawnMob(mobId, WORLD.mobSpawns[i]);
     }
-    const state: WorldState = { players: {}, mobs: mobs, tick: 0 };
+    const state: WorldState = { players: {}, mobs: mobs, drops: {}, tick: 0, nextDropId: 0 };
     return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL };
 }
 
@@ -262,90 +422,253 @@ function matchJoinAttempt(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _n
     return { state: state, accept: true };
 }
 
-function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
+function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
     for (let i = 0; i < presences.length; i++) {
         const p = presences[i];
-        state.players[p.sessionId] = {
-            userId: p.userId,
-            sessionId: p.sessionId,
-            username: p.username,
+        const saved = loadProgress(nk, p.userId);
+        const player: MatchPlayer = {
+            userId: p.userId, sessionId: p.sessionId, username: p.username,
             pos: { x: WORLD.playerSpawn.x, y: WORLD.playerSpawn.y },
-            hp: PLAYER_HP_MAX,
-            dirty: true,
+            hp: 0, hpMax: 0,
+            level: saved ? saved.level : 1,
+            xp: saved ? saved.xp : 0,
+            gold: saved ? saved.gold : 0,
+            inventory: saved ? saved.inventory : [],
+            eqWeapon: saved ? saved.eqWeapon : "",
+            eqArmor: saved ? saved.eqArmor : "",
+            dirtyPos: true, dirtyMe: true,
             lastAttackAt: 0,
             lastTouchedByMob: {},
         };
-    }
-    // Send full mob snapshot to newcomers.
-    const mobsAll = snapshotMobs(state, true);
-    if (mobsAll.length > 0) {
-        dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: mobsAll, full: true }), presences);
+        player.hpMax = computeHpMax(player);
+        player.hp = player.hpMax;
+        state.players[p.sessionId] = player;
+
+        // Send one-shot snapshots to the newcomer.
+        dispatcher.broadcastMessage(OP_NPCS, JSON.stringify({ npcs: NPCS }), [p]);
+        const mobsAll = snapshotMobsAll(state);
+        dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: mobsAll, full: true }), [p]);
+        const dropsAll = snapshotDropsAll(state);
+        dispatcher.broadcastMessage(OP_DROPS, JSON.stringify({ drops: dropsAll, full: true }), [p]);
     }
     return { state: state };
 }
 
-function matchLeave(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
+function matchLeave(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
     for (let i = 0; i < presences.length; i++) {
+        const p = state.players[presences[i].sessionId];
+        if (p) saveProgress(nk, p);
         delete state.players[presences[i].sessionId];
     }
     return { state: state };
 }
 
-function snapshotMobs(state: WorldState, all: boolean): { id: string; t: string; x: number; y: number; hp: number; hpMax: number; st: string }[] {
+function snapshotMobsAll(state: WorldState) {
     const out: { id: string; t: string; x: number; y: number; hp: number; hpMax: number; st: string }[] = [];
     const keys = Object.keys(state.mobs);
     for (let i = 0; i < keys.length; i++) {
         const m = state.mobs[keys[i]];
-        if (!all && !m.dirty) continue;
         out.push({ id: m.id, t: m.type, x: m.pos.x, y: m.pos.y, hp: m.hp, hpMax: m.hpMax, st: m.state });
         m.dirty = false;
     }
     return out;
 }
 
+function snapshotMobsDirty(state: WorldState) {
+    const out: { id: string; t: string; x: number; y: number; hp: number; hpMax: number; st: string }[] = [];
+    const keys = Object.keys(state.mobs);
+    for (let i = 0; i < keys.length; i++) {
+        const m = state.mobs[keys[i]];
+        if (!m.dirty) continue;
+        out.push({ id: m.id, t: m.type, x: m.pos.x, y: m.pos.y, hp: m.hp, hpMax: m.hpMax, st: m.state });
+        m.dirty = false;
+    }
+    return out;
+}
+
+function snapshotDropsAll(state: WorldState) {
+    const out: { id: string; i: string; q: number; x: number; y: number }[] = [];
+    const keys = Object.keys(state.drops);
+    for (let i = 0; i < keys.length; i++) {
+        const d = state.drops[keys[i]];
+        out.push({ id: d.id, i: d.itemId, q: d.qty, x: d.pos.x, y: d.pos.y });
+        d.dirty = false;
+    }
+    return out;
+}
+
+function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, presences: nkruntime.Presence[]): void {
+    const payload = {
+        hp: p.hp, hpMax: p.hpMax,
+        level: p.level, xp: p.xp, xpNeed: XP_FOR_LEVEL(p.level),
+        gold: p.gold,
+        inv: p.inventory,
+        eqW: p.eqWeapon, eqA: p.eqArmor,
+    };
+    dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
+}
+
+function grantXp(p: MatchPlayer, amount: number): void {
+    p.xp += amount;
+    while (p.xp >= XP_FOR_LEVEL(p.level)) {
+        p.xp -= XP_FOR_LEVEL(p.level);
+        p.level += 1;
+        p.hpMax = computeHpMax(p);
+        p.hp = p.hpMax;
+    }
+    markMe(p);
+}
+
+function presenceOf(state: WorldState, player: MatchPlayer): nkruntime.Presence {
+    // Nakama dispatcher's `presences` filter needs Presence structs, but
+    // within match code we only have session ids on hand. We store the
+    // sender presence from incoming messages when needed; otherwise we
+    // broadcast to all. This helper avoids tripping TS — runtime will
+    // accept a minimal shape.
+    return {
+        userId: player.userId, sessionId: player.sessionId,
+        username: player.username, node: "", sessionHidden: false,
+        persistence: false, status: "",
+    } as unknown as nkruntime.Presence;
+}
+
 function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, dispatcher: nkruntime.MatchDispatcher, tick: number, state: WorldState, messages: nkruntime.MatchMessage[]): { state: WorldState } | null {
     state.tick = tick;
     const t = now();
 
-    // --- client → server messages ---
+    // --- client → server ---
     for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
         const player = state.players[msg.sender.sessionId];
         if (!player) continue;
 
-        if (msg.opCode === OP_MOVE_INTENT) {
-            try {
-                const body = JSON.parse(nk.binaryToString(msg.data)) as { x?: number; y?: number };
-                const x = Number(body.x);
-                const y = Number(body.y);
-                if (!isFinite(x) || !isFinite(y)) continue;
-                if (x < 0 || x > MAP_WIDTH || y < 0 || y > MAP_HEIGHT) continue;
-                if (player.hp <= 0) continue;
-                player.pos.x = x;
-                player.pos.y = y;
-                player.dirty = true;
-            } catch (_e) {}
-        } else if (msg.opCode === OP_ATTACK) {
-            try {
-                if (player.hp <= 0) continue;
-                const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string };
-                const mobId = String(body.mobId || "");
-                const mob = state.mobs[mobId];
-                if (!mob || mob.state !== "alive") continue;
-                if (t - player.lastAttackAt < PLAYER_ATTACK_COOLDOWN_MS) continue;
-                const dx = mob.pos.x - player.pos.x;
-                const dy = mob.pos.y - player.pos.y;
-                if (Math.sqrt(dx * dx + dy * dy) > PLAYER_ATTACK_RANGE) continue;
-                player.lastAttackAt = t;
-                mob.hp -= PLAYER_ATTACK_DAMAGE;
-                mob.dirty = true;
-                dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mobId }));
-                if (mob.hp <= 0) {
-                    mob.hp = 0;
-                    mob.state = "dead";
-                    mob.respawnAt = t + MOB_TYPES[mob.type].respawnMs;
-                }
-            } catch (_e) {}
+        switch (msg.opCode) {
+            case OP_MOVE_INTENT: {
+                try {
+                    if (player.hp <= 0) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { x?: number; y?: number };
+                    const x = Number(body.x); const y = Number(body.y);
+                    if (!isFinite(x) || !isFinite(y)) break;
+                    if (x < 0 || x > MAP_WIDTH || y < 0 || y > MAP_HEIGHT) break;
+                    player.pos.x = x; player.pos.y = y;
+                    player.dirtyPos = true;
+                } catch (_e) {}
+                break;
+            }
+            case OP_ATTACK: {
+                try {
+                    if (player.hp <= 0) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string };
+                    const mobId = String(body.mobId || "");
+                    const mob = state.mobs[mobId];
+                    if (!mob || mob.state !== "alive") break;
+                    if (t - player.lastAttackAt < PLAYER_ATTACK_COOLDOWN_MS) break;
+                    if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE) break;
+                    player.lastAttackAt = t;
+                    mob.hp -= computeDamage(player);
+                    mob.dirty = true;
+                    dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mobId }));
+                    if (mob.hp <= 0) {
+                        mob.hp = 0; mob.state = "dead";
+                        mob.respawnAt = t + MOB_TYPES[mob.type].respawnMs;
+                        const def = MOB_TYPES[mob.type];
+                        grantXp(player, def.xp);
+                        player.gold += def.gold;
+                        const drop = rollDrop(mob.type);
+                        if (drop) spawnDrop(state, mob.pos, drop, 1);
+                    }
+                } catch (_e) {}
+                break;
+            }
+            case OP_EQUIP: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { slot?: number };
+                    const idx = Number(body.slot);
+                    if (!isFinite(idx) || idx < 0 || idx >= player.inventory.length) break;
+                    const entry = player.inventory[idx];
+                    const def = ITEMS[entry.itemId];
+                    if (!def) break;
+                    if (def.kind !== "weapon" && def.kind !== "armor") break;
+                    const slotKey: "eqWeapon" | "eqArmor" = def.kind === "weapon" ? "eqWeapon" : "eqArmor";
+                    const prev = player[slotKey];
+                    player[slotKey] = entry.itemId;
+                    entry.qty -= 1;
+                    if (entry.qty <= 0) player.inventory.splice(idx, 1);
+                    if (prev) addToInventory(player, prev, 1);
+                    player.hpMax = computeHpMax(player);
+                    if (player.hp > player.hpMax) player.hp = player.hpMax;
+                    markMe(player);
+                } catch (_e) {}
+                break;
+            }
+            case OP_UNEQUIP: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { slot?: string };
+                    const slot = String(body.slot || "");
+                    const slotKey: "eqWeapon" | "eqArmor" = slot === "weapon" ? "eqWeapon" : "eqArmor";
+                    const id = player[slotKey];
+                    if (!id) break;
+                    if (!addToInventory(player, id, 1)) break;
+                    player[slotKey] = "";
+                    player.hpMax = computeHpMax(player);
+                    if (player.hp > player.hpMax) player.hp = player.hpMax;
+                    markMe(player);
+                } catch (_e) {}
+                break;
+            }
+            case OP_USE: {
+                try {
+                    if (player.hp <= 0) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { slot?: number };
+                    const idx = Number(body.slot);
+                    if (!isFinite(idx) || idx < 0 || idx >= player.inventory.length) break;
+                    const entry = player.inventory[idx];
+                    const def = ITEMS[entry.itemId];
+                    if (!def || def.kind !== "consumable") break;
+                    if (def.heal) player.hp = Math.min(player.hpMax, player.hp + def.heal);
+                    entry.qty -= 1;
+                    if (entry.qty <= 0) player.inventory.splice(idx, 1);
+                    markMe(player);
+                } catch (_e) {}
+                break;
+            }
+            case OP_BUY: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { npcId?: string; itemId?: string };
+                    const npc = NPCS.find(n => n.id === body.npcId);
+                    if (!npc) break;
+                    if (dist(player.pos, { x: npc.x, y: npc.y }) > NPC_INTERACT_RANGE) break;
+                    const itemId = String(body.itemId || "");
+                    if (npc.stock.indexOf(itemId) < 0) break;
+                    const def = ITEMS[itemId];
+                    if (!def || !def.price) break;
+                    if (player.gold < def.price) break;
+                    if (!addToInventory(player, itemId, 1)) break;
+                    player.gold -= def.price;
+                    markMe(player);
+                } catch (_e) {}
+                break;
+            }
+            case OP_SELL: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { slot?: number };
+                    const idx = Number(body.slot);
+                    if (!isFinite(idx) || idx < 0 || idx >= player.inventory.length) break;
+                    let near = false;
+                    for (const npc of NPCS) {
+                        if (dist(player.pos, { x: npc.x, y: npc.y }) <= NPC_INTERACT_RANGE) { near = true; break; }
+                    }
+                    if (!near) break;
+                    const entry = player.inventory[idx];
+                    const def = ITEMS[entry.itemId];
+                    if (!def || !def.sellPrice) break;
+                    player.gold += def.sellPrice;
+                    entry.qty -= 1;
+                    if (entry.qty <= 0) player.inventory.splice(idx, 1);
+                    markMe(player);
+                } catch (_e) {}
+                break;
+            }
         }
     }
 
@@ -355,16 +678,12 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         const mob = state.mobs[mobKeys[i]];
         if (mob.state === "dead") {
             if (t >= mob.respawnAt) {
-                mob.pos.x = mob.home.x;
-                mob.pos.y = mob.home.y;
-                mob.hp = mob.hpMax;
-                mob.state = "alive";
-                mob.target = null;
-                mob.dirty = true;
+                mob.pos.x = mob.home.x; mob.pos.y = mob.home.y;
+                mob.hp = mob.hpMax; mob.state = "alive";
+                mob.target = null; mob.dirty = true;
             }
             continue;
         }
-
         const def = MOB_TYPES[mob.type];
         if (!mob.target || dist(mob.pos, mob.target) < 4) {
             const angle = Math.random() * Math.PI * 2;
@@ -376,57 +695,91 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         }
         const step = Math.min(dist(mob.pos, mob.target), def.speed * TICK_DT);
         if (step > 0.01) {
-            const dx = mob.target.x - mob.pos.x;
-            const dy = mob.target.y - mob.pos.y;
+            const dx = mob.target.x - mob.pos.x; const dy = mob.target.y - mob.pos.y;
             const d = Math.sqrt(dx * dx + dy * dy) || 1;
             const nx = mob.pos.x + (dx / d) * step;
             const ny = mob.pos.y + (dy / d) * step;
-            if (isWalkableAt(WORLD.tiles, nx, mob.pos.y)) mob.pos.x = nx;
-            else mob.target = null;
-            if (isWalkableAt(WORLD.tiles, mob.pos.x, ny)) mob.pos.y = ny;
-            else mob.target = null;
+            if (isWalkableAt(WORLD.tiles, nx, mob.pos.y)) mob.pos.x = nx; else mob.target = null;
+            if (isWalkableAt(WORLD.tiles, mob.pos.x, ny)) mob.pos.y = ny; else mob.target = null;
             mob.dirty = true;
         }
 
-        // Touch damage
         const playerKeys = Object.keys(state.players);
         for (let j = 0; j < playerKeys.length; j++) {
             const p = state.players[playerKeys[j]];
             if (p.hp <= 0) continue;
-            const ddx = p.pos.x - mob.pos.x;
-            const ddy = p.pos.y - mob.pos.y;
-            const dd = Math.sqrt(ddx * ddx + ddy * ddy);
-            if (dd > def.touchRange) continue;
+            if (dist(p.pos, mob.pos) > def.touchRange) continue;
             const last = p.lastTouchedByMob[mob.id] || 0;
             if (t - last < def.touchCooldownMs) continue;
             p.lastTouchedByMob[mob.id] = t;
             p.hp -= def.touchDamage;
             if (p.hp < 0) p.hp = 0;
-            p.dirty = true;
+            p.dirtyPos = true; markMe(p);
             dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: p.sessionId, by: mob.id }));
             if (p.hp <= 0) {
-                p.pos.x = WORLD.playerSpawn.x;
-                p.pos.y = WORLD.playerSpawn.y;
-                p.hp = PLAYER_HP_MAX;
+                p.pos.x = WORLD.playerSpawn.x; p.pos.y = WORLD.playerSpawn.y;
+                p.hp = p.hpMax;
                 p.lastTouchedByMob = {};
             }
         }
     }
 
-    // --- broadcast dirty players + mobs ---
-    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number }[] = [];
+    // --- drops: expire + auto pickup ---
+    const dropKeys = Object.keys(state.drops);
+    const pickedUp: string[] = [];
+    for (let i = 0; i < dropKeys.length; i++) {
+        const d = state.drops[dropKeys[i]];
+        if (t >= d.expireAt) { pickedUp.push(d.id); continue; }
+        const playerKeys = Object.keys(state.players);
+        for (let j = 0; j < playerKeys.length; j++) {
+            const p = state.players[playerKeys[j]];
+            if (p.hp <= 0) continue;
+            if (dist(p.pos, d.pos) > PICKUP_RANGE) continue;
+            if (addToInventory(p, d.itemId, d.qty)) {
+                pickedUp.push(d.id);
+                break;
+            }
+        }
+    }
+    if (pickedUp.length > 0) {
+        for (const id of pickedUp) delete state.drops[id];
+        dispatcher.broadcastMessage(OP_DROPS, JSON.stringify({ remove: pickedUp }));
+    }
+    // fresh drops (dirty flag)
+    const freshDrops: { id: string; i: string; q: number; x: number; y: number }[] = [];
+    const keys2 = Object.keys(state.drops);
+    for (let i = 0; i < keys2.length; i++) {
+        const d = state.drops[keys2[i]];
+        if (!d.dirty) continue;
+        freshDrops.push({ id: d.id, i: d.itemId, q: d.qty, x: d.pos.x, y: d.pos.y });
+        d.dirty = false;
+    }
+    if (freshDrops.length > 0) {
+        dispatcher.broadcastMessage(OP_DROPS, JSON.stringify({ add: freshDrops }));
+    }
+
+    // --- broadcasts ---
+    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; lv: number }[] = [];
     const pKeys = Object.keys(state.players);
     for (let i = 0; i < pKeys.length; i++) {
         const p = state.players[pKeys[i]];
-        if (!p.dirty) continue;
-        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp });
-        p.dirty = false;
+        if (!p.dirtyPos) continue;
+        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, lv: p.level });
+        p.dirtyPos = false;
     }
     if (pUpdates.length > 0) {
         dispatcher.broadcastMessage(OP_POSITIONS, JSON.stringify({ players: pUpdates }));
     }
 
-    const mUpdates = snapshotMobs(state, false);
+    // direct "me" updates
+    for (let i = 0; i < pKeys.length; i++) {
+        const p = state.players[pKeys[i]];
+        if (!p.dirtyMe) continue;
+        broadcastMeTo(dispatcher, p, [presenceOf(state, p)]);
+        p.dirtyMe = false;
+    }
+
+    const mUpdates = snapshotMobsDirty(state);
     if (mUpdates.length > 0) {
         dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: mUpdates, full: false }));
     }
@@ -434,17 +787,10 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     return { state: state };
 }
 
-function dist(a: Vec2, b: Vec2): number {
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    return Math.sqrt(dx * dx + dy * dy);
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-    return v < lo ? lo : v > hi ? hi : v;
-}
-
-function matchTerminate(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, _graceSeconds: number): { state: WorldState } | null {
+function matchTerminate(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, _graceSeconds: number): { state: WorldState } | null {
+    // Persist all players before shutting down.
+    const keys = Object.keys(state.players);
+    for (let i = 0; i < keys.length; i++) saveProgress(nk, state.players[keys[i]]);
     return { state: state };
 }
 
@@ -452,15 +798,9 @@ function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nk
     return { state: state };
 }
 
-// ------------------------------------------------------------------ //
-// RPC: find or create the world match
-// ------------------------------------------------------------------ //
-
 function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
     const existing = nk.matchList(1, true, MATCH_LABEL);
-    if (existing.length > 0) {
-        return JSON.stringify({ match_id: existing[0].matchId });
-    }
+    if (existing.length > 0) return JSON.stringify({ match_id: existing[0].matchId });
     const matchId = nk.matchCreate(MATCH_MODULE, {});
     return JSON.stringify({ match_id: matchId });
 }
@@ -476,8 +816,7 @@ function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkru
         matchSignal: matchSignal,
     });
     initializer.registerRpc("get_world_match", rpcGetWorldMatch);
-    logger.info("GG runtime loaded. mobs=" + WORLD.mobSpawns.length);
+    logger.info("GG runtime loaded. mobs=" + WORLD.mobSpawns.length + " npcs=" + NPCS.length);
 }
 
-// Satisfy noUnusedLocals.
 !InitModule && InitModule;

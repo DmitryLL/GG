@@ -1,4 +1,4 @@
-# Phase 3b game scene: world + local player + mobs + combat via Nakama match.
+# Phase 3c game scene: world + local player + mobs + drops + NPCs + shop + HUD.
 extends Node2D
 
 signal auth_changed
@@ -6,6 +6,9 @@ signal auth_changed
 const WORLD_SCRIPT := preload("res://scripts/world.gd")
 const PLAYER_SCRIPT := preload("res://scripts/player.gd")
 const MOB_SCRIPT := preload("res://scripts/mob.gd")
+const DROP_SCRIPT := preload("res://scripts/drop.gd")
+const HUD_SCRIPT := preload("res://scripts/hud.gd")
+const SHOP_SCRIPT := preload("res://scripts/shop.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -13,10 +16,19 @@ const OP_MOBS         := 3
 const OP_ATTACK       := 4
 const OP_HIT_FLASH    := 5
 const OP_PLAYER_HIT   := 6
+const OP_DROPS        := 7
+const OP_ME           := 8
+const OP_EQUIP        := 9
+const OP_UNEQUIP      := 10
+const OP_USE          := 11
+const OP_BUY          := 12
+const OP_SELL         := 13
+const OP_NPCS         := 14
 
 const MOVE_SEND_HZ := 10.0
 const PLAYER_ATTACK_RANGE := 48.0
 const CLICK_MOB_RADIUS := 24.0
+const CLICK_NPC_RADIUS := 28.0
 
 @onready var world_root: Node2D = $World
 @onready var entities: Node2D = $Entities
@@ -27,10 +39,16 @@ const CLICK_MOB_RADIUS := 24.0
 var world: World
 var me: Player
 var camera: Camera2D
+var hud: Hud
+var shop: Shop
 var match_id: String = ""
 var my_session_id: String = ""
-var remotes: Dictionary = {}  # session_id -> Player
-var mobs: Dictionary = {}      # mob_id -> Mob
+var remotes: Dictionary = {}    # session_id -> Player
+var mobs: Dictionary = {}       # mob_id -> Mob
+var drops: Dictionary = {}      # drop_id -> DropSprite
+var npcs: Array = []            # [{id, name, x, y, stock}]
+var npc_nodes: Array = []
+var last_me: Dictionary = {}
 var send_accum := 0.0
 var last_sent_pos: Vector2 = Vector2.INF
 
@@ -56,19 +74,38 @@ func _ready() -> void:
 	me.add_child(camera)
 	camera.make_current()
 
+	hud = HUD_SCRIPT.new()
+	add_child(hud)
+	hud.equip_slot_clicked.connect(_on_inv_click)
+	hud.unequip_slot_clicked.connect(_on_unequip)
+
+	shop = SHOP_SCRIPT.new()
+	add_child(shop)
+	shop.buy_requested.connect(_on_buy)
+	shop.sell_requested.connect(_on_sell)
+
 	status_label.text = "Подключаюсь к real-time…"
 	_connect_and_join()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var world_pos := get_viewport().get_camera_2d().get_global_mouse_position()
-		var hit := _mob_at(world_pos)
-		if hit != null and match_id != "":
-			var d := me.position.distance_to(hit.position)
-			if d <= PLAYER_ATTACK_RANGE:
-				Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": hit.mob_id}))
+		# NPC takes priority over mobs/move.
+		var npc := _npc_at(world_pos)
+		if not npc.is_empty():
+			var d_n: float = me.position.distance_to(Vector2(float(npc["x"]), float(npc["y"])))
+			if d_n <= 80.0:
+				shop.open(String(npc["id"]), npc.get("stock", []), last_me)
 				return
-			me.request_move_to(hit.position)
+			me.request_move_to(Vector2(float(npc["x"]), float(npc["y"])))
+			return
+		var mob_hit := _mob_at(world_pos)
+		if mob_hit != null and match_id != "":
+			var d: float = me.position.distance_to(mob_hit.position)
+			if d <= PLAYER_ATTACK_RANGE:
+				Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": mob_hit.mob_id}))
+				return
+			me.request_move_to(mob_hit.position)
 			return
 		me.request_move_to(world_pos)
 
@@ -121,10 +158,8 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 	if typeof(body) != TYPE_DICTIONARY:
 		return
 	match state.op_code:
-		OP_POSITIONS:
-			_apply_positions(body)
-		OP_MOBS:
-			_apply_mobs(body)
+		OP_POSITIONS:  _apply_positions(body)
+		OP_MOBS:       _apply_mobs(body)
 		OP_HIT_FLASH:
 			var mid: String = String(body.get("mobId", ""))
 			var m: Mob = mobs.get(mid)
@@ -133,6 +168,9 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 			var sid: String = String(body.get("sessionId", ""))
 			var p: Player = me if sid == my_session_id else remotes.get(sid)
 			if p: p.flash()
+		OP_DROPS:      _apply_drops(body)
+		OP_ME:         _apply_me(body)
+		OP_NPCS:       _apply_npcs(body)
 
 func _apply_positions(body: Dictionary) -> void:
 	for p in body.get("players", []):
@@ -142,9 +180,11 @@ func _apply_positions(body: Dictionary) -> void:
 		var x: float = float(p.get("x", 0))
 		var y: float = float(p.get("y", 0))
 		var hp: float = float(p.get("hp", 100))
+		var lv: int = int(p.get("lv", 1))
 		if sid == my_session_id:
-			me.set_hp(hp, 100.0)
-			# Server teleported us (respawn) — snap if far from current.
+			# hp_max comes from OP_ME; use last known, fall back to 100.
+			var max_hp: float = float(last_me.get("hpMax", 100))
+			me.set_hp(hp, max_hp)
 			if me.position.distance_to(Vector2(x, y)) > 64.0:
 				me.position = Vector2(x, y)
 				last_sent_pos = me.position
@@ -154,7 +194,7 @@ func _apply_positions(body: Dictionary) -> void:
 		var remote: Player = remotes.get(sid)
 		if remote == null:
 			remote = PLAYER_SCRIPT.new()
-			remote.setup(world, display, PLAYER_SCRIPT.variant_from(uid))
+			remote.setup(world, "%s (Ур.%d)" % [display, lv], PLAYER_SCRIPT.variant_from(uid))
 			remote.local = false
 			remote.position = Vector2(x, y)
 			entities.add_child(remote)
@@ -178,6 +218,61 @@ func _apply_mobs(body: Dictionary) -> void:
 		ms.set_hp(float(m.get("hp", 0)), float(m.get("hpMax", 30)))
 		ms.set_alive(String(m.get("st", "alive")) == "alive")
 
+func _apply_drops(body: Dictionary) -> void:
+	if body.has("full") and bool(body.get("full")):
+		for dv in drops.values():
+			(dv as DropSprite).queue_free()
+		drops.clear()
+	if body.has("remove"):
+		for id in body.get("remove", []):
+			var d: DropSprite = drops.get(id)
+			if d:
+				d.queue_free()
+				drops.erase(id)
+	for d_entry in body.get("add", body.get("drops", [])):
+		var id: String = String(d_entry.get("id", ""))
+		if id == "":
+			continue
+		if drops.has(id):
+			continue
+		var ds: DropSprite = DROP_SCRIPT.new()
+		ds.setup(id, String(d_entry.get("i", "slime_jelly")))
+		ds.position = Vector2(float(d_entry.get("x", 0)), float(d_entry.get("y", 0)))
+		entities.add_child(ds)
+		drops[id] = ds
+
+func _apply_me(body: Dictionary) -> void:
+	last_me = body
+	hud.update_me(body)
+	shop.refresh(body)
+	me.set_hp(float(body.get("hp", 0)), float(body.get("hpMax", 100)))
+
+func _apply_npcs(body: Dictionary) -> void:
+	for n in body.get("npcs", []):
+		var entry: Dictionary = n
+		var id: String = String(entry.get("id", ""))
+		if id == "":
+			continue
+		npcs.append(entry)
+		var npc_root := Node2D.new()
+		npc_root.position = Vector2(float(entry.get("x", 0)), float(entry.get("y", 0)))
+		var sprite := Sprite2D.new()
+		sprite.texture = load("res://assets/sprites/npc.png")
+		sprite.scale = Vector2(1.2, 1.2)
+		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		npc_root.add_child(sprite)
+		var label := Label.new()
+		label.text = String(entry.get("name", "?"))
+		label.add_theme_color_override("font_color", Color(0.99, 0.89, 0.51, 1))
+		label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+		label.add_theme_constant_override("outline_size", 3)
+		label.size = Vector2(120, 16)
+		label.position = Vector2(-60, -32)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		npc_root.add_child(label)
+		entities.add_child(npc_root)
+		npc_nodes.append(npc_root)
+
 func _on_presence(ev: NakamaRTAPI.MatchPresenceEvent) -> void:
 	for p in ev.leaves:
 		var sid: String = p.session_id
@@ -200,6 +295,43 @@ func _mob_at(world_pos: Vector2) -> Mob:
 			best = mob
 			best_d = d
 	return best
+
+func _npc_at(world_pos: Vector2) -> Dictionary:
+	for n in npcs:
+		var entry: Dictionary = n
+		var p := Vector2(float(entry.get("x", 0)), float(entry.get("y", 0)))
+		if p.distance_to(world_pos) < CLICK_NPC_RADIUS:
+			return entry
+	return {}
+
+func _on_inv_click(idx: int) -> void:
+	if match_id == "":
+		return
+	var inv: Array = last_me.get("inv", [])
+	if idx < 0 or idx >= inv.size():
+		return
+	var item_id := String(inv[idx].get("itemId", ""))
+	var def: Dictionary = Items.def(item_id)
+	var kind := String(def.get("kind", ""))
+	if kind == "consumable":
+		Session.socket.send_match_state_async(match_id, OP_USE, JSON.stringify({"slot": idx}))
+	elif kind == "weapon" or kind == "armor":
+		Session.socket.send_match_state_async(match_id, OP_EQUIP, JSON.stringify({"slot": idx}))
+
+func _on_unequip(slot: String) -> void:
+	if match_id == "":
+		return
+	Session.socket.send_match_state_async(match_id, OP_UNEQUIP, JSON.stringify({"slot": slot}))
+
+func _on_buy(npc_id: String, item_id: String) -> void:
+	if match_id == "":
+		return
+	Session.socket.send_match_state_async(match_id, OP_BUY, JSON.stringify({"npcId": npc_id, "itemId": item_id}))
+
+func _on_sell(slot_idx: int) -> void:
+	if match_id == "":
+		return
+	Session.socket.send_match_state_async(match_id, OP_SELL, JSON.stringify({"slot": slot_idx}))
 
 func _short_id(uid: String) -> String:
 	return uid.substr(0, 8)
