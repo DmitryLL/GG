@@ -1,3 +1,0 @@
-- generic [active] [ref=e13]:
-  - generic [ref=e9]: Клик — идти. WASD — движение. Зелёный — ты, красные — другие.
-  - button "Выйти" [ref=e14] [cursor=pointer]

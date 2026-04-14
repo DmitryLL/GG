@@ -28,3 +28,6 @@ coverage/
 
 .turbo/
 .cache/
+
+.playwright/
+.playwright-cli/
