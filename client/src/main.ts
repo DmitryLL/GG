@@ -3,8 +3,13 @@ import { Client, Room, getStateCallbacks } from "colyseus.js";
 import {
   MAP_WIDTH,
   MAP_HEIGHT,
+  MAP_COLS,
+  MAP_ROWS,
+  MAP_TILES,
+  TILE_SIZE,
   PLAYER_SPEED,
   ROOM_NAME,
+  isWalkableAt,
   type MoveMessage,
   type JoinOptions,
 } from "@gg/shared";
@@ -78,6 +83,20 @@ class GameScene extends Phaser.Scene {
         frameHeight: 32,
       });
     }
+    this.load.spritesheet("tiles", `${BASE}sprites/tiles.png`, {
+      frameWidth: TILE_SIZE,
+      frameHeight: TILE_SIZE,
+    });
+  }
+
+  private renderMap() {
+    for (let r = 0; r < MAP_ROWS; r++) {
+      for (let c = 0; c < MAP_COLS; c++) {
+        const id = MAP_TILES[r * MAP_COLS + c]!;
+        const img = this.add.image(c * TILE_SIZE, r * TILE_SIZE, "tiles", id);
+        img.setOrigin(0, 0);
+      }
+    }
   }
 
   private ensureAnimations(variant: number) {
@@ -129,8 +148,8 @@ class GameScene extends Phaser.Scene {
   }
 
   async create() {
-    this.cameras.main.setBackgroundColor("#1e2a1e");
-    this.add.grid(MAP_WIDTH / 2, MAP_HEIGHT / 2, MAP_WIDTH, MAP_HEIGHT, 40, 40, 0x223222, 1, 0x2e4a2e, 1);
+    this.cameras.main.setBackgroundColor("#000");
+    this.renderMap();
 
     this.keys = this.input.keyboard!.addKeys("W,A,S,D") as typeof this.keys;
     this.marker = this.add.circle(0, 0, 6, 0xffff00, 0.7).setVisible(false);
@@ -228,8 +247,10 @@ class GameScene extends Phaser.Scene {
     }
 
     if (moving || this.myMoving !== moving) {
-      this.posX = Phaser.Math.Clamp(this.posX + stepX, 0, MAP_WIDTH);
-      this.posY = Phaser.Math.Clamp(this.posY + stepY, 0, MAP_HEIGHT);
+      const nx = Phaser.Math.Clamp(this.posX + stepX, 0, MAP_WIDTH - 1);
+      const ny = Phaser.Math.Clamp(this.posY + stepY, 0, MAP_HEIGHT - 1);
+      if (isWalkableAt(nx, this.posY)) this.posX = nx;
+      if (isWalkableAt(this.posX, ny)) this.posY = ny;
       this.me.container.x = this.posX;
       this.me.container.y = this.posY;
       this.me.lastX = this.posX;
@@ -255,8 +276,8 @@ function startGame(token: string) {
   mountLogoutButton(() => location.reload());
   new Phaser.Game({
     type: Phaser.AUTO,
-    width: 800,
-    height: 600,
+    width: MAP_WIDTH,
+    height: MAP_HEIGHT,
     parent: "game",
     scene: GameScene,
     backgroundColor: "#000",

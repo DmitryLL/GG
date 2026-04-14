@@ -4,6 +4,7 @@ import {
   MAP_WIDTH,
   MAP_HEIGHT,
   MAX_STEP_PER_TICK,
+  isWalkableAt,
   type MoveMessage,
   type JoinOptions,
 } from "@gg/shared";
@@ -33,8 +34,11 @@ export class GameRoom extends Room<State> {
       if (!player) return;
       const dx = Math.max(-MAX_STEP_PER_TICK, Math.min(MAX_STEP_PER_TICK, msg.x - player.x));
       const dy = Math.max(-MAX_STEP_PER_TICK, Math.min(MAX_STEP_PER_TICK, msg.y - player.y));
-      player.x = Math.max(0, Math.min(MAP_WIDTH, player.x + dx));
-      player.y = Math.max(0, Math.min(MAP_HEIGHT, player.y + dy));
+      const nx = Math.max(0, Math.min(MAP_WIDTH - 1, player.x + dx));
+      const ny = Math.max(0, Math.min(MAP_HEIGHT - 1, player.y + dy));
+      // Axis-separated collision: move along each axis only if destination tile is walkable.
+      if (isWalkableAt(nx, player.y)) player.x = nx;
+      if (isWalkableAt(player.x, ny)) player.y = ny;
     });
   }
 
@@ -54,6 +58,10 @@ export class GameRoom extends Room<State> {
     const player = new Player();
     player.x = character.x;
     player.y = character.y;
+    if (!isWalkableAt(player.x, player.y)) {
+      player.x = 400;
+      player.y = 304;
+    }
     player.name = character.name;
     this.state.players.set(client.sessionId, player);
     client.userData = auth;

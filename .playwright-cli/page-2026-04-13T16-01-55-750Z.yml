@@ -1,0 +1,8 @@
+- generic [active]:
+  - generic [ref=e2]:
+    - heading "Вход" [level=1] [ref=e3]
+    - textbox "email" [ref=e4]
+    - textbox "пароль (6+ символов)" [ref=e5]
+    - button "Войти" [ref=e6] [cursor=pointer]
+    - button "Нет аккаунта? Регистрация" [ref=e7] [cursor=pointer]
+  - generic [ref=e9]: Клик — идти. WASD — движение. Зелёный — ты, красные — другие.
