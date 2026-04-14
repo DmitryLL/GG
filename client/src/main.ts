@@ -555,12 +555,16 @@ function startGame(token: string) {
   mountLogoutButton(() => location.reload());
   new Phaser.Game({
     type: Phaser.AUTO,
-    width: VIEW_WIDTH,
-    height: VIEW_HEIGHT,
     parent: "game",
     scene: GameScene,
     backgroundColor: "#000",
     pixelArt: true,
+    scale: {
+      mode: Phaser.Scale.FIT,
+      autoCenter: Phaser.Scale.CENTER_BOTH,
+      width: VIEW_WIDTH,
+      height: VIEW_HEIGHT,
+    },
   });
 }
 
