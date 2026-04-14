@@ -126,6 +126,8 @@ const OP_NPCS         = 14; // one-shot on join — static NPC list
 const OP_ARROW        = 15; // server → clients, visualise a bow shot
 const OP_CHAT_SEND    = 16; // client → server, chat line
 const OP_CHAT_RELAY   = 17; // server → clients, broadcast chat line
+const OP_LOOT_TAKE    = 18; // client → server { mobId, index } — забрать конкретный предмет с трупа
+const OP_LOOT_TAKE_ALL = 19; // client → server { mobId } — забрать всё что влезет
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -183,24 +185,14 @@ interface MatchMob {
     state: string;
     respawnAt: number;
     target: Vec2 | null;
+    loot: InvEntry[];
     dirty: boolean;
-}
-
-interface MatchDrop {
-    id: string;
-    itemId: string;
-    qty: number;
-    pos: Vec2;
-    expireAt: number;
-    dirty: boolean; // true until first broadcast; dropped entries only broadcast once
 }
 
 interface WorldState {
     players: { [sessionId: string]: MatchPlayer };
     mobs: { [mobId: string]: MatchMob };
-    drops: { [dropId: string]: MatchDrop };
     tick: number;
-    nextDropId: number;
 }
 
 function now(): number { return Date.now(); }
@@ -264,7 +256,7 @@ function spawnMob(id: string, spec: MobSpawn): MatchMob {
         home: { x: spec.x, y: spec.y },
         pos: { x: spec.x, y: spec.y },
         hp: def.hpMax, hpMax: def.hpMax,
-        state: "alive", respawnAt: 0, target: null, dirty: true,
+        state: "alive", respawnAt: 0, target: null, loot: [], dirty: true,
     };
 }
 
@@ -280,11 +272,6 @@ function rollDrop(mobType: string): string | null {
         r -= e.weight;
     }
     return null;
-}
-
-function spawnDrop(state: WorldState, pos: Vec2, itemId: string, qty: number): void {
-    const id = "d" + state.nextDropId++;
-    state.drops[id] = { id: id, itemId: itemId, qty: qty, pos: { x: pos.x, y: pos.y }, expireAt: now() + DROP_LIFETIME_MS, dirty: true };
 }
 
 // ---------- persistence via Nakama storage ----------
@@ -339,7 +326,7 @@ function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkru
         const mobId = "m" + i;
         mobs[mobId] = spawnMob(mobId, WORLD.mobSpawns[i]);
     }
-    const state: WorldState = { players: {}, mobs: mobs, drops: {}, tick: 0, nextDropId: 0 };
+    const state: WorldState = { players: {}, mobs: mobs, tick: 0 };
     return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL };
 }
 
@@ -389,8 +376,6 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         dispatcher.broadcastMessage(OP_NPCS, JSON.stringify({ npcs: NPCS, prices: prices }), [p]);
         const mobsAll = snapshotMobsAll(state);
         dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: mobsAll, full: true }), [p]);
-        const dropsAll = snapshotDropsAll(state);
-        dispatcher.broadcastMessage(OP_DROPS, JSON.stringify({ drops: dropsAll, full: true }), [p]);
     }
     return { state: state };
 }
@@ -404,36 +389,35 @@ function matchLeave(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkru
     return { state: state };
 }
 
+function mobSnap(m: MatchMob) {
+    return {
+        id: m.id, t: m.type,
+        x: m.pos.x, y: m.pos.y,
+        hp: m.hp, hpMax: m.hpMax,
+        st: m.state,
+        loot: m.loot,
+    };
+}
+
 function snapshotMobsAll(state: WorldState) {
-    const out: { id: string; t: string; x: number; y: number; hp: number; hpMax: number; st: string }[] = [];
+    const out: ReturnType<typeof mobSnap>[] = [];
     const keys = Object.keys(state.mobs);
     for (let i = 0; i < keys.length; i++) {
         const m = state.mobs[keys[i]];
-        out.push({ id: m.id, t: m.type, x: m.pos.x, y: m.pos.y, hp: m.hp, hpMax: m.hpMax, st: m.state });
+        out.push(mobSnap(m));
         m.dirty = false;
     }
     return out;
 }
 
 function snapshotMobsDirty(state: WorldState) {
-    const out: { id: string; t: string; x: number; y: number; hp: number; hpMax: number; st: string }[] = [];
+    const out: ReturnType<typeof mobSnap>[] = [];
     const keys = Object.keys(state.mobs);
     for (let i = 0; i < keys.length; i++) {
         const m = state.mobs[keys[i]];
         if (!m.dirty) continue;
-        out.push({ id: m.id, t: m.type, x: m.pos.x, y: m.pos.y, hp: m.hp, hpMax: m.hpMax, st: m.state });
+        out.push(mobSnap(m));
         m.dirty = false;
-    }
-    return out;
-}
-
-function snapshotDropsAll(state: WorldState) {
-    const out: { id: string; i: string; q: number; x: number; y: number }[] = [];
-    const keys = Object.keys(state.drops);
-    for (let i = 0; i < keys.length; i++) {
-        const d = state.drops[keys[i]];
-        out.push({ id: d.id, i: d.itemId, q: d.qty, x: d.pos.x, y: d.pos.y });
-        d.dirty = false;
     }
     return out;
 }
@@ -508,8 +492,23 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         const def = MOB_TYPES[mob.type];
                         grantXp(player, def.xp);
                         player.gold += def.gold;
-                        const drop = rollDrop(mob.type);
-                        if (drop) spawnDrop(state, mob.pos, drop, 1);
+                        // 1-3 ролла лута оседают на трупе. Игроки сами разбирают.
+                        mob.loot = [];
+                        const rollCount = 1 + Math.floor(Math.random() * 3);
+                        for (let n = 0; n < rollCount; n++) {
+                            const drop = rollDrop(mob.type);
+                            if (!drop) continue;
+                            // Стэкаем материалы/расходники прямо в loot.
+                            const di = ITEMS[drop];
+                            const stackable = di && (di.kind === "material" || di.kind === "consumable");
+                            let merged = false;
+                            if (stackable) {
+                                for (const e of mob.loot) {
+                                    if (e.itemId === drop) { e.qty += 1; merged = true; break; }
+                                }
+                            }
+                            if (!merged) mob.loot.push({ itemId: drop, qty: 1 });
+                        }
                     }
                 } catch (_e) {}
                 break;
@@ -581,6 +580,37 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 } catch (_e) {}
                 break;
             }
+            case OP_LOOT_TAKE: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string; index?: number };
+                    const mob = state.mobs[String(body.mobId || "")];
+                    if (!mob || mob.state !== "dead") break;
+                    if (dist(player.pos, mob.pos) > PICKUP_RANGE) break;
+                    const idx = Number(body.index);
+                    if (!isFinite(idx) || idx < 0 || idx >= mob.loot.length) break;
+                    const entry = mob.loot[idx];
+                    if (!addToInventory(player, entry.itemId, entry.qty)) break;
+                    mob.loot.splice(idx, 1);
+                    mob.dirty = true;
+                } catch (_e) {}
+                break;
+            }
+            case OP_LOOT_TAKE_ALL: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string };
+                    const mob = state.mobs[String(body.mobId || "")];
+                    if (!mob || mob.state !== "dead") break;
+                    if (dist(player.pos, mob.pos) > PICKUP_RANGE) break;
+                    for (let li = mob.loot.length - 1; li >= 0; li--) {
+                        const entry = mob.loot[li];
+                        if (addToInventory(player, entry.itemId, entry.qty)) {
+                            mob.loot.splice(li, 1);
+                            mob.dirty = true;
+                        }
+                    }
+                } catch (_e) {}
+                break;
+            }
             case OP_CHAT_SEND: {
                 try {
                     const body = JSON.parse(nk.binaryToString(msg.data)) as { text?: string };
@@ -627,7 +657,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             if (t >= mob.respawnAt) {
                 mob.pos.x = mob.home.x; mob.pos.y = mob.home.y;
                 mob.hp = mob.hpMax; mob.state = "alive";
-                mob.target = null; mob.dirty = true;
+                mob.target = null; mob.loot = []; mob.dirty = true;
             }
             continue;
         }
@@ -669,40 +699,6 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 p.lastTouchedByMob = {};
             }
         }
-    }
-
-    // --- drops: expire + auto pickup ---
-    const dropKeys = Object.keys(state.drops);
-    const pickedUp: string[] = [];
-    for (let i = 0; i < dropKeys.length; i++) {
-        const d = state.drops[dropKeys[i]];
-        if (t >= d.expireAt) { pickedUp.push(d.id); continue; }
-        const playerKeys = Object.keys(state.players);
-        for (let j = 0; j < playerKeys.length; j++) {
-            const p = state.players[playerKeys[j]];
-            if (p.hp <= 0) continue;
-            if (dist(p.pos, d.pos) > PICKUP_RANGE) continue;
-            if (addToInventory(p, d.itemId, d.qty)) {
-                pickedUp.push(d.id);
-                break;
-            }
-        }
-    }
-    if (pickedUp.length > 0) {
-        for (const id of pickedUp) delete state.drops[id];
-        dispatcher.broadcastMessage(OP_DROPS, JSON.stringify({ remove: pickedUp }));
-    }
-    // fresh drops (dirty flag)
-    const freshDrops: { id: string; i: string; q: number; x: number; y: number }[] = [];
-    const keys2 = Object.keys(state.drops);
-    for (let i = 0; i < keys2.length; i++) {
-        const d = state.drops[keys2[i]];
-        if (!d.dirty) continue;
-        freshDrops.push({ id: d.id, i: d.itemId, q: d.qty, x: d.pos.x, y: d.pos.y });
-        d.dirty = false;
-    }
-    if (freshDrops.length > 0) {
-        dispatcher.broadcastMessage(OP_DROPS, JSON.stringify({ add: freshDrops }));
     }
 
     // --- broadcasts ---

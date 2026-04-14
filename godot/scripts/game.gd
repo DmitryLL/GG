@@ -1,4 +1,4 @@
-# Phase 3c game scene: world + local player + mobs + drops + NPCs + shop + HUD.
+# Phase 3c+ game scene: world + local player + mobs + loot-on-corpse + NPCs + shop + HUD.
 extends Node2D
 
 signal auth_changed
@@ -6,7 +6,6 @@ signal auth_changed
 const WORLD_SCRIPT := preload("res://scripts/world.gd")
 const PLAYER_SCRIPT := preload("res://scripts/player.gd")
 const MOB_SCRIPT := preload("res://scripts/mob.gd")
-const DROP_SCRIPT := preload("res://scripts/drop.gd")
 const HUD_SCRIPT := preload("res://scripts/hud.gd")
 const SHOP_SCRIPT := preload("res://scripts/shop.gd")
 const CHAT_SCRIPT := preload("res://scripts/chat.gd")
@@ -14,6 +13,7 @@ const MINIMAP_SCRIPT := preload("res://scripts/minimap.gd")
 const NAMEPLATE_SCRIPT := preload("res://scripts/nameplate.gd")
 const CHARACTER_SCRIPT := preload("res://scripts/character_window.gd")
 const BAG_SCRIPT := preload("res://scripts/bag_window.gd")
+const LOOT_SCRIPT := preload("res://scripts/loot_window.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -21,7 +21,6 @@ const OP_MOBS         := 3
 const OP_ATTACK       := 4
 const OP_HIT_FLASH    := 5
 const OP_PLAYER_HIT   := 6
-const OP_DROPS        := 7
 const OP_ME           := 8
 const OP_EQUIP        := 9
 const OP_UNEQUIP      := 10
@@ -38,6 +37,8 @@ const CLICK_NPC_RADIUS := 28.0
 const OP_ARROW := 15
 const OP_CHAT_SEND := 16
 const OP_CHAT_RELAY := 17
+const OP_LOOT_TAKE := 18
+const OP_LOOT_TAKE_ALL := 19
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -55,11 +56,11 @@ var minimap: Minimap
 var nameplate: Nameplate
 var character_win: CharacterWindow
 var bag_win: BagWindow
+var loot_win: LootWindow
 var match_id: String = ""
 var my_session_id: String = ""
 var remotes: Dictionary = {}    # session_id -> Player
 var mobs: Dictionary = {}       # mob_id -> Mob
-var drops: Dictionary = {}      # drop_id -> DropSprite
 var npcs: Array = []            # [{id, name, x, y, stock}]
 var npc_nodes: Array = []
 var last_me: Dictionary = {}
@@ -129,6 +130,13 @@ func _ready() -> void:
 	bag_win.use_or_equip.connect(_on_inv_click)
 	hud.bag_button_pressed.connect(_on_bag_button)
 
+	loot_win = LOOT_SCRIPT.new()
+	add_child(loot_win)
+	loot_win.take_requested.connect(func(mob_id, idx):
+		Session.socket.send_match_state_async(match_id, OP_LOOT_TAKE, JSON.stringify({"mobId": mob_id, "index": idx})))
+	loot_win.take_all_requested.connect(func(mob_id):
+		Session.socket.send_match_state_async(match_id, OP_LOOT_TAKE_ALL, JSON.stringify({"mobId": mob_id})))
+
 	status_label.text = "Подключаюсь к real-time…"
 	_connect_and_join()
 
@@ -147,8 +155,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		var mob_hit := _mob_at(world_pos)
 		if mob_hit != null:
-			# Lock onto the mob — pursue + auto-attack.
-			attack_target = mob_hit
+			if mob_hit.alive:
+				attack_target = mob_hit
+				return
+			# Труп — открыть лут если близко, иначе подойти.
+			attack_target = null
+			var d_corpse: float = me.position.distance_to(mob_hit.position)
+			if d_corpse <= 60.0:
+				loot_win.open(mob_hit.mob_id, mob_hit.kind, mob_hit.loot)
+			else:
+				me.request_move_to(mob_hit.position)
 			return
 		# Bare-ground click → just move, drop any current target.
 		attack_target = null
@@ -230,7 +246,6 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 			var sid: String = String(body.get("sessionId", ""))
 			var p: Player = me if sid == my_session_id else remotes.get(sid)
 			if p: p.flash()
-		OP_DROPS:      _apply_drops(body)
 		OP_ME:         _apply_me(body)
 		OP_NPCS:       _apply_npcs(body)
 		OP_ARROW:      _spawn_arrow(body)
@@ -281,29 +296,10 @@ func _apply_mobs(body: Dictionary) -> void:
 		ms.position = Vector2(float(m.get("x", 0)), float(m.get("y", 0)))
 		ms.set_hp(float(m.get("hp", 0)), float(m.get("hpMax", 30)))
 		ms.set_alive(String(m.get("st", "alive")) == "alive")
-
-func _apply_drops(body: Dictionary) -> void:
-	if body.has("full") and bool(body.get("full")):
-		for dv in drops.values():
-			(dv as DropSprite).queue_free()
-		drops.clear()
-	if body.has("remove"):
-		for id in body.get("remove", []):
-			var d: DropSprite = drops.get(id)
-			if d:
-				d.queue_free()
-				drops.erase(id)
-	for d_entry in body.get("add", body.get("drops", [])):
-		var id: String = String(d_entry.get("id", ""))
-		if id == "":
-			continue
-		if drops.has(id):
-			continue
-		var ds: DropSprite = DROP_SCRIPT.new()
-		ds.setup(id, String(d_entry.get("i", "slime_jelly")))
-		ds.position = Vector2(float(d_entry.get("x", 0)), float(d_entry.get("y", 0)))
-		entities.add_child(ds)
-		drops[id] = ds
+		ms.set_loot(m.get("loot", []))
+		# Если открыто окно лута именно этого моба — обновим список.
+		if loot_win and loot_win.is_open():
+			loot_win.update_loot(mid, ms.loot)
 
 func _apply_me(body: Dictionary) -> void:
 	last_me = body
@@ -368,8 +364,7 @@ func _mob_at(world_pos: Vector2) -> Mob:
 	var best_d: float = 9999.0
 	for mob_v in mobs.values():
 		var mob: Mob = mob_v
-		if not mob.alive:
-			continue
+		# Включаем и трупы — по ним кликают, чтобы открыть лут.
 		var d: float = mob.position.distance_to(world_pos)
 		if d < CLICK_MOB_RADIUS and d < best_d:
 			best = mob

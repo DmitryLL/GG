@@ -15,7 +15,8 @@
     "seed": 1337
   },
   "drops": {
-    "pickupRange": 40,
+    "_comment": "pickupRange — на каком расстоянии можно открыть/собрать труп",
+    "pickupRange": 60,
     "lifetimeMs": 60000
   },
   "inventory": {

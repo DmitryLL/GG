@@ -10,6 +10,7 @@ var kind: String = "slime"
 var hp: float = 0.0
 var hp_max: float = 1.0
 var alive: bool = true
+var loot: Array = []  # [{itemId, qty}] — содержимое трупа
 
 var sprite: Sprite2D
 var hp_bg: ColorRect
@@ -50,7 +51,19 @@ func _ready() -> void:
 
 func set_alive(v: bool) -> void:
 	alive = v
-	visible = v
+	visible = true
+	hp_bg.visible = v
+	hp_fill.visible = v
+	if v:
+		sprite.rotation = 0
+		sprite.modulate = Color(1, 1, 1, 1)
+	else:
+		# Труп — повернут на бок, серый
+		sprite.rotation = deg_to_rad(90)
+		sprite.modulate = Color(0.55, 0.55, 0.55, 1.0)
+
+func set_loot(items: Array) -> void:
+	loot = items
 
 func set_hp(v: float, vmax: float) -> void:
 	hp = max(0.0, v)
