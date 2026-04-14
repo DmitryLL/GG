@@ -105,6 +105,28 @@ def draw_cloth_armor(img, ox, oy):
     rect(img, ox, oy, 4, 12, 8, 1, cloth_dk)
 
 
+def draw_potion(img, ox, oy):
+    glass = (230, 240, 250, 255)
+    liquid = (220, 60, 60, 255)
+    liquid_hl = (255, 140, 120, 255)
+    cork = (150, 100, 50, 255)
+    # body
+    rect(img, ox, oy, 5, 6, 6, 8, glass)
+    # liquid
+    rect(img, ox, oy, 6, 8, 4, 5, liquid)
+    put(img, ox, oy, 6, 8, liquid_hl)
+    # neck
+    rect(img, ox, oy, 7, 3, 2, 3, glass)
+    # cork
+    rect(img, ox, oy, 6, 2, 4, 2, cork)
+    # outline
+    for y in range(6, 14):
+        put(img, ox, oy, 4, y, (40, 40, 50, 255))
+        put(img, ox, oy, 11, y, (40, 40, 50, 255))
+    for x in range(5, 11):
+        put(img, ox, oy, x, 14, (40, 40, 50, 255))
+
+
 def draw_iron_armor(img, ox, oy):
     plate = (160, 170, 190, 255)
     plate_dk = (90, 100, 120, 255)
@@ -126,7 +148,7 @@ def draw_iron_armor(img, ox, oy):
     rect(img, ox, oy, 4, 12, 8, 1, plate_dk)
 
 
-DRAWERS = [draw_slime_jelly, draw_wood_sword, draw_iron_sword, draw_cloth_armor, draw_iron_armor]
+DRAWERS = [draw_slime_jelly, draw_wood_sword, draw_iron_sword, draw_cloth_armor, draw_iron_armor, draw_potion]
 
 
 def make_sheet():

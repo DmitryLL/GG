@@ -22,6 +22,8 @@ import {
   DROP_LIFETIME_MS,
   DROP_TABLES,
   ITEMS,
+  NPCS,
+  NPC_INTERACT_RANGE,
   PER_LEVEL_HP_BONUS,
   PER_LEVEL_DAMAGE_BONUS,
   xpForLevel,
@@ -33,6 +35,9 @@ import {
   type AttackMessage,
   type EquipMessage,
   type UnequipMessage,
+  type UseItemMessage,
+  type BuyMessage,
+  type SellMessage,
   type JoinOptions,
   type ItemId,
   type InventorySlot,
@@ -211,6 +216,53 @@ export class GameRoom extends Room<State> {
       if (!this.addToInventory(player, id as ItemId, 1)) return;
       player[slotKey] = "";
       this.recomputeHpMax(player);
+    });
+
+    this.onMessage<UseItemMessage>("useItem", (client, msg) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player || player.hp <= 0) return;
+      const idx = msg.slot | 0;
+      if (idx < 0 || idx >= player.inventory.length) return;
+      const entry = player.inventory[idx]!;
+      const def = (ITEMS as Record<string, any>)[entry.itemId];
+      if (!def || def.kind !== "consumable") return;
+      if (def.heal) {
+        player.hp = Math.min(player.hpMax, player.hp + def.heal);
+      }
+      entry.qty -= 1;
+      if (entry.qty <= 0) player.inventory.splice(idx, 1);
+    });
+
+    this.onMessage<BuyMessage>("buy", (client, msg) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const npc = NPCS.find((n) => n.id === msg.npcId);
+      if (!npc) return;
+      if (Math.hypot(player.x - npc.x, player.y - npc.y) > NPC_INTERACT_RANGE) return;
+      if (!npc.stock.includes(msg.itemId)) return;
+      const def = (ITEMS as Record<string, any>)[msg.itemId];
+      const price = def?.price;
+      if (!price) return;
+      if (player.gold < price) return;
+      if (!this.addToInventory(player, msg.itemId, 1)) return;
+      player.gold -= price;
+    });
+
+    this.onMessage<SellMessage>("sell", (client, msg) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const idx = msg.slot | 0;
+      if (idx < 0 || idx >= player.inventory.length) return;
+      // Proximity to any merchant
+      const near = NPCS.some((n) => Math.hypot(player.x - n.x, player.y - n.y) <= NPC_INTERACT_RANGE);
+      if (!near) return;
+      const entry = player.inventory[idx]!;
+      const def = (ITEMS as Record<string, any>)[entry.itemId];
+      const sp = def?.sellPrice;
+      if (!sp) return;
+      player.gold += sp;
+      entry.qty -= 1;
+      if (entry.qty <= 0) player.inventory.splice(idx, 1);
     });
 
     this.setSimulationInterval(() => this.tick(), SIM_TICK_MS);

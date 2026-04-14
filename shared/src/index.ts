@@ -155,6 +155,16 @@ export const MAP_TILES: readonly number[] = WORLD.tiles;
 export const MOB_SPAWNS: readonly { x: number; y: number; type: string }[] = WORLD.mobSpawns;
 export const PLAYER_SPAWN = WORLD.playerSpawn;
 
+export const NPCS: readonly NpcDef[] = [
+  {
+    id: "merchant",
+    name: "Торговец",
+    x: PLAYER_SPAWN.x + 64,
+    y: PLAYER_SPAWN.y,
+    stock: ["health_potion", "wood_sword", "iron_sword", "cloth_armor", "iron_armor"],
+  },
+];
+
 export function tileAt(col: number, row: number): number {
   if (col < 0 || col >= MAP_COLS || row < 0 || row >= MAP_ROWS) return TILE.TREE;
   return MAP_TILES[row * MAP_COLS + col]!;
@@ -224,11 +234,12 @@ export type ItemDef = {
 };
 
 export const ITEMS = {
-  slime_jelly: { id: "slime_jelly", name: "Слизь",       icon: 0, kind: "material",  sellPrice: 2 },
-  wood_sword:  { id: "wood_sword",  name: "Деревянный меч", icon: 1, kind: "weapon",   damage: 4,  sellPrice: 5 },
-  iron_sword:  { id: "iron_sword",  name: "Железный меч",   icon: 2, kind: "weapon",   damage: 10, sellPrice: 18 },
-  cloth_armor: { id: "cloth_armor", name: "Тканая броня",   icon: 3, kind: "armor",    hp: 20,     sellPrice: 8 },
-  iron_armor:  { id: "iron_armor",  name: "Железная броня", icon: 4, kind: "armor",    hp: 45,     sellPrice: 22 },
+  slime_jelly:  { id: "slime_jelly",  name: "Слизь",           icon: 0, kind: "material",   sellPrice: 2 },
+  wood_sword:   { id: "wood_sword",   name: "Деревянный меч",  icon: 1, kind: "weapon",     damage: 4,  sellPrice: 5,  price: 12 },
+  iron_sword:   { id: "iron_sword",   name: "Железный меч",    icon: 2, kind: "weapon",     damage: 10, sellPrice: 18, price: 50 },
+  cloth_armor:  { id: "cloth_armor",  name: "Тканая броня",    icon: 3, kind: "armor",      hp: 20,     sellPrice: 8,  price: 20 },
+  iron_armor:   { id: "iron_armor",   name: "Железная броня",  icon: 4, kind: "armor",      hp: 45,     sellPrice: 22, price: 70 },
+  health_potion:{ id: "health_potion",name: "Зелье лечения",   icon: 5, kind: "consumable", heal: 40,   sellPrice: 3,  price: 8 },
 } satisfies Record<string, ItemDef>;
 export type ItemId = keyof typeof ITEMS;
 
@@ -261,10 +272,16 @@ export const DROP_TABLES: Record<MobTypeId, { itemId: ItemId; weight: number }[]
   ],
 };
 
+export const NPC_INTERACT_RANGE = 60;
+export type NpcDef = { id: string; name: string; x: number; y: number; stock: ItemId[] };
+
 export type MoveMessage = { x: number; y: number };
 export type AttackMessage = { mobId: string };
-export type EquipMessage = { slot: number };       // equip from inventory slot index
+export type EquipMessage = { slot: number };
 export type UnequipMessage = { slot: "weapon" | "armor" };
+export type UseItemMessage = { slot: number };
+export type BuyMessage = { npcId: string; itemId: ItemId };
+export type SellMessage = { slot: number };
 export type ChatSend = { text: string };
 export type ChatBroadcast = { sessionId: string; name: string; text: string; ts: number };
 

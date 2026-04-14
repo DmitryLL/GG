@@ -1,4 +1,4 @@
-import { INVENTORY_SLOTS, ITEMS, isEquippable, type ItemId, type EquipMessage, type UnequipMessage } from "@gg/shared";
+import { INVENTORY_SLOTS, ITEMS, isEquippable, type ItemId, type EquipMessage, type UnequipMessage, type UseItemMessage } from "@gg/shared";
 import type { Room } from "colyseus.js";
 
 export type InvSlotView = { itemId: ItemId; qty: number } | null;
@@ -38,8 +38,17 @@ export function mountHud(room: Room) {
     slot.dataset.idx = String(i);
     slot.addEventListener("click", () => {
       const idx = Number(slot.dataset.idx);
-      const payload: EquipMessage = { slot: idx };
-      room.send("equip", payload);
+      const itemId = slot.dataset.item as ItemId | undefined;
+      if (!itemId) return;
+      const def = (ITEMS as Record<string, any>)[itemId];
+      if (!def) return;
+      if (def.kind === "consumable") {
+        const payload: UseItemMessage = { slot: idx };
+        room.send("useItem", payload);
+      } else if (isEquippable(itemId)) {
+        const payload: EquipMessage = { slot: idx };
+        room.send("equip", payload);
+      }
     });
     invEl.appendChild(slot);
   }
@@ -63,6 +72,8 @@ export function mountHud(room: Room) {
         const data = view.slots[i] ?? null;
         slot.innerHTML = data ? renderSlotContent(data.itemId, data.qty) : "";
         slot.classList.toggle("equippable", !!data && isEquippable(data.itemId));
+        if (data) slot.dataset.item = data.itemId;
+        else delete slot.dataset.item;
       }
       eqWeapon.innerHTML = renderSlotContent((view.weapon || "") as ItemId | "", 1);
       eqWeapon.classList.toggle("empty", !view.weapon);

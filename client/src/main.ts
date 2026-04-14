@@ -23,7 +23,8 @@ import {
 import { getStoredToken, mountAuthUI, mountLogoutButton } from "./auth";
 import { mountChat } from "./chat";
 import { mountHud, type InvSlotView } from "./inventory";
-import { xpForLevel, MOB_TYPES, type ItemId } from "@gg/shared";
+import { mountShop } from "./shop";
+import { xpForLevel, MOB_TYPES, NPCS, NPC_INTERACT_RANGE, type ItemId } from "@gg/shared";
 
 const SERVER_URL = (() => {
   const env = (import.meta as any).env?.VITE_SERVER_WS_URL as string | undefined;
@@ -109,6 +110,8 @@ class GameScene extends Phaser.Scene {
   private mobs = new Map<string, MobSprite>();
   private drops = new Map<string, DropSprite>();
   private hud?: ReturnType<typeof mountHud>;
+  private shop?: ReturnType<typeof mountShop>;
+  private npcContainers = new Map<string, Phaser.GameObjects.Container>();
   private keys!: {
     W: Phaser.Input.Keyboard.Key;
     A: Phaser.Input.Keyboard.Key;
@@ -149,6 +152,27 @@ class GameScene extends Phaser.Scene {
       frameWidth: 16,
       frameHeight: 16,
     });
+    this.load.spritesheet("npc", `${BASE}sprites/npc.png`, {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
+  }
+
+  private renderNpcs() {
+    for (const npc of NPCS) {
+      const sprite = this.add.sprite(0, 0, "npc", 0);
+      sprite.setScale(1.2);
+      const label = this.add.text(0, -30, npc.name, {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "12px",
+        color: "#fde68a",
+        stroke: "#000000",
+        strokeThickness: 3,
+      });
+      label.setOrigin(0.5, 1);
+      const container = this.add.container(npc.x, npc.y, [sprite, label]);
+      this.npcContainers.set(npc.id, container);
+    }
   }
 
   private renderMap() {
@@ -241,11 +265,24 @@ class GameScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor("#000");
     this.cameras.main.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
     this.renderMap();
+    this.renderNpcs();
 
     this.keys = this.input.keyboard!.addKeys("W,A,S,D") as typeof this.keys;
     this.marker = this.add.circle(0, 0, 6, 0xffff00, 0.7).setVisible(false);
 
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
+      const npcHit = this.findNpcAt(p.worldX, p.worldY);
+      if (npcHit && this.me && this.shop) {
+        const dist = Math.hypot(npcHit.x - this.me.container.x, npcHit.y - this.me.container.y);
+        if (dist <= NPC_INTERACT_RANGE) {
+          const me = this.room?.state.players.get(this.room.sessionId);
+          this.shop.open(npcHit, me);
+          return;
+        }
+        this.moveTarget = { x: npcHit.x, y: npcHit.y };
+        this.marker!.setPosition(npcHit.x, npcHit.y).setVisible(true);
+        return;
+      }
       const mobHit = this.findMobAt(p.worldX, p.worldY);
       if (mobHit && this.me) {
         const dist = Math.hypot(mobHit.ms.container.x - this.me.container.x, mobHit.ms.container.y - this.me.container.y);
@@ -388,6 +425,7 @@ class GameScene extends Phaser.Scene {
     });
 
     this.hud = mountHud(this.room);
+    this.shop = mountShop(this.room);
 
     mountChat(this.room, (msg) => {
       const ps = msg.sessionId === mySessionId
@@ -409,6 +447,14 @@ class GameScene extends Phaser.Scene {
       armor: player.eqArmor ?? "",
       slots,
     });
+    this.shop?.refresh(player);
+  }
+
+  private findNpcAt(x: number, y: number) {
+    for (const npc of NPCS) {
+      if (Math.abs(npc.x - x) < 22 && Math.abs(npc.y - y) < 24) return npc;
+    }
+    return null;
   }
 
   private findMobAt(x: number, y: number): { id: string; ms: MobSprite } | null {
