@@ -144,6 +144,7 @@ interface MatchPlayer {
     userId: string;
     sessionId: string;
     username: string;
+    presence: nkruntime.Presence;
     pos: Vec2;
     hp: number;
     hpMax: number;
@@ -329,6 +330,7 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         const saved = loadProgress(nk, p.userId);
         const player: MatchPlayer = {
             userId: p.userId, sessionId: p.sessionId, username: p.username,
+            presence: p,
             pos: { x: WORLD.playerSpawn.x, y: WORLD.playerSpawn.y },
             hp: 0, hpMax: 0,
             level: saved ? saved.level : 1,
@@ -420,18 +422,6 @@ function grantXp(p: MatchPlayer, amount: number): void {
     markMe(p);
 }
 
-function presenceOf(state: WorldState, player: MatchPlayer): nkruntime.Presence {
-    // Nakama dispatcher's `presences` filter needs Presence structs, but
-    // within match code we only have session ids on hand. We store the
-    // sender presence from incoming messages when needed; otherwise we
-    // broadcast to all. This helper avoids tripping TS — runtime will
-    // accept a minimal shape.
-    return {
-        userId: player.userId, sessionId: player.sessionId,
-        username: player.username, node: "", sessionHidden: false,
-        persistence: false, status: "",
-    } as unknown as nkruntime.Presence;
-}
 
 function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, dispatcher: nkruntime.MatchDispatcher, tick: number, state: WorldState, messages: nkruntime.MatchMessage[]): { state: WorldState } | null {
     state.tick = tick;
@@ -695,7 +685,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     for (let i = 0; i < pKeys.length; i++) {
         const p = state.players[pKeys[i]];
         if (!p.dirtyMe) continue;
-        broadcastMeTo(dispatcher, p, [presenceOf(state, p)]);
+        broadcastMeTo(dispatcher, p, [p.presence]);
         p.dirtyMe = false;
     }
 
