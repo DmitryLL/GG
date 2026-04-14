@@ -190,11 +190,12 @@ func _on_presence(ev: NakamaRTAPI.MatchPresenceEvent) -> void:
 
 func _mob_at(world_pos: Vector2) -> Mob:
 	var best: Mob = null
-	var best_d := 9999.0
-	for mob in mobs.values():
+	var best_d: float = 9999.0
+	for mob_v in mobs.values():
+		var mob: Mob = mob_v
 		if not mob.alive:
 			continue
-		var d := mob.position.distance_to(world_pos)
+		var d: float = mob.position.distance_to(world_pos)
 		if d < CLICK_MOB_RADIUS and d < best_d:
 			best = mob
 			best_d = d
