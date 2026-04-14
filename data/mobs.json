@@ -1,0 +1,24 @@
+{
+  "slime": {
+    "hpMax": 30,
+    "touchDamage": 5,
+    "speed": 40,
+    "wanderRadius": 80,
+    "touchRange": 26,
+    "touchCooldownMs": 900,
+    "respawnMs": 8000,
+    "xp": 12,
+    "gold": 1
+  },
+  "goblin": {
+    "hpMax": 60,
+    "touchDamage": 10,
+    "speed": 55,
+    "wanderRadius": 80,
+    "touchRange": 26,
+    "touchCooldownMs": 900,
+    "respawnMs": 8000,
+    "xp": 28,
+    "gold": 4
+  }
+}

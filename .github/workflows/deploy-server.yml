@@ -6,6 +6,7 @@ on:
     paths:
       - "deploy/**"
       - "nakama-server/**"
+      - "data/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/deploy-server.yml"

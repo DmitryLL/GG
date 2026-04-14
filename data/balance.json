@@ -1,0 +1,32 @@
+{
+  "_comment": "Глобальные балансные параметры. Меняй на свой страх — пушится сразу.",
+  "player": {
+    "hpBase": 100,
+    "perLevelHpBonus": 10,
+    "perLevelDamageBonus": 2,
+    "attackDamage": 10,
+    "attackRange": 220,
+    "attackCooldownMs": 600
+  },
+  "world": {
+    "tileSize": 32,
+    "mapCols": 60,
+    "mapRows": 45,
+    "seed": 1337
+  },
+  "drops": {
+    "pickupRange": 40,
+    "lifetimeMs": 60000
+  },
+  "inventory": {
+    "slots": 6,
+    "stackMax": 99
+  },
+  "xp": {
+    "_formula_note": "xpForLevel(L) = base * L. Чтобы поднять до 2-го уровня нужно base XP, до 3-го — base*2 и т.д.",
+    "base": 50
+  },
+  "npc": {
+    "interactRange": 60
+  }
+}

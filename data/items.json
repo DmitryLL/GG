@@ -1,0 +1,8 @@
+{
+  "slime_jelly":   { "kind": "material",   "sellPrice": 2 },
+  "wood_sword":    { "kind": "weapon",     "damage": 4,  "sellPrice": 5,  "price": 12 },
+  "iron_sword":    { "kind": "weapon",     "damage": 10, "sellPrice": 18, "price": 50 },
+  "cloth_armor":   { "kind": "armor",      "hp": 20,     "sellPrice": 8,  "price": 20 },
+  "iron_armor":    { "kind": "armor",      "hp": 45,     "sellPrice": 22, "price": 70 },
+  "health_potion": { "kind": "consumable", "heal": 40,   "sellPrice": 3,  "price": 8  }
+}

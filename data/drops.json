@@ -1,0 +1,21 @@
+{
+  "_comment": "missWeight = шанс что вообще ничего не выпадет (относительный вес). Сумма всех весов + missWeight = 100% поля.",
+  "slime": {
+    "missWeight": 50,
+    "table": [
+      { "itemId": "slime_jelly", "weight": 80 },
+      { "itemId": "wood_sword",  "weight": 4  },
+      { "itemId": "cloth_armor", "weight": 3  }
+    ]
+  },
+  "goblin": {
+    "missWeight": 20,
+    "table": [
+      { "itemId": "slime_jelly", "weight": 30 },
+      { "itemId": "wood_sword",  "weight": 15 },
+      { "itemId": "iron_sword",  "weight": 8  },
+      { "itemId": "cloth_armor", "weight": 10 },
+      { "itemId": "iron_armor",  "weight": 5  }
+    ]
+  }
+}

@@ -6,12 +6,12 @@
 // can reason about walkability and place authoritative mob spawns.
 // ================================================================== //
 
-const TILE_SIZE = 32;
-const MAP_COLS = 60;
-const MAP_ROWS = 45;
-const MAP_WIDTH = TILE_SIZE * MAP_COLS;  // 1920
-const MAP_HEIGHT = TILE_SIZE * MAP_ROWS; // 1440
-const WORLD_SEED = 1337;
+const TILE_SIZE = BALANCE_DATA.world.tileSize;
+const MAP_COLS = BALANCE_DATA.world.mapCols;
+const MAP_ROWS = BALANCE_DATA.world.mapRows;
+const MAP_WIDTH = TILE_SIZE * MAP_COLS;
+const MAP_HEIGHT = TILE_SIZE * MAP_ROWS;
+const WORLD_SEED = BALANCE_DATA.world.seed;
 
 const TILE_GRASS = 0;
 const TILE_SAND  = 1;
@@ -157,51 +157,35 @@ const WORLD = generateWorld();
 // Items, drop tables, mobs, NPCs
 // ================================================================== //
 
+// Все игровые данные приходят из data/*.json через scripts/gen-data.js.
+// Здесь только удобные алиасы и старые имена, чтобы не править остальной код.
 type ItemKind = "material" | "weapon" | "armor" | "consumable";
-interface ItemDef {
-    id: string;
-    kind: ItemKind;
-    damage?: number;   // weapon
-    hp?: number;       // armor
-    heal?: number;     // consumable
-    price?: number;    // NPC sells for
-    sellPrice?: number;// NPC buys for
-}
-const ITEMS: { [id: string]: ItemDef } = {
-    slime_jelly:   { id: "slime_jelly",   kind: "material",   sellPrice: 2 },
-    wood_sword:    { id: "wood_sword",    kind: "weapon",     damage: 4,  sellPrice: 5,  price: 12 },
-    iron_sword:    { id: "iron_sword",    kind: "weapon",     damage: 10, sellPrice: 18, price: 50 },
-    cloth_armor:   { id: "cloth_armor",   kind: "armor",      hp: 20,     sellPrice: 8,  price: 20 },
-    iron_armor:    { id: "iron_armor",    kind: "armor",      hp: 45,     sellPrice: 22, price: 70 },
-    health_potion: { id: "health_potion", kind: "consumable", heal: 40,   sellPrice: 3,  price: 8 },
-};
-const INVENTORY_SLOTS = 6;
-const STACK_MAX = 99;
+interface ItemDef extends ItemDefData { id: string; kind: ItemKind; }
+const ITEMS: { [id: string]: ItemDef } = (() => {
+    const out: { [id: string]: ItemDef } = {};
+    for (const id of Object.keys(ITEMS_DATA)) {
+        out[id] = { id: id, ...ITEMS_DATA[id], kind: ITEMS_DATA[id].kind as ItemKind };
+    }
+    return out;
+})();
 
-interface DropEntry { itemId: string; weight: number; }
-const DROP_TABLES: { [mob: string]: DropEntry[] } = {
-    slime:  [{ itemId: "slime_jelly", weight: 80 }, { itemId: "wood_sword",  weight: 4  }, { itemId: "cloth_armor", weight: 3  }],
-    goblin: [{ itemId: "slime_jelly", weight: 30 }, { itemId: "wood_sword",  weight: 15 }, { itemId: "iron_sword",  weight: 8  }, { itemId: "cloth_armor", weight: 10 }, { itemId: "iron_armor",  weight: 5  }],
-};
-const DROP_MISS_WEIGHT: { [mob: string]: number } = { slime: 50, goblin: 20 };
+const INVENTORY_SLOTS = BALANCE_DATA.inventory.slots;
+const STACK_MAX = BALANCE_DATA.inventory.stackMax;
 
-interface MobTypeDef { hpMax: number; touchDamage: number; speed: number; wanderRadius: number; touchRange: number; touchCooldownMs: number; respawnMs: number; xp: number; gold: number; }
-const MOB_TYPES: { [k: string]: MobTypeDef } = {
-    slime:  { hpMax: 30, touchDamage: 5,  speed: 40, wanderRadius: 80, touchRange: 26, touchCooldownMs: 900, respawnMs: 8000, xp: 12, gold: 1 },
-    goblin: { hpMax: 60, touchDamage: 10, speed: 55, wanderRadius: 80, touchRange: 26, touchCooldownMs: 900, respawnMs: 8000, xp: 28, gold: 4 },
-};
+const MOB_TYPES = MOBS_DATA;
+const DROP_TABLES: { [mob: string]: DropEntryData[] } = (() => {
+    const out: { [mob: string]: DropEntryData[] } = {};
+    for (const k of Object.keys(DROPS_DATA)) out[k] = DROPS_DATA[k].table;
+    return out;
+})();
+const DROP_MISS_WEIGHT: { [mob: string]: number } = (() => {
+    const out: { [mob: string]: number } = {};
+    for (const k of Object.keys(DROPS_DATA)) out[k] = DROPS_DATA[k].missWeight;
+    return out;
+})();
 
-interface NpcDef { id: string; name: string; x: number; y: number; stock: string[]; }
-const NPCS: NpcDef[] = [
-    {
-        id: "merchant",
-        name: "Торговец",
-        x: WORLD.playerSpawn.x + 64,
-        y: WORLD.playerSpawn.y,
-        stock: ["health_potion", "wood_sword", "iron_sword", "cloth_armor", "iron_armor"],
-    },
-];
-const NPC_INTERACT_RANGE = 60;
+const NPCS = NPCS_DATA;
+const NPC_INTERACT_RANGE = BALANCE_DATA.npc.interactRange;
 
 // ================================================================== //
 // Player / match state
@@ -230,15 +214,16 @@ const OP_ARROW        = 15; // server → clients, visualise a bow shot
 const OP_CHAT_SEND    = 16; // client → server, chat line
 const OP_CHAT_RELAY   = 17; // server → clients, broadcast chat line
 
-const PLAYER_HP_BASE = 100;
-const PLAYER_ATTACK_DAMAGE = 10;
-const PLAYER_ATTACK_RANGE = 220;           // bow range
-const PLAYER_ATTACK_COOLDOWN_MS = 600;
-const PER_LEVEL_HP_BONUS = 10;
-const PER_LEVEL_DAMAGE_BONUS = 2;
-const XP_FOR_LEVEL = (L: number): number => 50 * L;
-const PICKUP_RANGE = 40;
-const DROP_LIFETIME_MS = 60000;
+const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
+const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
+const PLAYER_ATTACK_RANGE = BALANCE_DATA.player.attackRange;
+const PLAYER_ATTACK_COOLDOWN_MS = BALANCE_DATA.player.attackCooldownMs;
+const PER_LEVEL_HP_BONUS = BALANCE_DATA.player.perLevelHpBonus;
+const PER_LEVEL_DAMAGE_BONUS = BALANCE_DATA.player.perLevelDamageBonus;
+const XP_BASE = BALANCE_DATA.xp.base;
+const XP_FOR_LEVEL = (L: number): number => XP_BASE * L;
+const PICKUP_RANGE = BALANCE_DATA.drops.pickupRange;
+const DROP_LIFETIME_MS = BALANCE_DATA.drops.lifetimeMs;
 
 interface InvEntry { itemId: string; qty: number; }
 

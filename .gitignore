@@ -34,6 +34,7 @@ coverage/
 
 # Nakama module build output (regenerated in CI)
 nakama-server/build/
+nakama-server/src/data.gen.ts
 deploy/nakama-modules/index.js
 
 # Godot cache — project import data, not source

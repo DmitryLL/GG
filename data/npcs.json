@@ -1,0 +1,10 @@
+[
+  {
+    "id": "merchant",
+    "name": "Торговец",
+    "_pos_note": "Карта 1920×1440. Центр (где спавн игрока) = 960, 720. Тайл = 32px.",
+    "x": 1024,
+    "y": 720,
+    "stock": ["health_potion", "wood_sword", "iron_sword", "cloth_armor", "iron_armor"]
+  }
+]
