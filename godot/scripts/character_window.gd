@@ -87,6 +87,7 @@ func _ready() -> void:
 		btn.pressed.connect(func(): unequip_requested.emit(slot_name))
 		doll_root.add_child(btn)
 		slot_buttons[slot_name] = btn
+		_show_empty_label(btn, entry["label"])
 
 	# Справа — статы
 	stats_label = Label.new()
@@ -116,13 +117,29 @@ func _slot_sb(hover: bool) -> StyleBoxFlat:
 	sb.corner_radius_bottom_right = 4
 	return sb
 
-func _set_slot_icon(btn: Button, item_id: String) -> void:
+func _show_empty_label(btn: Button, label: String) -> void:
 	for c in btn.get_children():
 		c.queue_free()
+	var lbl := Label.new()
+	lbl.text = label
+	lbl.add_theme_font_size_override("font_size", 9)
+	lbl.add_theme_color_override("font_color", Color(0.55, 0.5, 0.4, 1.0))
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	btn.add_child(lbl)
+	btn.tooltip_text = label
+
+func _set_slot_icon(btn: Button, item_id: String, fallback_label: String = "") -> void:
 	if item_id == "":
+		_show_empty_label(btn, fallback_label)
 		return
+	for c in btn.get_children():
+		c.queue_free()
 	var def: Dictionary = Items.def(item_id)
 	if def.is_empty():
+		_show_empty_label(btn, fallback_label)
 		return
 	var at := AtlasTexture.new()
 	at.atlas = ITEMS_TEX
@@ -160,8 +177,9 @@ func refresh(me: Dictionary) -> void:
 	if not overlay.visible:
 		return
 	var eq: Dictionary = me.get("eq", {})
-	for slot in slot_buttons.keys():
-		_set_slot_icon(slot_buttons[slot], String(eq.get(slot, "")))
+	for entry in SLOT_LAYOUT:
+		var slot: String = entry["slot"]
+		_set_slot_icon(slot_buttons[slot], String(eq.get(slot, "")), entry["label"])
 	stats_label.text = "Уровень: %d\nHP: %d / %d\nXP: %d / %d\nУрон: %d\nЗолото: %d" % [
 		int(me.get("level", 1)),
 		int(me.get("hp", 0)), int(me.get("hpMax", 100)),
