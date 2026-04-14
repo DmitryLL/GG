@@ -1,0 +1,75 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/auth.gd" id="1_auth"]
+
+[node name="Auth" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_auth")
+
+[node name="BG" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.067, 0.067, 0.067, 1)
+
+[node name="Card" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -160.0
+offset_top = -150.0
+offset_right = 160.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="V" type="VBoxContainer" parent="Card"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="Card/V"]
+layout_mode = 2
+text = "Вход / Регистрация"
+horizontal_alignment = 1
+
+[node name="EmailInput" type="LineEdit" parent="Card/V"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "email"
+
+[node name="PasswordInput" type="LineEdit" parent="Card/V"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "пароль (6+ символов)"
+secret = true
+
+[node name="LoginBtn" type="Button" parent="Card/V"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Войти"
+
+[node name="RegisterBtn" type="Button" parent="Card/V"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Зарегистрироваться"
+
+[node name="ErrorLabel" type="Label" parent="Card/V"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.3, 0.3, 1)
+horizontal_alignment = 1
+
+[node name="BusyLabel" type="Label" parent="Card/V"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "…"
+horizontal_alignment = 1

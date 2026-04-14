@@ -31,3 +31,9 @@ coverage/
 
 .playwright/
 .playwright-cli/
+
+# Godot cache — project import data, not source
+godot/.godot/
+godot/.import/
+godot/export.cfg
+godot/export_credentials.cfg
