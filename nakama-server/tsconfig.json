@@ -1,17 +1,14 @@
 {
   "compilerOptions": {
     "target": "es2017",
-    "module": "none",
-    "outDir": "./build",
-    "rootDir": "./src",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "strict": true,
     "noUnusedLocals": true,
     "noImplicitReturns": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "ignoreDeprecations": "5.0",
-    "types": []
+    "types": [],
+    "noEmit": true
   },
   "files": [
     "./nakama-runtime.d.ts",

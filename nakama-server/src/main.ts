@@ -143,5 +143,6 @@ function InitModule(
     logger.info("GG runtime loaded.");
 }
 
-// Silence unused-symbol warnings — Nakama discovers InitModule via goja.
-!InitModule;
+// IIFE bundle hides InitModule behind a closure; expose it on globalThis so
+// Nakama's goja loader can discover it.
+(globalThis as any).InitModule = InitModule;
