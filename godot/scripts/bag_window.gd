@@ -131,24 +131,29 @@ func _build_footer(parent: Container) -> void:
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	parent.add_child(hint)
 
+var tip_stats: VBoxContainer
+
 func _build_tip() -> void:
 	tip = PanelContainer.new()
 	tip.add_theme_stylebox_override("panel", UI.panel_style(8, 1))
 	tip.visible = false
 	tip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Позиционируется динамически в _show_tip_for.
+	tip.custom_minimum_size = Vector2(200, 0)
 	overlay.add_child(tip)
 
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 2)
+	v.add_theme_constant_override("separation", 4)
 	tip.add_child(v)
 	tip_name = Label.new()
-	tip_name.add_theme_font_size_override("font_size", 13)
+	tip_name.add_theme_font_size_override("font_size", 14)
 	v.add_child(tip_name)
 	tip_sub = Label.new()
 	tip_sub.add_theme_font_size_override("font_size", 10)
 	tip_sub.add_theme_color_override("font_color", UI.TEXT_MUTED)
 	v.add_child(tip_sub)
+	tip_stats = VBoxContainer.new()
+	tip_stats.add_theme_constant_override("separation", 2)
+	v.add_child(tip_stats)
 
 func _show_tip_for(idx: int) -> void:
 	var inv: Array = last_me.get("inv", [])
@@ -164,16 +169,17 @@ func _show_tip_for(idx: int) -> void:
 	var r := Items.rarity(item_id)
 	tip_name.text = String(def.get("name", item_id))
 	tip_name.add_theme_color_override("font_color", Items.rarity_color(r))
-	var kind := String(def.get("kind", ""))
-	var slot := String(def.get("slot", ""))
-	var extra := ""
-	if slot != "":
-		extra = "Экипировка"
-	elif kind == "consumable":
-		extra = "Расходник"
-	elif kind == "material":
-		extra = "Материал"
-	tip_sub.text = "%s · %s" % [Items.rarity_name(r), extra] if extra != "" else Items.rarity_name(r)
+	var kind := Items.kind_name(item_id)
+	tip_sub.text = "%s · %s" % [Items.rarity_name(r), kind] if kind != "" else Items.rarity_name(r)
+
+	for c in tip_stats.get_children():
+		c.queue_free()
+	for line in Items.stat_lines(item_id):
+		var lbl := Label.new()
+		lbl.text = String(line["text"])
+		lbl.add_theme_font_size_override("font_size", 11)
+		lbl.add_theme_color_override("font_color", line["color"])
+		tip_stats.add_child(lbl)
 
 	var btn: Button = inv_buttons[idx]
 	var rect: Rect2 = btn.get_global_rect()

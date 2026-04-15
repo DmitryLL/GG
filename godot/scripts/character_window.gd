@@ -465,10 +465,11 @@ func _make_picker_row(item_id: String, qty: int, hint_text: String, on_take: Cal
 	name_lbl.add_theme_font_size_override("font_size", 13)
 	name_lbl.add_theme_color_override("font_color", Items.rarity_color(r))
 	col.add_child(name_lbl)
+	var stats_line := Items.stat_inline(item_id)
 	var sub := Label.new()
-	sub.text = Items.rarity_name(r)
+	sub.text = stats_line if stats_line != "" else Items.rarity_name(r)
 	sub.add_theme_font_size_override("font_size", 10)
-	sub.add_theme_color_override("font_color", UI.TEXT_MUTED)
+	sub.add_theme_color_override("font_color", UI.TEXT_DIM if stats_line != "" else UI.TEXT_MUTED)
 	col.add_child(sub)
 
 	var hint := Label.new()

@@ -269,7 +269,7 @@ func _thin_spacer() -> Control:
 
 func _entry_button(item_id: String, price: int, enabled: bool, qty: int = 1) -> Button:
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(0, 36)
+	btn.custom_minimum_size = Vector2(0, 46)
 	btn.disabled = not enabled
 	btn.add_theme_stylebox_override("normal", _entry_sb(false, enabled))
 	btn.add_theme_stylebox_override("hover", _entry_sb(true, enabled))
@@ -288,24 +288,38 @@ func _entry_button(item_id: String, price: int, enabled: bool, qty: int = 1) -> 
 	btn.add_child(hb)
 
 	var def: Dictionary = Items.def(item_id)
+	var r := Items.rarity(item_id)
 	var icon := TextureRect.new()
 	var at := AtlasTexture.new()
 	at.atlas = ITEMS_TEX
 	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
 	icon.texture = at
-	icon.custom_minimum_size = Vector2(22, 22)
+	icon.custom_minimum_size = Vector2(24, 24)
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	hb.add_child(icon)
 
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hb.add_child(col)
+
 	var name_lbl := Label.new()
 	name_lbl.text = String(def.get("name", item_id)) + ("" if qty <= 1 else "  ×%d" % qty)
-	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_lbl.add_theme_color_override("font_color", Color(0.92, 0.92, 0.88, 1))
-	hb.add_child(name_lbl)
+	name_lbl.add_theme_font_size_override("font_size", 13)
+	name_lbl.add_theme_color_override("font_color", Items.rarity_color(r))
+	col.add_child(name_lbl)
+	var stats_line := Items.stat_inline(item_id)
+	if stats_line != "":
+		var sub := Label.new()
+		sub.text = stats_line
+		sub.add_theme_font_size_override("font_size", 10)
+		sub.add_theme_color_override("font_color", Color(0.60, 0.55, 0.46, 1))
+		col.add_child(sub)
 
 	var price_lbl := Label.new()
 	price_lbl.text = "%d з." % price
+	price_lbl.add_theme_font_size_override("font_size", 13)
 	price_lbl.add_theme_color_override("font_color", Color(0.99, 0.85, 0.45, 1))
 	hb.add_child(price_lbl)
 	return btn
