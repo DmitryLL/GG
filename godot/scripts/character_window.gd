@@ -29,6 +29,7 @@ var doll_sprite: Sprite2D
 var slot_buttons: Dictionary = {}
 
 # Header
+var title_name: Label
 var title_level: Label
 var xp_bar: Control
 var xp_text: Label
@@ -96,14 +97,14 @@ func _build_header(parent: Container) -> void:
 	titles.add_theme_constant_override("separation", 2)
 	top.add_child(titles)
 
-	var t := Label.new()
-	t.text = "Персонаж"
-	t.add_theme_font_size_override("font_size", 22)
-	t.add_theme_color_override("font_color", UI.GOLD)
-	titles.add_child(t)
+	title_name = Label.new()
+	title_name.text = "Персонаж"
+	title_name.add_theme_font_size_override("font_size", 22)
+	title_name.add_theme_color_override("font_color", UI.GOLD)
+	titles.add_child(title_name)
 
 	title_level = Label.new()
-	title_level.text = "Странник — Уровень 1"
+	title_level.text = "Уровень 1"
 	title_level.add_theme_font_size_override("font_size", 12)
 	title_level.add_theme_color_override("font_color", UI.TEXT_DIM)
 	titles.add_child(title_level)
@@ -478,6 +479,10 @@ func _make_picker_row(item_id: String, qty: int, hint_text: String, on_take: Cal
 	return btn
 
 # ---------- lifecycle ----------
+func set_name(nick: String) -> void:
+	if title_name:
+		title_name.text = nick
+
 func set_doll(variant: int) -> void:
 	doll_sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
 	doll_sprite.hframes = 3
@@ -525,7 +530,7 @@ func refresh(me: Dictionary) -> void:
 	var dmg: int = int(me.get("damage", 10))
 	var gold: int = int(me.get("gold", 0))
 
-	title_level.text = "Странник — Уровень %d" % lvl
+	title_level.text = "Уровень %d" % lvl
 	xp_text.text = "%d / %d" % [xp, xp_need]
 	UI.progress_set(xp_bar, float(xp) / float(max(xp_need, 1)))
 
