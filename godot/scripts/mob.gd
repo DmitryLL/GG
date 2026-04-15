@@ -36,7 +36,8 @@ func _ready() -> void:
 	glow.texture = _make_glow_texture()
 	glow.scale = Vector2(1.6, 1.6)
 	glow.modulate = Color(1.0, 0.95, 0.55, 0.0)  # тёплый золотистый
-	glow.z_index = -1
+	# Без z_index: порядок в дереве (glow добавлен до sprite) сам рисует
+	# свечение под спрайтом, но ПОВЕРХ тайлмапа земли.
 	glow.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(glow)
 
