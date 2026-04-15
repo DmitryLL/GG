@@ -15,8 +15,10 @@ var loot: Array = []  # [{itemId, qty}] — содержимое трупа
 var sprite: Sprite2D
 var hp_bg: ColorRect
 var hp_fill: ColorRect
+var glow: Sprite2D
 var _anim_t := 0.0
 var _flash_t := 0.0
+var _glow_t := 0.0
 
 func setup(id: String, p_kind: String) -> void:
 	mob_id = id
@@ -28,6 +30,16 @@ func _ready() -> void:
 		"goblin": { "tex": "res://assets/sprites/goblin.png", "scale": 1.25 },
 	}
 	var info: Dictionary = def.get(kind, def["slime"])
+
+	# Лёгкое свечение вокруг моба — виден только если есть лут.
+	glow = Sprite2D.new()
+	glow.texture = _make_glow_texture()
+	glow.scale = Vector2(1.6, 1.6)
+	glow.modulate = Color(1.0, 0.95, 0.55, 0.0)  # тёплый золотистый
+	glow.z_index = -1
+	glow.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	add_child(glow)
+
 	sprite = Sprite2D.new()
 	sprite.texture = load(info["tex"])
 	sprite.hframes = 2
@@ -64,6 +76,25 @@ func set_alive(v: bool) -> void:
 
 func set_loot(items: Array) -> void:
 	loot = items
+	_update_glow()
+
+func _update_glow() -> void:
+	if glow == null:
+		return
+	glow.visible = loot.size() > 0
+
+func _make_glow_texture() -> ImageTexture:
+	var size := 64
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var c := Vector2(size * 0.5, size * 0.5)
+	var r := float(size) * 0.5
+	for y in range(size):
+		for x in range(size):
+			var d: float = Vector2(x, y).distance_to(c) / r
+			var a: float = clamp(1.0 - d, 0.0, 1.0)
+			a = a * a  # мягкое затухание к краям
+			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+	return ImageTexture.create_from_image(img)
 
 func set_hp(v: float, vmax: float) -> void:
 	hp = max(0.0, v)
@@ -76,6 +107,10 @@ func flash() -> void:
 	sprite.modulate = Color(1.5, 1.5, 1.5, 1.0)
 
 func _process(delta: float) -> void:
+	if glow and glow.visible:
+		_glow_t += delta
+		var pulse: float = 0.28 + 0.12 * sin(_glow_t * 2.4)
+		glow.modulate.a = pulse
 	if not alive:
 		return
 	_anim_t += delta

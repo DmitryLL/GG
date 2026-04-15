@@ -256,8 +256,29 @@ function spawnMob(id: string, spec: MobSpawn): MatchMob {
         home: { x: spec.x, y: spec.y },
         pos: { x: spec.x, y: spec.y },
         hp: def.hpMax, hpMax: def.hpMax,
-        state: "alive", respawnAt: 0, target: null, loot: [], dirty: true,
+        state: "alive", respawnAt: 0, target: null, loot: rollMobLoot(type), dirty: true,
     };
+}
+
+function rollMobLoot(mobType: string): InvEntry[] {
+    // 50% шанс что у моба вообще есть лут. Если есть — 1..3 ролла.
+    if (Math.random() >= 0.5) return [];
+    const loot: InvEntry[] = [];
+    const rollCount = 1 + Math.floor(Math.random() * 3);
+    for (let n = 0; n < rollCount; n++) {
+        const drop = rollDrop(mobType);
+        if (!drop) continue;
+        const di = ITEMS[drop];
+        const stackable = di && (di.kind === "material" || di.kind === "consumable");
+        let merged = false;
+        if (stackable) {
+            for (const e of loot) {
+                if (e.itemId === drop) { e.qty += 1; merged = true; break; }
+            }
+        }
+        if (!merged) loot.push({ itemId: drop, qty: 1 });
+    }
+    return loot;
 }
 
 function rollDrop(mobType: string): string | null {
@@ -492,23 +513,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         const def = MOB_TYPES[mob.type];
                         grantXp(player, def.xp);
                         player.gold += def.gold;
-                        // 1-3 ролла лута оседают на трупе. Игроки сами разбирают.
-                        mob.loot = [];
-                        const rollCount = 1 + Math.floor(Math.random() * 3);
-                        for (let n = 0; n < rollCount; n++) {
-                            const drop = rollDrop(mob.type);
-                            if (!drop) continue;
-                            // Стэкаем материалы/расходники прямо в loot.
-                            const di = ITEMS[drop];
-                            const stackable = di && (di.kind === "material" || di.kind === "consumable");
-                            let merged = false;
-                            if (stackable) {
-                                for (const e of mob.loot) {
-                                    if (e.itemId === drop) { e.qty += 1; merged = true; break; }
-                                }
-                            }
-                            if (!merged) mob.loot.push({ itemId: drop, qty: 1 });
-                        }
+                        // Лут был пред-ролльнут на спавне (см. rollMobLoot).
+                        // На трупе остаётся то, что уже лежит в mob.loot.
                     }
                 } catch (_e) {}
                 break;
@@ -657,7 +663,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             if (t >= mob.respawnAt) {
                 mob.pos.x = mob.home.x; mob.pos.y = mob.home.y;
                 mob.hp = mob.hpMax; mob.state = "alive";
-                mob.target = null; mob.loot = []; mob.dirty = true;
+                mob.target = null; mob.loot = rollMobLoot(mob.type); mob.dirty = true;
             }
             continue;
         }
