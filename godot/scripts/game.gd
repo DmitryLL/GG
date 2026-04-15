@@ -117,7 +117,7 @@ func _ready() -> void:
 	nameplate = NAMEPLATE_SCRIPT.new()
 	add_child(nameplate)
 	nameplate.set_player_name(display)
-	nameplate.logout_requested.connect(_on_logout)
+	hud.logout_button_pressed.connect(_on_logout)
 
 	character_win = CHARACTER_SCRIPT.new()
 	add_child(character_win)
