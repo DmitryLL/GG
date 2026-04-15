@@ -261,8 +261,8 @@ function spawnMob(id: string, spec: MobSpawn): MatchMob {
 }
 
 function rollMobLoot(mobType: string): InvEntry[] {
-    // 50% шанс что у моба вообще есть лут. Если есть — 1..3 ролла.
-    if (Math.random() >= 0.5) return [];
+    // 90% шанс что у моба вообще есть лут. Если есть — 1..3 ролла.
+    if (Math.random() >= 0.9) return [];
     const loot: InvEntry[] = [];
     const rollCount = 1 + Math.floor(Math.random() * 3);
     for (let n = 0; n < rollCount; n++) {

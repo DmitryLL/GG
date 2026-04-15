@@ -364,7 +364,9 @@ func _mob_at(world_pos: Vector2) -> Mob:
 	var best_d: float = 9999.0
 	for mob_v in mobs.values():
 		var mob: Mob = mob_v
-		# Включаем и трупы — по ним кликают, чтобы открыть лут.
+		# Трупы без лута не кликаются — клик проходит на землю.
+		if not mob.alive and mob.loot.size() == 0:
+			continue
 		var d: float = mob.position.distance_to(world_pos)
 		if d < CLICK_MOB_RADIUS and d < best_d:
 			best = mob
