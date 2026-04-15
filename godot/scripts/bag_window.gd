@@ -60,12 +60,6 @@ func _build_header(parent: Container) -> void:
 	top.add_theme_constant_override("separation", 12)
 	parent.add_child(top)
 
-	var crest := Label.new()
-	crest.text = "🎒"
-	crest.add_theme_font_size_override("font_size", 22)
-	crest.add_theme_color_override("font_color", UI.GOLD)
-	top.add_child(crest)
-
 	var titles := VBoxContainer.new()
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	titles.add_theme_constant_override("separation", 2)
