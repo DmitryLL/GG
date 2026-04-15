@@ -1,5 +1,6 @@
-# Окно персонажа: спрайт по центру, 9 слотов экипировки вокруг, статы.
-# Полностью непрозрачное окно. Слоты подписаны и тонированы.
+# Окно персонажа — расширенный UI в фэнтези-стиле.
+# Слева — кукла с 9 слотами экипировки, справа — характеристики.
+# Клик по слоту открывает попап выбора из сумки.
 class_name CharacterWindow
 extends CanvasLayer
 
@@ -9,45 +10,37 @@ signal closed
 
 const ITEMS_TEX := preload("res://assets/sprites/items.png")
 
-# Цвета подсветки слотов под их тип (повышает узнаваемость).
-const SLOT_TINT := {
-	"head":   Color(0.55, 0.40, 0.20),  # коричневый — кожа
-	"amulet": Color(0.65, 0.50, 0.20),  # золотистый
-	"cloak":  Color(0.45, 0.30, 0.55),  # фиолетовый
-	"weapon": Color(0.55, 0.20, 0.20),  # красный
-	"body":   Color(0.20, 0.40, 0.55),  # синий
-	"ring1":  Color(0.55, 0.45, 0.15),  # охра
-	"ring2":  Color(0.55, 0.45, 0.15),
-	"belt":   Color(0.40, 0.25, 0.10),
-	"boots":  Color(0.30, 0.20, 0.10),
-}
-
 const SLOT_LAYOUT := [
-	{ "slot": "head",   "x":   0, "y": -135, "label": "Шлем" },
-	{ "slot": "amulet", "x": -95, "y":  -90, "label": "Амулет" },
-	{ "slot": "cloak",  "x":  95, "y":  -90, "label": "Плащ" },
-	{ "slot": "weapon", "x": -95, "y":  -10, "label": "Оружие" },
-	{ "slot": "body",   "x":  95, "y":  -10, "label": "Броня" },
-	{ "slot": "ring1",  "x": -95, "y":   70, "label": "Кольцо" },
-	{ "slot": "ring2",  "x":  95, "y":   70, "label": "Кольцо" },
-	{ "slot": "belt",   "x":   0, "y":   75, "label": "Пояс" },
-	{ "slot": "boots",  "x":   0, "y":  140, "label": "Сапоги" },
+	{ "slot": "head",   "x":   0, "y": -150, "label": "Шлем" },
+	{ "slot": "amulet", "x": -110, "y": -100, "label": "Амулет" },
+	{ "slot": "cloak",  "x":  110, "y": -100, "label": "Плащ" },
+	{ "slot": "weapon", "x": -110, "y":  -10, "label": "Оружие" },
+	{ "slot": "body",   "x":  110, "y":  -10, "label": "Броня" },
+	{ "slot": "ring1",  "x": -110, "y":   80, "label": "Кольцо I" },
+	{ "slot": "ring2",  "x":  110, "y":   80, "label": "Кольцо II" },
+	{ "slot": "belt",   "x":    0, "y":   85, "label": "Пояс" },
+	{ "slot": "boots",  "x":    0, "y":  160, "label": "Сапоги" },
 ]
 
 var overlay: ColorRect
 var card: PanelContainer
 var doll_root: Control
 var doll_sprite: Sprite2D
-var slot_buttons: Dictionary = {}  # slot → Button
-var slot_tints: Dictionary = {}    # slot → ColorRect (фоновая подсветка)
+var slot_buttons: Dictionary = {}
 
-# Статы — отдельные лейблы чтобы цвета задавать по-разному.
-var stats_level: Label
-var stats_hp: Label
-var stats_xp: Label
+# Header
+var title_level: Label
+var xp_bar: Control
+var xp_text: Label
+
+# Stats
+var stats_hp_bar: Control
+var stats_hp_text: Label
 var stats_damage: Label
+var stats_level: Label
+var stats_gold: Label
 
-# Попап выбора вещи для слота.
+# Picker
 var picker: PanelContainer
 var picker_title: Label
 var picker_list: VBoxContainer
@@ -57,7 +50,7 @@ var last_eq: Dictionary = {}
 
 func _ready() -> void:
 	overlay = ColorRect.new()
-	overlay.color = Color(0, 0, 0, 0.85)
+	overlay.color = Color(0, 0, 0, 0.78)
 	overlay.anchor_right = 1.0
 	overlay.anchor_bottom = 1.0
 	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -69,151 +62,300 @@ func _ready() -> void:
 	card.anchor_top = 0.5
 	card.anchor_right = 0.5
 	card.anchor_bottom = 0.5
-	card.offset_left = -340
-	card.offset_top = -260
-	card.offset_right = 340
-	card.offset_bottom = 260
-	var card_sb := StyleBoxFlat.new()
-	card_sb.bg_color = Color(0.10, 0.09, 0.08, 1.0)
-	card_sb.border_color = Color(0.65, 0.50, 0.20, 1.0)
-	card_sb.set_border_width_all(2)
-	card_sb.set_corner_radius_all(8)
-	card_sb.set_content_margin_all(16)
-	card.add_theme_stylebox_override("panel", card_sb)
+	card.offset_left = -390
+	card.offset_top = -290
+	card.offset_right = 390
+	card.offset_bottom = 290
+	card.add_theme_stylebox_override("panel", UI.panel_style(12, 2))
 	overlay.add_child(card)
 
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 12)
-	card.add_child(v)
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 14)
+	card.add_child(root)
 
-	var top := HBoxContainer.new()
-	v.add_child(top)
-	var title := Label.new()
-	title.text = "Персонаж"
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(0.95, 0.85, 0.55, 1))
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(title)
-	var close_btn := Button.new()
-	close_btn.text = "×"
-	close_btn.custom_minimum_size = Vector2(36, 32)
-	close_btn.add_theme_font_size_override("font_size", 18)
-	close_btn.pressed.connect(close)
-	top.add_child(close_btn)
-
-	var sep := HSeparator.new()
-	v.add_child(sep)
+	_build_header(root)
+	root.add_child(UI.divider())
 
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override("separation", 18)
-	v.add_child(body)
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(body)
 
-	# Слева — кукла со слотами на собственном полотне.
+	_build_doll(body)
+	_build_stats(body)
+
+	_build_picker()
+
+func _build_header(parent: Container) -> void:
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 14)
+	parent.add_child(top)
+
+	var crest := Label.new()
+	crest.text = "⚔"
+	crest.add_theme_font_size_override("font_size", 26)
+	crest.add_theme_color_override("font_color", UI.GOLD)
+	top.add_child(crest)
+
+	var titles := VBoxContainer.new()
+	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	titles.add_theme_constant_override("separation", 2)
+	top.add_child(titles)
+
+	var t := Label.new()
+	t.text = "Персонаж"
+	t.add_theme_font_size_override("font_size", 22)
+	t.add_theme_color_override("font_color", UI.GOLD)
+	titles.add_child(t)
+
+	title_level = Label.new()
+	title_level.text = "Странник — Уровень 1"
+	title_level.add_theme_font_size_override("font_size", 12)
+	title_level.add_theme_color_override("font_color", UI.TEXT_DIM)
+	titles.add_child(title_level)
+
+	# XP бар в хедере
+	var xp_wrap := VBoxContainer.new()
+	xp_wrap.custom_minimum_size = Vector2(220, 0)
+	xp_wrap.add_theme_constant_override("separation", 3)
+	top.add_child(xp_wrap)
+	var xp_head := HBoxContainer.new()
+	xp_wrap.add_child(xp_head)
+	var xp_ttl := Label.new()
+	xp_ttl.text = "Опыт"
+	xp_ttl.add_theme_font_size_override("font_size", 10)
+	xp_ttl.add_theme_color_override("font_color", UI.TEXT_MUTED)
+	xp_ttl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	xp_head.add_child(xp_ttl)
+	xp_text = Label.new()
+	xp_text.text = "0 / 50"
+	xp_text.add_theme_font_size_override("font_size", 10)
+	xp_text.add_theme_color_override("font_color", UI.XP_ORANGE)
+	xp_head.add_child(xp_text)
+	xp_bar = UI.progress_bar(UI.XP_BG, UI.XP_ORANGE, 8)
+	xp_wrap.add_child(xp_bar)
+
+	var close_btn := Button.new()
+	UI.apply_close_button(close_btn)
+	close_btn.pressed.connect(close)
+	top.add_child(close_btn)
+
+func _build_doll(parent: Container) -> void:
+	var wrap := PanelContainer.new()
+	wrap.custom_minimum_size = Vector2(360, 430)
+	wrap.add_theme_stylebox_override("panel", UI.inner_style(10))
+	parent.add_child(wrap)
+
 	doll_root = Control.new()
-	doll_root.custom_minimum_size = Vector2(380, 400)
-	doll_root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	body.add_child(doll_root)
+	doll_root.custom_minimum_size = Vector2(340, 410)
+	wrap.add_child(doll_root)
 
-	# Лёгкая виньетка вокруг куклы — отделяет от слотов.
-	var doll_bg := PanelContainer.new()
-	doll_bg.position = Vector2(140, 130)
-	doll_bg.custom_minimum_size = Vector2(110, 130)
-	var dbg := StyleBoxFlat.new()
-	dbg.bg_color = Color(0.08, 0.07, 0.06, 0.85)
-	dbg.border_color = Color(0.30, 0.24, 0.16, 1.0)
-	dbg.set_border_width_all(1)
-	dbg.set_corner_radius_all(60)
-	doll_bg.add_theme_stylebox_override("panel", dbg)
-	doll_root.add_child(doll_bg)
+	# Вертикальная «ниша» под куклой — мягкая подсветка силуэта.
+	var niche := Panel.new()
+	niche.position = Vector2(120, 120)
+	niche.custom_minimum_size = Vector2(100, 160)
+	niche.size = niche.custom_minimum_size
+	var niche_sb := StyleBoxFlat.new()
+	niche_sb.bg_color = Color(0.160, 0.125, 0.085, 1.0)
+	niche_sb.border_color = UI.BORDER_DIM
+	niche_sb.set_border_width_all(1)
+	niche_sb.corner_radius_top_left = 50
+	niche_sb.corner_radius_top_right = 50
+	niche_sb.corner_radius_bottom_left = 20
+	niche_sb.corner_radius_bottom_right = 20
+	niche_sb.shadow_color = Color(0.95, 0.72, 0.25, 0.10)
+	niche_sb.shadow_size = 18
+	niche.add_theme_stylebox_override("panel", niche_sb)
+	doll_root.add_child(niche)
 
 	doll_sprite = Sprite2D.new()
-	doll_sprite.position = Vector2(190, 195)
-	doll_sprite.scale = Vector2(3, 3)
+	doll_sprite.position = Vector2(170, 205)
+	doll_sprite.scale = Vector2(3.2, 3.2)
 	doll_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	doll_root.add_child(doll_sprite)
 
 	for entry in SLOT_LAYOUT:
 		var slot_name: String = entry["slot"]
-		var btn := _make_slot_button(entry["label"], slot_name)
-		btn.position = Vector2(190 + entry["x"] - 26, 195 + entry["y"] - 26)
+		var btn := _make_slot_button()
+		btn.position = Vector2(170 + int(entry["x"]) - 28, 205 + int(entry["y"]) - 28)
+		var lbl: String = String(entry["label"])
+		btn.tooltip_text = lbl
 		btn.pressed.connect(func(): _open_picker(slot_name))
 		doll_root.add_child(btn)
 		slot_buttons[slot_name] = btn
-		_show_empty_label(btn, entry["label"])
+		_fill_slot(btn, "", lbl)
 
-	# Справа — статы в красивом блоке.
+func _build_stats(parent: Container) -> void:
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 10)
+	parent.add_child(col)
+
+	# Блок «Характеристики»
 	var stats_panel := PanelContainer.new()
-	stats_panel.custom_minimum_size = Vector2(220, 0)
-	var sp_sb := StyleBoxFlat.new()
-	sp_sb.bg_color = Color(0.07, 0.06, 0.05, 1.0)
-	sp_sb.border_color = Color(0.38, 0.30, 0.18, 1.0)
-	sp_sb.set_border_width_all(1)
-	sp_sb.set_corner_radius_all(6)
-	sp_sb.set_content_margin_all(14)
-	stats_panel.add_theme_stylebox_override("panel", sp_sb)
-	body.add_child(stats_panel)
+	stats_panel.add_theme_stylebox_override("panel", UI.inner_style(10))
+	col.add_child(stats_panel)
 
-	var stats_v := VBoxContainer.new()
-	stats_v.add_theme_constant_override("separation", 8)
-	stats_panel.add_child(stats_v)
+	var sv := VBoxContainer.new()
+	sv.add_theme_constant_override("separation", 10)
+	stats_panel.add_child(sv)
 
-	var stats_title := Label.new()
-	stats_title.text = "Статистика"
-	stats_title.add_theme_font_size_override("font_size", 14)
-	stats_title.add_theme_color_override("font_color", Color(0.85, 0.75, 0.45, 1))
-	stats_v.add_child(stats_title)
+	sv.add_child(UI.section_title("Характеристики"))
+	sv.add_child(UI.divider())
 
-	stats_v.add_child(HSeparator.new())
+	# Level
+	stats_level = _stat_row(sv, "Уровень", "1", UI.GOLD)
+	# HP с баром
+	var hp_wrap := VBoxContainer.new()
+	hp_wrap.add_theme_constant_override("separation", 4)
+	sv.add_child(hp_wrap)
+	var hp_head := HBoxContainer.new()
+	hp_wrap.add_child(hp_head)
+	var hp_ttl := Label.new()
+	hp_ttl.text = "Здоровье"
+	hp_ttl.add_theme_color_override("font_color", UI.TEXT_DIM)
+	hp_ttl.add_theme_font_size_override("font_size", 12)
+	hp_ttl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hp_head.add_child(hp_ttl)
+	stats_hp_text = Label.new()
+	stats_hp_text.text = "100 / 100"
+	stats_hp_text.add_theme_font_size_override("font_size", 13)
+	stats_hp_text.add_theme_color_override("font_color", UI.HP_RED)
+	hp_head.add_child(stats_hp_text)
+	stats_hp_bar = UI.progress_bar(UI.HP_BG, UI.HP_RED, 10)
+	hp_wrap.add_child(stats_hp_bar)
 
-	stats_level = _make_stat_label("Уровень", "1", Color(0.99, 0.85, 0.45))
-	stats_v.add_child(stats_level.get_parent())
-	stats_hp = _make_stat_label("HP", "100 / 100", Color(0.55, 0.85, 0.45))
-	stats_v.add_child(stats_hp.get_parent())
-	stats_xp = _make_stat_label("Опыт", "0 / 50", Color(0.99, 0.78, 0.30))
-	stats_v.add_child(stats_xp.get_parent())
-	stats_damage = _make_stat_label("Урон", "10", Color(0.94, 0.55, 0.40))
-	stats_v.add_child(stats_damage.get_parent())
+	# Damage
+	stats_damage = _stat_row(sv, "Урон", "10", Color(0.95, 0.50, 0.40))
 
-	_build_picker()
+	sv.add_child(UI.divider())
 
+	# Gold
+	var gold_row := HBoxContainer.new()
+	gold_row.add_theme_constant_override("separation", 8)
+	sv.add_child(gold_row)
+	gold_row.add_child(UI.coin(14))
+	var gold_ttl := Label.new()
+	gold_ttl.text = "Золото"
+	gold_ttl.add_theme_color_override("font_color", UI.TEXT_DIM)
+	gold_ttl.add_theme_font_size_override("font_size", 12)
+	gold_ttl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gold_row.add_child(gold_ttl)
+	stats_gold = Label.new()
+	stats_gold.text = "0"
+	stats_gold.add_theme_font_size_override("font_size", 16)
+	stats_gold.add_theme_color_override("font_color", UI.GOLD)
+	gold_row.add_child(stats_gold)
+
+	# Подсказка
+	var hint_panel := PanelContainer.new()
+	hint_panel.add_theme_stylebox_override("panel", UI.inner_style(8))
+	col.add_child(hint_panel)
+	var hint := Label.new()
+	hint.text = "Кликните по слоту, чтобы надеть вещь из сумки."
+	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_color_override("font_color", UI.TEXT_MUTED)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint_panel.add_child(hint)
+
+	# Нижний spacer чтобы блок тянулся, а подсказка прижималась вверх
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(spacer)
+
+func _stat_row(parent: Container, title: String, val: String, val_color: Color) -> Label:
+	var row := HBoxContainer.new()
+	parent.add_child(row)
+	var t := Label.new()
+	t.text = title
+	t.add_theme_color_override("font_color", UI.TEXT_DIM)
+	t.add_theme_font_size_override("font_size", 12)
+	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(t)
+	var v := Label.new()
+	v.text = val
+	v.add_theme_font_size_override("font_size", 16)
+	v.add_theme_color_override("font_color", val_color)
+	row.add_child(v)
+	return v
+
+func _make_slot_button() -> Button:
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(56, 56)
+	b.add_theme_stylebox_override("normal", UI.slot_style(-1, false))
+	b.add_theme_stylebox_override("hover", UI.slot_style(-1, true))
+	b.add_theme_stylebox_override("pressed", UI.slot_style(-1, true))
+	b.add_theme_stylebox_override("focus", UI.slot_style(-1, true))
+	return b
+
+func _fill_slot(btn: Button, item_id: String, fallback_label: String) -> void:
+	for c in btn.get_children():
+		c.queue_free()
+	var r := Items.rarity(item_id) if item_id != "" else -1
+	btn.add_theme_stylebox_override("normal", UI.slot_style(r, false))
+	btn.add_theme_stylebox_override("hover", UI.slot_style(r, true))
+	btn.add_theme_stylebox_override("pressed", UI.slot_style(r, true))
+	btn.add_theme_stylebox_override("focus", UI.slot_style(r, true))
+	if item_id == "":
+		var lbl := Label.new()
+		lbl.text = fallback_label
+		lbl.add_theme_font_size_override("font_size", 9)
+		lbl.add_theme_color_override("font_color", UI.TEXT_MUTED)
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		btn.add_child(lbl)
+		btn.tooltip_text = fallback_label
+		return
+	var def: Dictionary = Items.def(item_id)
+	var at := AtlasTexture.new()
+	at.atlas = ITEMS_TEX
+	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
+	var icon := TextureRect.new()
+	icon.texture = at
+	icon.custom_minimum_size = Vector2(42, 42)
+	icon.size = Vector2(42, 42)
+	icon.position = Vector2(7, 7)
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(icon)
+	btn.tooltip_text = "%s\n%s" % [String(def.get("name", item_id)), Items.rarity_name(r)]
+
+# ---------- picker ----------
 func _build_picker() -> void:
 	picker = PanelContainer.new()
 	picker.anchor_left = 0.5
 	picker.anchor_top = 0.5
 	picker.anchor_right = 0.5
 	picker.anchor_bottom = 0.5
-	picker.offset_left = -160
-	picker.offset_top = -180
-	picker.offset_right = 160
-	picker.offset_bottom = 180
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.10, 0.09, 0.08, 1.0)
-	sb.border_color = Color(0.65, 0.50, 0.20, 1.0)
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(8)
-	sb.set_content_margin_all(12)
-	picker.add_theme_stylebox_override("panel", sb)
+	picker.offset_left = -180
+	picker.offset_top = -200
+	picker.offset_right = 180
+	picker.offset_bottom = 200
+	picker.add_theme_stylebox_override("panel", UI.panel_style(10, 2))
 	picker.visible = false
 	overlay.add_child(picker)
 
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 8)
+	v.add_theme_constant_override("separation", 10)
 	picker.add_child(v)
 
 	var top := HBoxContainer.new()
 	v.add_child(top)
 	picker_title = Label.new()
 	picker_title.add_theme_font_size_override("font_size", 16)
-	picker_title.add_theme_color_override("font_color", Color(0.95, 0.85, 0.55, 1))
+	picker_title.add_theme_color_override("font_color", UI.GOLD)
 	picker_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(picker_title)
 	var close_btn := Button.new()
-	close_btn.text = "×"
-	close_btn.custom_minimum_size = Vector2(28, 26)
+	UI.apply_close_button(close_btn)
 	close_btn.pressed.connect(_close_picker)
 	top.add_child(close_btn)
 
-	v.add_child(HSeparator.new())
+	v.add_child(UI.divider())
 
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -256,17 +398,14 @@ func _render_picker() -> void:
 		c.queue_free()
 	var equipped_id := String(last_eq.get(picker_slot, ""))
 	if equipped_id != "":
-		var def_eq: Dictionary = Items.def(equipped_id)
-		var nm := String(def_eq.get("name", equipped_id))
-		var unbtn := Button.new()
-		unbtn.text = "Снять: " + nm
-		unbtn.custom_minimum_size = Vector2(0, 32)
 		var slot_copy := picker_slot
-		unbtn.pressed.connect(func():
+		var unbtn := _make_picker_row(equipped_id, 1, "Снять", func():
 			unequip_requested.emit(slot_copy)
-			_close_picker())
+			_close_picker(), true)
 		picker_list.add_child(unbtn)
-		picker_list.add_child(HSeparator.new())
+		var sep := UI.divider()
+		sep.custom_minimum_size = Vector2(0, 6)
+		picker_list.add_child(sep)
 
 	var any := false
 	for i in range(last_inv.size()):
@@ -277,31 +416,36 @@ func _render_picker() -> void:
 		any = true
 		var idx := i
 		var slot_copy2 := picker_slot
-		var row := _make_picker_row(item_id, int(entry.get("qty", 1)), func():
+		var row := _make_picker_row(item_id, int(entry.get("qty", 1)), "Надеть", func():
 			equip_requested.emit(idx, slot_copy2)
-			_close_picker())
+			_close_picker(), false)
 		picker_list.add_child(row)
 
-	if not any:
+	if not any and equipped_id == "":
 		var msg := Label.new()
 		msg.text = "В сумке нет подходящих вещей"
-		msg.add_theme_color_override("font_color", Color(0.55, 0.50, 0.42, 1))
+		msg.add_theme_color_override("font_color", UI.TEXT_MUTED)
 		msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		picker_list.add_child(msg)
 
-func _make_picker_row(item_id: String, qty: int, on_take: Callable) -> Control:
+func _make_picker_row(item_id: String, qty: int, hint_text: String, on_take: Callable, is_unequip: bool) -> Control:
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(0, 36)
+	btn.custom_minimum_size = Vector2(0, 44)
+	var r := Items.rarity(item_id)
+	btn.add_theme_stylebox_override("normal", UI.slot_style(r, false, 5))
+	btn.add_theme_stylebox_override("hover", UI.slot_style(r, true, 5))
+	btn.add_theme_stylebox_override("pressed", UI.slot_style(r, true, 5))
+	btn.add_theme_stylebox_override("focus", UI.slot_style(r, true, 5))
 	btn.pressed.connect(on_take)
 
 	var hb := HBoxContainer.new()
 	hb.anchor_right = 1.0
 	hb.anchor_bottom = 1.0
-	hb.offset_left = 6
+	hb.offset_left = 8
 	hb.offset_top = 4
-	hb.offset_right = -8
+	hb.offset_right = -10
 	hb.offset_bottom = -4
-	hb.add_theme_constant_override("separation", 8)
+	hb.add_theme_constant_override("separation", 10)
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(hb)
 
@@ -311,96 +455,36 @@ func _make_picker_row(item_id: String, qty: int, on_take: Callable) -> Control:
 	at.atlas = ITEMS_TEX
 	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
 	icon.texture = at
-	icon.custom_minimum_size = Vector2(22, 22)
+	icon.custom_minimum_size = Vector2(26, 26)
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	hb.add_child(icon)
 
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hb.add_child(col)
+
 	var name_lbl := Label.new()
 	var nm := String(def.get("name", item_id))
 	name_lbl.text = nm + ("" if qty <= 1 else "  ×%d" % qty)
-	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_lbl.add_theme_color_override("font_color", Color(0.92, 0.92, 0.88, 1))
-	hb.add_child(name_lbl)
+	name_lbl.add_theme_font_size_override("font_size", 13)
+	name_lbl.add_theme_color_override("font_color", Items.rarity_color(r))
+	col.add_child(name_lbl)
+	var sub := Label.new()
+	sub.text = Items.rarity_name(r)
+	sub.add_theme_font_size_override("font_size", 10)
+	sub.add_theme_color_override("font_color", UI.TEXT_MUTED)
+	col.add_child(sub)
 
 	var hint := Label.new()
-	hint.text = "Надеть"
-	hint.add_theme_color_override("font_color", Color(0.85, 0.75, 0.45, 1))
+	hint.text = hint_text
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", UI.GOLD if not is_unequip else Color(0.85, 0.52, 0.40))
 	hb.add_child(hint)
 	return btn
 
-func _make_stat_label(title: String, val: String, val_color: Color) -> Label:
-	# Возвращает значение-лейбл; row уже добавлен в Vbox через get_parent().
-	var row := HBoxContainer.new()
-	var t := Label.new()
-	t.text = title
-	t.add_theme_color_override("font_color", Color(0.65, 0.60, 0.50, 1))
-	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(t)
-	var v := Label.new()
-	v.text = val
-	v.add_theme_font_size_override("font_size", 14)
-	v.add_theme_color_override("font_color", val_color)
-	row.add_child(v)
-	return v
-
-func _make_slot_button(label: String, slot_key: String) -> Button:
-	var b := Button.new()
-	b.custom_minimum_size = Vector2(52, 52)
-	b.tooltip_text = label
-	b.add_theme_stylebox_override("normal", _slot_sb(false, slot_key))
-	b.add_theme_stylebox_override("hover", _slot_sb(true, slot_key))
-	b.add_theme_stylebox_override("pressed", _slot_sb(true, slot_key))
-	b.add_theme_stylebox_override("focus", _slot_sb(true, slot_key))
-	return b
-
-func _slot_sb(hover: bool, slot_key: String) -> StyleBoxFlat:
-	var tint: Color = SLOT_TINT.get(slot_key, Color(0.4, 0.4, 0.4))
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(tint.r * 0.18, tint.g * 0.18, tint.b * 0.18, 1.0)
-	sb.border_color = tint if hover else Color(tint.r * 0.7, tint.g * 0.7, tint.b * 0.7, 1.0)
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(6)
-	return sb
-
-func _show_empty_label(btn: Button, label: String) -> void:
-	for c in btn.get_children():
-		c.queue_free()
-	var lbl := Label.new()
-	lbl.text = label
-	lbl.add_theme_font_size_override("font_size", 10)
-	lbl.add_theme_color_override("font_color", Color(0.75, 0.65, 0.50, 1.0))
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	btn.add_child(lbl)
-	btn.tooltip_text = label
-
-func _set_slot_icon(btn: Button, item_id: String, fallback_label: String) -> void:
-	if item_id == "":
-		_show_empty_label(btn, fallback_label)
-		return
-	for c in btn.get_children():
-		c.queue_free()
-	var def: Dictionary = Items.def(item_id)
-	if def.is_empty():
-		_show_empty_label(btn, fallback_label)
-		return
-	var at := AtlasTexture.new()
-	at.atlas = ITEMS_TEX
-	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
-	var icon := TextureRect.new()
-	icon.texture = at
-	icon.custom_minimum_size = Vector2(40, 40)
-	icon.size = Vector2(40, 40)
-	icon.position = Vector2(6, 6)
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	btn.add_child(icon)
-	btn.tooltip_text = String(def.get("name", item_id))
-
+# ---------- lifecycle ----------
 func set_doll(variant: int) -> void:
 	doll_sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
 	doll_sprite.hframes = 3
@@ -416,6 +500,9 @@ func close() -> void:
 	_close_picker()
 	closed.emit()
 
+func is_open() -> bool:
+	return overlay.visible
+
 func _input(event: InputEvent) -> void:
 	if not overlay.visible:
 		return
@@ -426,21 +513,34 @@ func _input(event: InputEvent) -> void:
 			close()
 		get_viewport().set_input_as_handled()
 
-func is_open() -> bool:
-	return overlay.visible
-
 func refresh(me: Dictionary) -> void:
 	if not overlay.visible:
 		return
 	var eq: Dictionary = me.get("eq", {})
 	last_eq = eq
 	last_inv = me.get("inv", [])
+
 	for entry in SLOT_LAYOUT:
 		var slot: String = entry["slot"]
-		_set_slot_icon(slot_buttons[slot], String(eq.get(slot, "")), entry["label"])
-	stats_level.text = "%d" % int(me.get("level", 1))
-	stats_hp.text = "%d / %d" % [int(me.get("hp", 0)), int(me.get("hpMax", 100))]
-	stats_xp.text = "%d / %d" % [int(me.get("xp", 0)), int(me.get("xpNeed", 50))]
-	stats_damage.text = "%d" % int(me.get("damage", 10))
+		_fill_slot(slot_buttons[slot], String(eq.get(slot, "")), entry["label"])
+
+	var lvl: int = int(me.get("level", 1))
+	var xp: int = int(me.get("xp", 0))
+	var xp_need: int = int(me.get("xpNeed", 50))
+	var hp: int = int(me.get("hp", 0))
+	var hp_max: int = int(me.get("hpMax", 100))
+	var dmg: int = int(me.get("damage", 10))
+	var gold: int = int(me.get("gold", 0))
+
+	title_level.text = "Странник — Уровень %d" % lvl
+	xp_text.text = "%d / %d" % [xp, xp_need]
+	UI.progress_set(xp_bar, float(xp) / float(max(xp_need, 1)))
+
+	stats_level.text = "%d" % lvl
+	stats_hp_text.text = "%d / %d" % [hp, hp_max]
+	UI.progress_set(stats_hp_bar, float(hp) / float(max(hp_max, 1)))
+	stats_damage.text = "%d" % dmg
+	stats_gold.text = "%d" % gold
+
 	if picker and picker.visible:
 		_render_picker()

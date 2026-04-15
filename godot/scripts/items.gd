@@ -59,3 +59,38 @@ const DEFS := {
 
 static func def(id: String) -> Dictionary:
 	return DEFS.get(id, {})
+
+# Редкость по префиксу id: common/uncommon/rare/epic/legendary.
+# 0..4 — числовой ранг для сортировки/цвета.
+static func rarity(id: String) -> int:
+	if id == "": return -1
+	if id.begins_with("golden_") or id == "royal_cloak":
+		return 4
+	if id.begins_with("steel_") or id == "ruby_ring" or id == "emerald_ring":
+		return 3
+	if id.begins_with("iron_") or id == "sapphire_ring" or id == "silk_cloak":
+		return 2
+	if id.begins_with("bronze_") or id == "silver_ring" or id == "silver_amulet" \
+			or id == "leather_armor" or id == "leather_helmet" or id == "leather_boots" \
+			or id == "leather_belt" or id == "leather_cloak" or id == "wool_cloak" \
+			or id == "health_potion":
+		return 1
+	return 0
+
+static func rarity_color(r: int) -> Color:
+	match r:
+		4: return Color(1.00, 0.62, 0.24)   # legendary — оранжевое золото
+		3: return Color(0.70, 0.38, 0.92)   # epic — пурпур
+		2: return Color(0.29, 0.63, 0.96)   # rare — синий
+		1: return Color(0.36, 0.78, 0.42)   # uncommon — зелёный
+		0: return Color(0.70, 0.68, 0.62)   # common — серый
+	return Color(0.40, 0.34, 0.26)          # пустой слот
+
+static func rarity_name(r: int) -> String:
+	match r:
+		4: return "Легендарный"
+		3: return "Эпический"
+		2: return "Редкий"
+		1: return "Необычный"
+		0: return "Обычный"
+	return ""
