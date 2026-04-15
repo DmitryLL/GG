@@ -5,15 +5,14 @@ extends CanvasLayer
 
 signal send_requested(text: String)
 
-const COMPACT_KEEP := 50    # сколько сообщений живёт в компактном логе (скроллится)
+const COMPACT_KEEP := 7     # сколько сообщений показываем в компактном логе
 const HISTORY_MAX := 200    # сколько хранится в локальной истории для модала
 
 var history: Array = []  # [{name, text}]
 
 # Compact (bottom-left)
-var compact_panel: PanelContainer
+var compact_panel: Control
 var compact_log: VBoxContainer
-var compact_scroll: ScrollContainer
 var input: LineEdit
 
 # History modal
@@ -29,8 +28,8 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 
-	# === Compact panel — без фона, ввод приклеен к низу экрана ===
-	compact_panel = PanelContainer.new()
+	# === Compact panel — полностью прозрачный, без фона и без скролла ===
+	compact_panel = Control.new()
 	compact_panel.anchor_left = 0.0
 	compact_panel.anchor_top = 1.0
 	compact_panel.anchor_right = 0.0
@@ -39,30 +38,26 @@ func _ready() -> void:
 	compact_panel.offset_top = -200
 	compact_panel.offset_right = 360
 	compact_panel.offset_bottom = -8
-	compact_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	compact_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(compact_panel)
 
 	var cv := VBoxContainer.new()
 	cv.add_theme_constant_override("separation", 4)
-	cv.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cv.anchor_right = 1.0
+	cv.anchor_bottom = 1.0
+	cv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	compact_panel.add_child(cv)
 
-	# Лог сообщений в скролле, новые снизу, старые автопрокручиваются.
-	compact_scroll = ScrollContainer.new()
-	compact_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	compact_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	compact_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	compact_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	compact_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
-	cv.add_child(compact_scroll)
+	# Лог сообщений — просто VBox. Новые снизу, старые уезжают (удаляются).
 	compact_log = VBoxContainer.new()
 	compact_log.add_theme_constant_override("separation", 2)
 	compact_log.alignment = BoxContainer.ALIGNMENT_END
 	compact_log.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	compact_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	compact_scroll.add_child(compact_log)
+	compact_log.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cv.add_child(compact_log)
 
-	# Нижняя строка: поле ввода + кнопка истории «↗».
+	# Нижняя строка: поле ввода + кнопка «История».
 	var bottom_row := HBoxContainer.new()
 	bottom_row.add_theme_constant_override("separation", 4)
 	cv.add_child(bottom_row)
@@ -78,9 +73,10 @@ func _ready() -> void:
 	input.focus_exited.connect(func(): input.modulate = Color(1, 1, 1, 0.85))
 
 	var expand_btn := Button.new()
-	expand_btn.text = "↗"
-	expand_btn.tooltip_text = "Показать всю историю"
-	expand_btn.custom_minimum_size = Vector2(28, 24)
+	expand_btn.text = "История"
+	expand_btn.tooltip_text = "Показать всю историю чата"
+	expand_btn.custom_minimum_size = Vector2(72, 24)
+	expand_btn.add_theme_font_size_override("font_size", 11)
 	expand_btn.pressed.connect(open_history)
 	bottom_row.add_child(expand_btn)
 
@@ -175,23 +171,16 @@ func append_line(name: String, text: String) -> void:
 	while history.size() > HISTORY_MAX:
 		history.pop_front()
 
-	# Compact view: добавили → ждём кадр → скроллим вниз
+	# Compact view: новые снизу, старше 7-го удаляется.
 	compact_log.add_child(_make_message_row(name, text, false))
 	while compact_log.get_child_count() > COMPACT_KEEP:
 		compact_log.get_child(0).queue_free()
-	await get_tree().process_frame
-	_scroll_compact_to_bottom()
 
 	# History view (если открыт)
 	if history_overlay.visible:
 		history_log.add_child(_make_message_row(name, text, true))
 		await get_tree().process_frame
 		_scroll_history_to_bottom()
-
-func _scroll_compact_to_bottom() -> void:
-	var sb := compact_scroll.get_v_scroll_bar()
-	if sb:
-		compact_scroll.scroll_vertical = int(sb.max_value)
 
 func _make_message_row(name: String, text: String, full: bool) -> Control:
 	# Чат прозрачный — текст с чёрной обводкой чтобы читался на любом фоне.
