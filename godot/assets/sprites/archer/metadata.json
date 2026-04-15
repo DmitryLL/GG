@@ -1,0 +1,105 @@
+{
+  "character": {
+    "id": "e1c46226-6231-4957-b7c3-d3a5f8007a5a",
+    "name": "Archer",
+    "prompt": "human archer in leather armor with hood, holding a wooden longbow, quiver of arrows on back, green and brown tones",
+    "size": {
+      "width": 68,
+      "height": 68
+    },
+    "template_id": "mannequin",
+    "directions": 8,
+    "view": "low top-down",
+    "created_at": "2026-04-15T14:17:33.443928+00:00"
+  },
+  "frames": {
+    "rotations": {
+      "south": "rotations/south.png",
+      "south-east": "rotations/south-east.png",
+      "east": "rotations/east.png",
+      "north-east": "rotations/north-east.png",
+      "north": "rotations/north.png",
+      "north-west": "rotations/north-west.png",
+      "west": "rotations/west.png",
+      "south-west": "rotations/south-west.png"
+    },
+    "animations": {
+      "walking-d680429a": {
+        "north": [
+          "animations/walking-d680429a/north/frame_000.png",
+          "animations/walking-d680429a/north/frame_001.png",
+          "animations/walking-d680429a/north/frame_002.png",
+          "animations/walking-d680429a/north/frame_003.png",
+          "animations/walking-d680429a/north/frame_004.png",
+          "animations/walking-d680429a/north/frame_005.png"
+        ],
+        "south": [
+          "animations/walking-d680429a/south/frame_000.png",
+          "animations/walking-d680429a/south/frame_001.png",
+          "animations/walking-d680429a/south/frame_002.png",
+          "animations/walking-d680429a/south/frame_003.png",
+          "animations/walking-d680429a/south/frame_004.png",
+          "animations/walking-d680429a/south/frame_005.png"
+        ],
+        "north-west": [
+          "animations/walking-d680429a/north-west/frame_000.png",
+          "animations/walking-d680429a/north-west/frame_001.png",
+          "animations/walking-d680429a/north-west/frame_002.png",
+          "animations/walking-d680429a/north-west/frame_003.png",
+          "animations/walking-d680429a/north-west/frame_004.png",
+          "animations/walking-d680429a/north-west/frame_005.png"
+        ],
+        "west": [
+          "animations/walking-d680429a/west/frame_000.png",
+          "animations/walking-d680429a/west/frame_001.png",
+          "animations/walking-d680429a/west/frame_002.png",
+          "animations/walking-d680429a/west/frame_003.png",
+          "animations/walking-d680429a/west/frame_004.png",
+          "animations/walking-d680429a/west/frame_005.png"
+        ],
+        "south-west": [
+          "animations/walking-d680429a/south-west/frame_000.png",
+          "animations/walking-d680429a/south-west/frame_001.png",
+          "animations/walking-d680429a/south-west/frame_002.png",
+          "animations/walking-d680429a/south-west/frame_003.png",
+          "animations/walking-d680429a/south-west/frame_004.png",
+          "animations/walking-d680429a/south-west/frame_005.png"
+        ],
+        "east": [
+          "animations/walking-d680429a/east/frame_000.png",
+          "animations/walking-d680429a/east/frame_001.png",
+          "animations/walking-d680429a/east/frame_002.png",
+          "animations/walking-d680429a/east/frame_003.png",
+          "animations/walking-d680429a/east/frame_004.png",
+          "animations/walking-d680429a/east/frame_005.png"
+        ],
+        "south-east": [
+          "animations/walking-d680429a/south-east/frame_000.png",
+          "animations/walking-d680429a/south-east/frame_001.png",
+          "animations/walking-d680429a/south-east/frame_002.png",
+          "animations/walking-d680429a/south-east/frame_003.png",
+          "animations/walking-d680429a/south-east/frame_004.png",
+          "animations/walking-d680429a/south-east/frame_005.png"
+        ],
+        "north-east": [
+          "animations/walking-d680429a/north-east/frame_000.png",
+          "animations/walking-d680429a/north-east/frame_001.png",
+          "animations/walking-d680429a/north-east/frame_002.png",
+          "animations/walking-d680429a/north-east/frame_003.png",
+          "animations/walking-d680429a/north-east/frame_004.png",
+          "animations/walking-d680429a/north-east/frame_005.png"
+        ]
+      },
+      "drawing_a_bow_and_shooting_an_arrow-eedb0b65": {
+        "south": [
+          "animations/drawing_a_bow_and_shooting_an_arrow-eedb0b65/south/frame_000.png",
+          "animations/drawing_a_bow_and_shooting_an_arrow-eedb0b65/south/frame_001.png",
+          "animations/drawing_a_bow_and_shooting_an_arrow-eedb0b65/south/frame_002.png",
+          "animations/drawing_a_bow_and_shooting_an_arrow-eedb0b65/south/frame_003.png"
+        ]
+      }
+    }
+  },
+  "export_version": "2.0",
+  "export_date": "2026-04-15T14:29:46.770743"
+}
