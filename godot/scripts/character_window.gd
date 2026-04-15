@@ -4,6 +4,7 @@ class_name CharacterWindow
 extends CanvasLayer
 
 signal unequip_requested(slot: String)
+signal equip_requested(inv_index: int, target_slot: String)
 signal closed
 
 const ITEMS_TEX := preload("res://assets/sprites/items.png")
@@ -45,6 +46,14 @@ var stats_level: Label
 var stats_hp: Label
 var stats_xp: Label
 var stats_damage: Label
+
+# Попап выбора вещи для слота.
+var picker: PanelContainer
+var picker_title: Label
+var picker_list: VBoxContainer
+var picker_slot: String = ""
+var last_inv: Array = []
+var last_eq: Dictionary = {}
 
 func _ready() -> void:
 	overlay = ColorRect.new()
@@ -127,7 +136,7 @@ func _ready() -> void:
 		var slot_name: String = entry["slot"]
 		var btn := _make_slot_button(entry["label"], slot_name)
 		btn.position = Vector2(190 + entry["x"] - 26, 195 + entry["y"] - 26)
-		btn.pressed.connect(func(): unequip_requested.emit(slot_name))
+		btn.pressed.connect(func(): _open_picker(slot_name))
 		doll_root.add_child(btn)
 		slot_buttons[slot_name] = btn
 		_show_empty_label(btn, entry["label"])
@@ -164,6 +173,161 @@ func _ready() -> void:
 	stats_v.add_child(stats_xp.get_parent())
 	stats_damage = _make_stat_label("Урон", "10", Color(0.94, 0.55, 0.40))
 	stats_v.add_child(stats_damage.get_parent())
+
+	_build_picker()
+
+func _build_picker() -> void:
+	picker = PanelContainer.new()
+	picker.anchor_left = 0.5
+	picker.anchor_top = 0.5
+	picker.anchor_right = 0.5
+	picker.anchor_bottom = 0.5
+	picker.offset_left = -160
+	picker.offset_top = -180
+	picker.offset_right = 160
+	picker.offset_bottom = 180
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.10, 0.09, 0.08, 1.0)
+	sb.border_color = Color(0.65, 0.50, 0.20, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	sb.set_content_margin_all(12)
+	picker.add_theme_stylebox_override("panel", sb)
+	picker.visible = false
+	overlay.add_child(picker)
+
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	picker.add_child(v)
+
+	var top := HBoxContainer.new()
+	v.add_child(top)
+	picker_title = Label.new()
+	picker_title.add_theme_font_size_override("font_size", 16)
+	picker_title.add_theme_color_override("font_color", Color(0.95, 0.85, 0.55, 1))
+	picker_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(picker_title)
+	var close_btn := Button.new()
+	close_btn.text = "×"
+	close_btn.custom_minimum_size = Vector2(28, 26)
+	close_btn.pressed.connect(_close_picker)
+	top.add_child(close_btn)
+
+	v.add_child(HSeparator.new())
+
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(scroll)
+	picker_list = VBoxContainer.new()
+	picker_list.add_theme_constant_override("separation", 4)
+	picker_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(picker_list)
+
+func _open_picker(slot: String) -> void:
+	picker_slot = slot
+	picker_title.text = _slot_title(slot)
+	_render_picker()
+	picker.visible = true
+
+func _close_picker() -> void:
+	picker.visible = false
+	picker_slot = ""
+
+func _slot_title(slot: String) -> String:
+	for entry in SLOT_LAYOUT:
+		if entry["slot"] == slot:
+			return String(entry["label"])
+	return slot
+
+func _item_fits_slot(item_id: String, slot: String) -> bool:
+	var def: Dictionary = Items.def(item_id)
+	var s := String(def.get("slot", ""))
+	if s == "":
+		return false
+	if s == slot:
+		return true
+	if s == "ring" and (slot == "ring1" or slot == "ring2"):
+		return true
+	return false
+
+func _render_picker() -> void:
+	for c in picker_list.get_children():
+		c.queue_free()
+	var equipped_id := String(last_eq.get(picker_slot, ""))
+	if equipped_id != "":
+		var def_eq: Dictionary = Items.def(equipped_id)
+		var nm := String(def_eq.get("name", equipped_id))
+		var unbtn := Button.new()
+		unbtn.text = "Снять: " + nm
+		unbtn.custom_minimum_size = Vector2(0, 32)
+		var slot_copy := picker_slot
+		unbtn.pressed.connect(func():
+			unequip_requested.emit(slot_copy)
+			_close_picker())
+		picker_list.add_child(unbtn)
+		picker_list.add_child(HSeparator.new())
+
+	var any := false
+	for i in range(last_inv.size()):
+		var entry: Dictionary = last_inv[i]
+		var item_id := String(entry.get("itemId", ""))
+		if not _item_fits_slot(item_id, picker_slot):
+			continue
+		any = true
+		var idx := i
+		var slot_copy2 := picker_slot
+		var row := _make_picker_row(item_id, int(entry.get("qty", 1)), func():
+			equip_requested.emit(idx, slot_copy2)
+			_close_picker())
+		picker_list.add_child(row)
+
+	if not any:
+		var msg := Label.new()
+		msg.text = "В сумке нет подходящих вещей"
+		msg.add_theme_color_override("font_color", Color(0.55, 0.50, 0.42, 1))
+		msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		picker_list.add_child(msg)
+
+func _make_picker_row(item_id: String, qty: int, on_take: Callable) -> Control:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(0, 36)
+	btn.pressed.connect(on_take)
+
+	var hb := HBoxContainer.new()
+	hb.anchor_right = 1.0
+	hb.anchor_bottom = 1.0
+	hb.offset_left = 6
+	hb.offset_top = 4
+	hb.offset_right = -8
+	hb.offset_bottom = -4
+	hb.add_theme_constant_override("separation", 8)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(hb)
+
+	var def: Dictionary = Items.def(item_id)
+	var icon := TextureRect.new()
+	var at := AtlasTexture.new()
+	at.atlas = ITEMS_TEX
+	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
+	icon.texture = at
+	icon.custom_minimum_size = Vector2(22, 22)
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	hb.add_child(icon)
+
+	var name_lbl := Label.new()
+	var nm := String(def.get("name", item_id))
+	name_lbl.text = nm + ("" if qty <= 1 else "  ×%d" % qty)
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_lbl.add_theme_color_override("font_color", Color(0.92, 0.92, 0.88, 1))
+	hb.add_child(name_lbl)
+
+	var hint := Label.new()
+	hint.text = "Надеть"
+	hint.add_theme_color_override("font_color", Color(0.85, 0.75, 0.45, 1))
+	hb.add_child(hint)
+	return btn
 
 func _make_stat_label(title: String, val: String, val_color: Color) -> Label:
 	# Возвращает значение-лейбл; row уже добавлен в Vbox через get_parent().
@@ -249,7 +413,18 @@ func open(me: Dictionary) -> void:
 
 func close() -> void:
 	overlay.visible = false
+	_close_picker()
 	closed.emit()
+
+func _input(event: InputEvent) -> void:
+	if not overlay.visible:
+		return
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		if picker.visible:
+			_close_picker()
+		else:
+			close()
+		get_viewport().set_input_as_handled()
 
 func is_open() -> bool:
 	return overlay.visible
@@ -258,6 +433,8 @@ func refresh(me: Dictionary) -> void:
 	if not overlay.visible:
 		return
 	var eq: Dictionary = me.get("eq", {})
+	last_eq = eq
+	last_inv = me.get("inv", [])
 	for entry in SLOT_LAYOUT:
 		var slot: String = entry["slot"]
 		_set_slot_icon(slot_buttons[slot], String(eq.get(slot, "")), entry["label"])
@@ -265,3 +442,5 @@ func refresh(me: Dictionary) -> void:
 	stats_hp.text = "%d / %d" % [int(me.get("hp", 0)), int(me.get("hpMax", 100))]
 	stats_xp.text = "%d / %d" % [int(me.get("xp", 0)), int(me.get("xpNeed", 50))]
 	stats_damage.text = "%d" % int(me.get("damage", 10))
+	if picker and picker.visible:
+		_render_picker()

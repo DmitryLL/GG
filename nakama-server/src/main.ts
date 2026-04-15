@@ -521,11 +521,24 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             }
             case OP_EQUIP: {
                 try {
-                    const body = JSON.parse(nk.binaryToString(msg.data)) as { slot?: number };
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { slot?: number; target?: string };
                     const idx = Number(body.slot);
                     if (!isFinite(idx) || idx < 0 || idx >= player.inventory.length) break;
                     const entry = player.inventory[idx];
-                    const target = targetSlotFor(entry.itemId, player.equipment);
+                    const want = body.target ? String(body.target) : "";
+                    let target: string | null = null;
+                    if (want) {
+                        // Клиент просит конкретный слот — проверяем совместимость.
+                        const def = ITEMS[entry.itemId] as any;
+                        const itemSlot = def ? String(def.slot || "") : "";
+                        const ok = !!itemSlot && (
+                            itemSlot === want ||
+                            (itemSlot === "ring" && (want === "ring1" || want === "ring2"))
+                        );
+                        if (ok && EQUIP_SLOTS.indexOf(want) >= 0) target = want;
+                    } else {
+                        target = targetSlotFor(entry.itemId, player.equipment);
+                    }
                     if (!target) break;
                     const prev = player.equipment[target];
                     player.equipment[target] = entry.itemId;
