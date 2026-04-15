@@ -114,27 +114,6 @@ func _build_header(parent: Container) -> void:
 	title_level.add_theme_color_override("font_color", UI.TEXT_DIM)
 	titles.add_child(title_level)
 
-	# XP бар в хедере
-	var xp_wrap := VBoxContainer.new()
-	xp_wrap.custom_minimum_size = Vector2(220, 0)
-	xp_wrap.add_theme_constant_override("separation", 3)
-	top.add_child(xp_wrap)
-	var xp_head := HBoxContainer.new()
-	xp_wrap.add_child(xp_head)
-	var xp_ttl := Label.new()
-	xp_ttl.text = "Опыт"
-	xp_ttl.add_theme_font_size_override("font_size", 10)
-	xp_ttl.add_theme_color_override("font_color", UI.TEXT_MUTED)
-	xp_ttl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	xp_head.add_child(xp_ttl)
-	xp_text = Label.new()
-	xp_text.text = "0 / 50"
-	xp_text.add_theme_font_size_override("font_size", 10)
-	xp_text.add_theme_color_override("font_color", UI.XP_ORANGE)
-	xp_head.add_child(xp_text)
-	xp_bar = UI.progress_bar(UI.XP_BG, UI.XP_ORANGE, 8)
-	xp_wrap.add_child(xp_bar)
-
 	var close_btn := Button.new()
 	UI.apply_close_button(close_btn)
 	close_btn.pressed.connect(close)
@@ -224,6 +203,26 @@ func _build_stats(parent: Container) -> void:
 	hp_head.add_child(stats_hp_text)
 	stats_hp_bar = UI.progress_bar(UI.HP_BG, UI.HP_RED, 10)
 	hp_wrap.add_child(stats_hp_bar)
+
+	# XP с баром
+	var xp_wrap := VBoxContainer.new()
+	xp_wrap.add_theme_constant_override("separation", 4)
+	sv.add_child(xp_wrap)
+	var xp_head := HBoxContainer.new()
+	xp_wrap.add_child(xp_head)
+	var xp_ttl := Label.new()
+	xp_ttl.text = "Опыт"
+	xp_ttl.add_theme_color_override("font_color", UI.TEXT_DIM)
+	xp_ttl.add_theme_font_size_override("font_size", 12)
+	xp_ttl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	xp_head.add_child(xp_ttl)
+	xp_text = Label.new()
+	xp_text.text = "0 / 50"
+	xp_text.add_theme_font_size_override("font_size", 13)
+	xp_text.add_theme_color_override("font_color", UI.XP_ORANGE)
+	xp_head.add_child(xp_text)
+	xp_bar = UI.progress_bar(UI.XP_BG, UI.XP_ORANGE, 10)
+	xp_wrap.add_child(xp_bar)
 
 	# Damage
 	stats_damage = _stat_row(sv, "Урон", "10", Color(0.95, 0.50, 0.40))
