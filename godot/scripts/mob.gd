@@ -67,6 +67,7 @@ func set_alive(v: bool) -> void:
 	visible = true
 	hp_bg.visible = v
 	hp_fill.visible = v
+	_update_glow()
 	if v:
 		sprite.rotation = 0
 		sprite.modulate = Color(1, 1, 1, 1)
@@ -82,7 +83,8 @@ func set_loot(items: Array) -> void:
 func _update_glow() -> void:
 	if glow == null:
 		return
-	glow.visible = loot.size() > 0
+	# Светится только труп с лутом. Живой моб — никогда.
+	glow.visible = (not alive) and loot.size() > 0
 
 func _make_glow_texture() -> ImageTexture:
 	var size := 64
