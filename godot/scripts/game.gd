@@ -408,7 +408,6 @@ func _apply_positions(body: Dictionary) -> void:
 		var hp: float = float(p.get("hp", 100))
 		var lv: int = int(p.get("lv", 1))
 		if sid == my_session_id:
-			# hp_max comes from OP_ME; use last known, fall back to 100.
 			var max_hp: float = float(last_me.get("hpMax", 100))
 			me.set_hp(hp, max_hp)
 			if me.position.distance_to(Vector2(x, y)) > 64.0:
@@ -417,6 +416,7 @@ func _apply_positions(body: Dictionary) -> void:
 			continue
 		var display: String = String(p.get("n", sid.substr(0, 6)))
 		var uid: String = String(p.get("uid", sid))
+		var has_bow_remote: bool = bool(p.get("hb", false))
 		var remote: Player = remotes.get(sid)
 		if remote == null:
 			remote = PLAYER_SCRIPT.new()
@@ -425,7 +425,9 @@ func _apply_positions(body: Dictionary) -> void:
 			remote.position = Vector2(x, y)
 			entities.add_child(remote)
 			remotes[sid] = remote
-		remote.position = Vector2(x, y)
+		var new_pos := Vector2(x, y)
+		remote.remote_update(new_pos)
+		remote.set_has_bow(has_bow_remote)
 		remote.set_hp(hp, 100.0)
 
 func _apply_mobs(body: Dictionary) -> void:

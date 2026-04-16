@@ -27,6 +27,8 @@ var hp: float = 100.0
 var hp_max: float = 100.0
 var move_target: Vector2 = Vector2.ZERO
 var has_target: bool = false
+var _remote_target: Vector2 = Vector2.ZERO
+var _remote_has_target: bool = false
 var facing: int = Dir.DOWN
 var moving: bool = false
 var anim_t: float = 0.0
@@ -106,6 +108,22 @@ func _process(delta: float) -> void:
 		if _flash_t <= 0.0:
 			sprite.modulate = Color(1, 1, 1, 1)
 	if not local:
+		# Для remote игроков — плавная интерполяция к target и анимация
+		if _remote_has_target:
+			var to := _remote_target - position
+			var dist := to.length()
+			var s := SPEED * delta
+			if dist <= s:
+				position = _remote_target
+				_remote_has_target = false
+			else:
+				var step := to.normalized() * s
+				position += step
+				_set_facing_from(step)
+			moving = dist > 0.3
+		else:
+			moving = false
+		_animate(delta)
 		return
 
 	var step := Vector2.ZERO
@@ -172,6 +190,15 @@ func show_bubble(text: String) -> void:
 
 func face_toward(target: Vector2) -> void:
 	_set_facing_from(target - position)
+
+func remote_update(new_pos: Vector2) -> void:
+	# Если позиция далеко (>120px) — телепорт. Иначе плавное движение.
+	if position.distance_to(new_pos) > 120.0:
+		position = new_pos
+		_remote_has_target = false
+	else:
+		_remote_target = new_pos
+		_remote_has_target = true
 
 var _has_bow := false
 func set_has_bow(on: bool) -> void:

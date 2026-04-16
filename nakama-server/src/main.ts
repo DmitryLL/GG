@@ -620,6 +620,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     if (prev) addToInventory(player, prev, 1);
                     player.hpMax = computeHpMax(player);
                     if (player.hp > player.hpMax) player.hp = player.hpMax;
+                    player.dirtyPos = true;
                     markMe(player);
                 } catch (_e) {}
                 break;
@@ -635,6 +636,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     player.equipment[slot] = "";
                     player.hpMax = computeHpMax(player);
                     if (player.hp > player.hpMax) player.hp = player.hpMax;
+                    player.dirtyPos = true;
                     markMe(player);
                 } catch (_e) {}
                 break;
@@ -962,12 +964,13 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
 
     // --- broadcasts ---
-    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; lv: number }[] = [];
+    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; lv: number; hb: boolean }[] = [];
     const pKeys = Object.keys(state.players);
     for (let i = 0; i < pKeys.length; i++) {
         const p = state.players[pKeys[i]];
         if (!p.dirtyPos) continue;
-        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, lv: p.level });
+        const hasBowBroadcast = (p.equipment.weapon || "").includes("bow");
+        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, lv: p.level, hb: hasBowBroadcast });
         p.dirtyPos = false;
     }
     if (pUpdates.length > 0) {
