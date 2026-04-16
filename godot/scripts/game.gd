@@ -870,19 +870,19 @@ func _make_circle_sprite(radius: float, color: Color) -> Sprite2D:
 	s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	return s
 
-func _on_admin_action(action: String) -> void:
+func _on_admin_action(action: String, extra: Dictionary = {}) -> void:
 	var my_name: String = String(Session.auth.username if Session.auth else "")
 	if my_name == "":
 		return
-	var payload: Dictionary
+	var payload: Dictionary = {}
 	match action:
 		"heal_self":
 			payload = {"op": "set_hp", "target": my_name, "hp": 99999}
 		"heal_all":
 			payload = {"op": "heal_all"}
-		"give_gold":
+		"give_gold_self":
 			payload = {"op": "give_gold", "target": my_name, "amount": 1000}
-		"give_golden_bow":
+		"give_golden_bow_self":
 			payload = {"op": "give_item", "target": my_name, "itemId": "golden_bow", "qty": 1}
 		"level_up":
 			var cur_lvl: int = int(last_me.get("level", 1))
@@ -894,13 +894,35 @@ func _on_admin_action(action: String) -> void:
 		"teleport_cursor":
 			var cursor: Vector2 = get_viewport().get_camera_2d().get_global_mouse_position()
 			payload = {"op": "teleport", "target": my_name, "x": cursor.x, "y": cursor.y}
+		"list_users":
+			payload = {"op": "list_users"}
+		"give_gold_to":
+			payload = {"op": "give_gold", "target": extra.get("target", ""), "amount": 1000}
+		"give_item_to":
+			payload = {"op": "give_item", "target": extra.get("target", ""), "itemId": extra.get("itemId", ""), "qty": 1}
+		"level_up_to":
+			# Требуется текущий уровень — фоллбек 1 + delta (не точно, но ОК для админки)
+			var d: int = int(extra.get("delta", 5))
+			payload = {"op": "set_level", "target": extra.get("target", ""), "level": 50 + d}  # TODO: точное значение
 		_:
 			return
 	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "admin", JSON.stringify(payload))
 	if rpc_res.is_exception():
 		admin_panel.log_result("ERR: " + rpc_res.get_exception().message)
 		return
+	# Для list_users парсим результат и заполняем UI
+	if action == "list_users":
+		var data: Variant = JSON.parse_string(rpc_res.payload)
+		if typeof(data) == TYPE_DICTIONARY and data.has("users"):
+			admin_panel.set_users(data["users"])
+			admin_panel.log_result("Загружено: %d игроков" % data["users"].size())
+		else:
+			admin_panel.log_result("Неожиданный ответ: " + rpc_res.payload)
+		return
 	admin_panel.log_result(rpc_res.payload)
+	# Если что-то дали/выдали — обновить список
+	if action.begins_with("give_") or action.begins_with("level_up"):
+		_on_admin_action("list_users", {})
 
 func _on_skill_activated(index: int) -> void:
 	if match_id == "" or Session.socket == null:
