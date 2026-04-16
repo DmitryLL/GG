@@ -189,12 +189,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			if bool(sk["targets_mob"]):
 				var mob_hit := _mob_at(world_pos)
 				if mob_hit != null and mob_hit.alive:
-					# Выделяем цель (покажется HP панель) и ставим скилл в очередь —
-					# при подходе в дальность сработает автоматически.
 					attack_target = mob_hit
 					pvp_target = null
 					_set_mob_highlight(mob_hit)
 					queued_skill = idx
+					attack_cooldown = 0.0  # скилл должен выстрелить сразу по прибытии
 			else:
 				_send_skill(idx, {"skill": idx + 1, "x": world_pos.x, "y": world_pos.y})
 			return
@@ -272,19 +271,22 @@ func _process(delta: float) -> void:
 			queued_skill = -1
 		else:
 			var has_bow: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
-			# Queued skill: при наличии дальности и отсутствии кд — выпустить
-			if queued_skill >= 0 and skillbar.cooldowns[queued_skill] <= 0.0 and attack_cooldown <= 0.0:
-				var q_range: float = PLAYER_ATTACK_RANGE if has_bow else 36.0
-				var q_d: float = me.position.distance_to(attack_target.position)
-				if q_d <= q_range:
-					me.has_target = false
-					me.face_toward(attack_target.position)
-					_send_skill(queued_skill, {"skill": queued_skill + 1, "mobId": attack_target.mob_id})
-					attack_cooldown = PLAYER_ATTACK_COOLDOWN
-					queued_skill = -1
+			# Queued skill — пока не выпустили, авто-атака не работает.
+			if queued_skill >= 0:
+				if skillbar.cooldowns[queued_skill] > 0.0:
+					queued_skill = -1  # скилл на кд, снимаем очередь
 				else:
-					me.request_move_to(attack_target.position)
-					return
+					var q_range: float = PLAYER_ATTACK_RANGE if has_bow else 36.0
+					var q_d: float = me.position.distance_to(attack_target.position)
+					if q_d <= q_range:
+						me.has_target = false
+						me.face_toward(attack_target.position)
+						_send_skill(queued_skill, {"skill": queued_skill + 1, "mobId": attack_target.mob_id})
+						attack_cooldown = PLAYER_ATTACK_COOLDOWN
+						queued_skill = -1
+					else:
+						me.request_move_to(attack_target.position)
+					return  # пока скилл не выпущен — не делаем auto-attack
 			if has_bow:
 				var d_bow: float = me.position.distance_to(attack_target.position)
 				if d_bow <= PLAYER_ATTACK_RANGE:
