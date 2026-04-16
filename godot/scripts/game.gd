@@ -273,19 +273,22 @@ func _process(delta: float) -> void:
 			var has_bow: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
 			# Queued skill — пока не выпустили, авто-атака НЕ работает (ждём).
 			if queued_skill >= 0:
-				var q_range: float = PLAYER_ATTACK_RANGE if has_bow else 36.0
+				# Чуть меньше серверной дальности — компенсация лага позиции
+				var q_range: float = (PLAYER_ATTACK_RANGE - 20.0) if has_bow else 30.0
 				var q_d: float = me.position.distance_to(attack_target.position)
 				if q_d > q_range:
 					me.request_move_to(attack_target.position)
 					return
-				# В дальности — ждём cooldown скилла, не атакуем
 				me.has_target = false
 				me.face_toward(attack_target.position)
 				if skillbar.cooldowns[queued_skill] <= 0.0:
+					# Принудительно сообщаем серверу актуальную позицию ПЕРЕД скиллом
+					Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": me.position.x, "y": me.position.y}))
+					last_sent_pos = me.position
 					_send_skill(queued_skill, {"skill": queued_skill + 1, "mobId": attack_target.mob_id})
 					attack_cooldown = PLAYER_ATTACK_COOLDOWN
 					queued_skill = -1
-				return  # пока queued_skill активен — авто-атака заблокирована
+				return
 			if has_bow:
 				var d_bow: float = me.position.distance_to(attack_target.position)
 				if d_bow <= PLAYER_ATTACK_RANGE:

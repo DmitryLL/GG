@@ -733,7 +733,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         case 1: {  // Меткий выстрел — x2 damage single shot
                             const mob = state.mobs[String(body.mobId || "")];
                             if (!mob || mob.state !== "alive") break;
-                            if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE) break;
+                            // +40px tolerance для компенсации лага клиент-сервер
+                            if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE + 40) break;
                             const dmg = baseDmg * 2;
                             mob.hp -= dmg;
                             mob.dirty = true;
@@ -790,7 +791,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         case 4: {  // Отравленная стрела — DoT + slow, stacks 3
                             const mob = state.mobs[String(body.mobId || "")];
                             if (!mob || mob.state !== "alive") break;
-                            if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE) break;
+                            if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE + 40) break;
                             mob.hp -= baseDmg;
                             mob.dirty = true;
                             if (!mob.debuff) mob.debuff = { poisonStacks: 0, poisonEndAt: 0, slowEndAt: 0, nextPoisonTickAt: 0 };
