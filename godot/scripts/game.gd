@@ -133,7 +133,7 @@ func _ready() -> void:
 	_click_marker.z_index = 100
 	world.add_child(_click_marker)
 
-	_targeting_ring = _make_circle_sprite(80, Color(1.0, 0.6, 0.2, 0.6))
+	_targeting_ring = _make_zone_square(160, Color(1.0, 0.6, 0.2, 0.7))
 	_targeting_ring.visible = false
 	_targeting_ring.z_index = 95
 	world.add_child(_targeting_ring)
@@ -193,8 +193,11 @@ func _unhandled_input(event: InputEvent) -> void:
 					pvp_target = null
 					_set_mob_highlight(mob_hit)
 					queued_skill = idx
-					attack_cooldown = 0.0  # скилл должен выстрелить сразу по прибытии
+					attack_cooldown = 0.0
 			else:
+				# Ground skill: проверка дальности каста
+				if me.position.distance_to(world_pos) > PLAYER_ATTACK_RANGE:
+					return
 				_send_skill(idx, {"skill": idx + 1, "x": world_pos.x, "y": world_pos.y})
 			return
 		# NPC takes priority over mobs/move.
@@ -634,14 +637,14 @@ func _handle_skill_fx(body: Dictionary) -> void:
 		if def.on_fx(self, body):
 			return
 
-func _spawn_rain_zone(pos: Vector2, radius: float, duration_ms: int) -> void:
+func _spawn_rain_zone(pos: Vector2, half: float, duration_ms: int) -> void:
+	# half — половина стороны квадрата (бывший radius)
 	var node := Node2D.new()
 	node.position = pos
 	node.z_index = 90
 	world.add_child(node)
-	var circle := _make_circle_sprite(radius, Color(1.0, 0.7, 0.3, 0.35))
-	circle.modulate = Color(1.0, 0.7, 0.3, 0.45)
-	node.add_child(circle)
+	var square := _make_zone_square(half * 2.0, Color(1.0, 0.6, 0.25, 0.85))
+	node.add_child(square)
 	var spawn_t := 0.0
 	var elapsed := 0.0
 	node.set_meta("tick", Callable(func(delta: float):
@@ -649,7 +652,7 @@ func _spawn_rain_zone(pos: Vector2, radius: float, duration_ms: int) -> void:
 		spawn_t -= delta
 		if spawn_t <= 0.0:
 			spawn_t = 0.05
-			_spawn_falling_arrow(pos + Vector2(randf_range(-radius, radius), randf_range(-radius, radius)))
+			_spawn_falling_arrow(pos + Vector2(randf_range(-half, half), randf_range(-half, half)))
 		if elapsed * 1000.0 >= duration_ms:
 			node.queue_free()))
 	var timer := Timer.new()
@@ -696,6 +699,45 @@ func _spawn_impact_puff(pos: Vector2) -> void:
 	tw.parallel().tween_property(puff, "scale", Vector2(2.5, 2.5), 0.3)
 	tw.parallel().tween_property(puff, "modulate:a", 0.0, 0.3)
 	tw.finished.connect(puff.queue_free)
+
+func _make_zone_square(size: float, color: Color) -> Sprite2D:
+	# Квадрат с закруглёнными углами и тонкой обводкой (для тайловой сетки).
+	var d := int(ceil(size))
+	var img := Image.create(d, d, false, Image.FORMAT_RGBA8)
+	var radius_corner := 6.0
+	var border_w := 2.5
+	for y in range(d):
+		for x in range(d):
+			var dx := absf(x - d * 0.5)
+			var dy := absf(y - d * 0.5)
+			var hx: float = d * 0.5 - 1.0
+			var hy: float = d * 0.5 - 1.0
+			# Расстояние от внешнего края с учётом скруглённых углов
+			var corner_dx: float = maxf(dx - (hx - radius_corner), 0.0)
+			var corner_dy: float = maxf(dy - (hy - radius_corner), 0.0)
+			var corner_d: float = sqrt(corner_dx * corner_dx + corner_dy * corner_dy)
+			# Расстояние от края квадрата
+			var edge_dist: float = maxf(maxf(dx, dy) - (hx - radius_corner), 0.0)
+			if corner_dx > 0.0 and corner_dy > 0.0:
+				# В углу — используем circle distance
+				if corner_d > radius_corner:
+					continue
+				if corner_d > radius_corner - border_w:
+					img.set_pixel(x, y, color)
+				else:
+					img.set_pixel(x, y, Color(color.r, color.g, color.b, 0.18))
+			else:
+				if dx > hx or dy > hy:
+					continue
+				if edge_dist > radius_corner - border_w or maxf(dx, dy) > hx - border_w:
+					img.set_pixel(x, y, color)
+				else:
+					img.set_pixel(x, y, Color(color.r, color.g, color.b, 0.18))
+	var tex := ImageTexture.create_from_image(img)
+	var s := Sprite2D.new()
+	s.texture = tex
+	s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	return s
 
 func _make_circle_sprite(radius: float, color: Color) -> Sprite2D:
 	var d := int(ceil(radius * 2))

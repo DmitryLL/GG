@@ -260,6 +260,13 @@ func play_bow_shot() -> void:
 	sprite.hframes = BOW_SHOT_FRAMES
 	sprite.vframes = 4
 
+func play_bow_shot_upward() -> void:
+	# Принудительно поворачиваем персонажа лицом «вверх» и проигрываем выстрел.
+	# Используется для скиллов с выстрелом в небо (Ливень стрел).
+	if not _has_bow: return
+	facing = Dir.UP
+	play_bow_shot()
+
 func _set_facing_from(delta: Vector2) -> void:
 	if abs(delta.x) < 0.01 and abs(delta.y) < 0.01:
 		return

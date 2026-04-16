@@ -769,7 +769,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         for (const mk of Object.keys(state.mobs)) {
             const m = state.mobs[mk];
             if (m.state !== "alive") continue;
-            if (dist(m.pos, { x: z.x, y: z.y }) > z.radius) continue;
+            // Квадрат: моб должен быть внутри AABB зоны (radius = half-side)
+            if (Math.abs(m.pos.x - z.x) > z.radius || Math.abs(m.pos.y - z.y) > z.radius) continue;
             m.hp -= ownerDmg;
             m.dirty = true;
             dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: m.id, dmg: ownerDmg }));

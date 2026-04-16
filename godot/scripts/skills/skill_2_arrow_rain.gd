@@ -11,6 +11,11 @@ func _init() -> void:
 	targets_ground = true
 	arrow_style = ""
 
+func on_send(game) -> void:
+	# При активации играем «выстрел вверх» — анимация натяжения тетивы
+	if game.me:
+		game.me.play_bow_shot_upward()
+
 func on_fx(game, body: Dictionary) -> bool:
 	if String(body.get("kind", "")) != "rain_start":
 		return false

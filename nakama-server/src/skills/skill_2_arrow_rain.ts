@@ -6,6 +6,9 @@ registerSkill(2, {
         const { player, body, t, state, dispatcher } = ctx;
         const zx = Number(body.x); const zy = Number(body.y);
         if (!isFinite(zx) || !isFinite(zy)) return;
+        // Дальность каста: в пределах PLAYER_ATTACK_RANGE + 40 (лаг)
+        const castDist = Math.sqrt((zx - player.pos.x) ** 2 + (zy - player.pos.y) ** 2);
+        if (castDist > PLAYER_ATTACK_RANGE + 40) return;
         state.zones.push({
             id: "z" + t + Math.random().toString(36).slice(2, 6),
             kind: "arrow_rain",
