@@ -180,6 +180,16 @@ func _ready() -> void:
 	_connect_and_join()
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Хоткеи для окон: C/С — сумка, I/Ш — персонаж.
+	# Физическая клавиша одинаковая на английской и русской раскладке.
+	if event is InputEventKey and event.pressed and not event.echo:
+		var pk: int = event.physical_keycode
+		if pk == KEY_C:
+			bag_win.open(last_me) if not bag_win.is_open() else bag_win.close()
+			return
+		if pk == KEY_I:
+			character_win.open(last_me) if not character_win.is_open() else character_win.close()
+			return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and targeting_skill >= 0:
 		targeting_skill = -1
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
