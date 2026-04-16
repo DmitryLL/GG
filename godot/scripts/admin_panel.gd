@@ -4,13 +4,40 @@ extends CanvasLayer
 
 const ADMIN_USERNAMES = ["dmitryll", "admin"]
 
-# Популярные предметы для быстрой выдачи
-const QUICK_ITEMS := [
-	"golden_sword", "golden_bow", "iron_bow", "wood_bow",
-	"golden_armor", "golden_helmet", "golden_boots", "golden_belt",
-	"royal_cloak", "golden_amulet", "golden_ring",
-	"great_potion", "health_potion",
-]
+# Все предметы — берутся из Items.DEFS при первом открытии
+var QUICK_ITEMS: Array = []
+
+func _build_items_list() -> void:
+	if QUICK_ITEMS.size() > 0:
+		return
+	# Сортировка: оружие → броня → шлемы → сапоги → пояса → плащи → кольца → амулеты → зелья → материалы
+	var groups := [
+		["weapon", "sword"], ["weapon", "bow"],
+		["body"], ["head"], ["boots"], ["belt"],
+		["cloak"], ["ring"], ["amulet"],
+		["consumable"], ["material"],
+	]
+	var all_ids: Array = Items.DEFS.keys()
+	var added: Dictionary = {}
+	for group in groups:
+		for id in all_ids:
+			if added.has(id): continue
+			var def: Dictionary = Items.DEFS[id]
+			var slot: String = String(def.get("slot", ""))
+			var kind: String = String(def.get("kind", ""))
+			var matches := false
+			if group.size() == 1:
+				matches = (slot == group[0]) or (kind == group[0])
+			else:
+				# weapon + sword/bow — проверяем имя
+				matches = (slot == group[0]) and String(id).contains(group[1])
+			if matches:
+				QUICK_ITEMS.append(id)
+				added[id] = true
+	# Остальное в конец (если что-то пропустили)
+	for id in all_ids:
+		if not added.has(id):
+			QUICK_ITEMS.append(id)
 
 var root_ctrl: Control
 var panel: PanelContainer
@@ -147,6 +174,7 @@ func _refresh_users() -> void:
 	action_requested.emit("list_users", {})
 
 func set_users(users: Array) -> void:
+	_build_items_list()
 	for c in users_list.get_children():
 		c.queue_free()
 	for u in users:
@@ -182,17 +210,21 @@ func set_users(users: Array) -> void:
 		row_btns.add_child(b_lvl)
 
 		var item_picker := OptionButton.new()
-		item_picker.custom_minimum_size = Vector2(130, 0)
+		item_picker.custom_minimum_size = Vector2(200, 0)
 		for it in QUICK_ITEMS:
-			item_picker.add_item(it)
+			var def: Dictionary = Items.def(it)
+			var display: String = String(def.get("name", it))
+			item_picker.add_item(display)
+			var idx := item_picker.item_count - 1
+			item_picker.set_item_metadata(idx, it)
 		v.add_child(item_picker)
 
 		var b_item := Button.new()
 		b_item.text = "Выдать выбранное"
 		b_item.pressed.connect(func():
-			var idx := item_picker.get_selected_id()
-			if idx < 0: idx = item_picker.selected
-			var it: String = QUICK_ITEMS[clamp(idx, 0, QUICK_ITEMS.size() - 1)]
+			var sel: int = item_picker.selected
+			if sel < 0: sel = 0
+			var it: String = String(item_picker.get_item_metadata(sel))
 			action_requested.emit("give_item_to", {"target": u.get("name", ""), "itemId": it})
 		)
 		v.add_child(b_item)
