@@ -166,33 +166,86 @@ for dx in range(-1, 2):
 mobs = []
 mob_id = 1
 
-# Slimes near water
-slime_spawns = [
-    (pond_cx+5, pond_cy),   (pond_cx-5, pond_cy),
-    (pond_cx, pond_cy+5),   (pond_cx+3, pond_cy+4),
-    (pond2_cx+3, pond2_cy), (pond2_cx-3, pond2_cy),
-    (pond2_cx, pond2_cy+3), (pond2_cx+2, pond2_cy-3),
-]
-for sx, sy in slime_spawns:
-    mobs.append({"id": mob_id, "name": "", "type": "slime",
-                 "x": sx*TILE, "y": sy*TILE, "width": TILE, "height": TILE,
-                 "rotation": 0, "visible": True})
-    mob_id += 1
+# Slimes near water (on walkable tiles adjacent to water)
+def find_water_edge(wcx, wcy, radius=8):
+    candidates = []
+    for y in range(max(1, wcy-radius), min(H-1, wcy+radius)):
+        for x in range(max(1, wcx-radius), min(W-1, wcx+radius)):
+            if get_tile(x, y) in (GRASS, SAND, PATH):
+                has_water_neighbor = any(
+                    get_tile(x+dx, y+dy) == WATER
+                    for dx in (-1,0,1) for dy in (-1,0,1) if (dx or dy)
+                )
+                if has_water_neighbor:
+                    candidates.append((x, y, dist(x, y, wcx, wcy)))
+    candidates.sort(key=lambda c: c[2])
+    return candidates
 
-# Goblins in/near forests
-goblin_spawns = [
-    (6, 25),  (8, 31),   # southwest forest
-    (50, 6),  (52, 10),  (48, 9),  # northeast forest
-    (52, 23), (54, 27),  # east forest
-    (40, 16), (42, 19),  # central grove
-    (25, 38), (27, 42),  # south forest
-    (55, 38),            # southeast
+slime_targets = [
+    (pond_cx, pond_cy, 4),
+    (pond2_cx, pond2_cy, 4),
 ]
-for gx, gy in goblin_spawns:
-    mobs.append({"id": mob_id, "name": "", "type": "goblin",
-                 "x": gx*TILE, "y": gy*TILE, "width": TILE, "height": TILE,
-                 "rotation": 0, "visible": True})
-    mob_id += 1
+for wcx, wcy, count in slime_targets:
+    edges = find_water_edge(wcx, wcy)
+    placed = 0
+    used = set()
+    for ex, ey, _ in edges:
+        if placed >= count:
+            break
+        if (ex, ey) in used:
+            continue
+        too_close = any(abs(ex-ux) + abs(ey-uy) < 3 for ux, uy in used)
+        if too_close:
+            continue
+        used.add((ex, ey))
+        mobs.append({"id": mob_id, "name": "", "type": "slime",
+                     "x": ex*TILE, "y": ey*TILE, "width": TILE, "height": TILE,
+                     "rotation": 0, "visible": True})
+        mob_id += 1
+        placed += 1
+
+# Goblins near forest edges (on walkable tiles adjacent to trees)
+def find_forest_edge(fcx, fcy, radius=10):
+    """Find walkable tiles next to trees near a forest center."""
+    candidates = []
+    for y in range(max(1, fcy-radius), min(H-1, fcy+radius)):
+        for x in range(max(1, fcx-radius), min(W-1, fcx+radius)):
+            if get_tile(x, y) in (GRASS, PATH):
+                has_tree_neighbor = any(
+                    get_tile(x+dx, y+dy) == TREE
+                    for dx in (-1,0,1) for dy in (-1,0,1) if (dx or dy)
+                )
+                if has_tree_neighbor:
+                    candidates.append((x, y, dist(x, y, fcx, fcy)))
+    candidates.sort(key=lambda c: c[2])
+    return candidates
+
+goblin_forest_targets = [
+    (6, 28, 2),   # southwest forest, 2 goblins
+    (50, 8, 3),   # northeast forest, 3 goblins
+    (52, 25, 2),  # east forest
+    (40, 18, 2),  # central grove
+    (25, 40, 2),  # south forest
+    (55, 40, 1),  # southeast
+]
+for fcx, fcy, count in goblin_forest_targets:
+    edges = find_forest_edge(fcx, fcy)
+    placed = 0
+    used = set()
+    for ex, ey, _ in edges:
+        if placed >= count:
+            break
+        if (ex, ey) in used:
+            continue
+        too_close = any(abs(ex-ux) + abs(ey-uy) < 3 for ux, uy in used)
+        if too_close:
+            continue
+        used.add((ex, ey))
+        mobs.append({"id": mob_id, "name": "", "type": "goblin",
+                     "x": ex*TILE, "y": ey*TILE, "width": TILE, "height": TILE,
+                     "rotation": 0, "visible": True})
+        mob_id += 1
+        placed += 1
 
 # NPCs
 npcs = [
