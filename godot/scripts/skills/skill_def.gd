@@ -7,7 +7,10 @@ extends RefCounted
 var display_name: String = ""
 var icon_path: String = ""
 var cooldown: float = 5.0
-var server_id: int = 0     # номер для сервера (1..5)
+var server_id: int = 0     # номер для сервера (1..5+)
+
+# Требования
+var requires_bow: bool = false  # если true — недоступен без лука в weapon-слоте
 
 # Тип таргетинга (взаимоисключающие)
 var targets_mob: bool = false

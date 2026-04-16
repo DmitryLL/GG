@@ -1,6 +1,13 @@
 # Летящая стрела — спрайт PixelLab + свечение для вариантов скиллов.
+# ВАЖНО: имена стилей публичный API, скиллы ссылаются на них через
+# arrow_style. Не переименовывать существующие — добавлять новые!
 class_name Arrow
 extends Node2D
+
+const STYLE_NORMAL := "normal"
+const STYLE_CRIT := "crit"
+const STYLE_POISON := "poison"
+const STYLE_GHOST := "ghost"
 
 const FLIGHT_S := 0.18
 const ARROW_TEX := preload("res://assets/sprites/arrow.png")

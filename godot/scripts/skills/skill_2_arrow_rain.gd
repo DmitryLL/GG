@@ -7,8 +7,9 @@ func _init() -> void:
 	icon_path = "res://assets/sprites/skill_2.png"
 	cooldown = 12.0
 	server_id = 2
+	requires_bow = true
 	targets_ground = true
-	arrow_style = ""  # лук стреляет вверх, обычная анимация
+	arrow_style = ""
 
 func on_fx(game, body: Dictionary) -> bool:
 	if String(body.get("kind", "")) != "rain_start":

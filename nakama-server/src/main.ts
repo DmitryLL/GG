@@ -724,15 +724,14 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 try {
                     const body = JSON.parse(nk.binaryToString(msg.data)) as { skill?: number; mobId?: string; x?: number; y?: number };
                     const skill = Number(body.skill);
+                    const spec = SKILLS[skill];
+                    if (!spec) break;
                     const cdEnd = player.skillCd[skill] || 0;
                     if (t < cdEnd) break;
                     const hasBow = (player.equipment.weapon || "").includes("bow");
-                    if (!hasBow && (skill === 1 || skill === 2 || skill === 4 || skill === 5)) break;
+                    if (spec.requiresBow && !hasBow) break;
                     const baseDmg = computeDamage(player);
-                    const handler = SKILL_HANDLERS[skill];
-                    if (handler) {
-                        handler({ player, body, t, state, dispatcher, baseDmg });
-                    }
+                    spec.handler({ player, body, t, state, dispatcher, baseDmg });
                 } catch (_e) {}
                 break;
             }

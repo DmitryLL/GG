@@ -1,5 +1,5 @@
 // Общие типы и интерфейс скиллов.
-// Каждый скилл — отдельный файл, регистрируется в registerAllSkills().
+// Каждый скилл — отдельный файл, регистрируется через registerSkill().
 
 interface SkillContext {
     player: MatchPlayer;
@@ -10,10 +10,14 @@ interface SkillContext {
     baseDmg: number;
 }
 
-type SkillHandler = (ctx: SkillContext) => void;
+interface SkillSpec {
+    handler: (ctx: SkillContext) => void;
+    requiresBow: boolean;     // если true, без лука скилл не сработает
+    cooldownMs: number;       // используется для default; сам handler может ставить свой
+}
 
-const SKILL_HANDLERS: { [id: number]: SkillHandler } = {};
+const SKILLS: { [id: number]: SkillSpec } = {};
 
-function registerSkill(id: number, handler: SkillHandler): void {
-    SKILL_HANDLERS[id] = handler;
+function registerSkill(id: number, spec: SkillSpec): void {
+    SKILLS[id] = spec;
 }

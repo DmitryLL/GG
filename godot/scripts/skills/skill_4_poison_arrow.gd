@@ -7,5 +7,6 @@ func _init() -> void:
 	icon_path = "res://assets/sprites/skill_4.png"
 	cooldown = 6.0
 	server_id = 4
+	requires_bow = true
 	targets_mob = true
 	arrow_style = "poison"
