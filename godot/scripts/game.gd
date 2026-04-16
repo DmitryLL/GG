@@ -203,7 +203,9 @@ func _process(delta: float) -> void:
 				if attack_cooldown <= 0.0:
 					Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": attack_target.mob_id}))
 					attack_cooldown = PLAYER_ATTACK_COOLDOWN
-					if not has_bow:
+					if has_bow:
+						me.play_bow_shot()
+					else:
 						me.play_punch()
 			else:
 				me.request_move_to(attack_target.position)
@@ -272,7 +274,11 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_HIT_FLASH:
 			var mid: String = String(body.get("mobId", ""))
 			var m: Mob = mobs.get(mid)
-			if m: m.flash()
+			if m:
+				m.flash()
+				var dmg := int(body.get("dmg", 0))
+				if dmg > 0:
+					_spawn_damage_label(m.position, dmg)
 		OP_PLAYER_HIT:
 			var sid: String = String(body.get("sessionId", ""))
 			var p: Player = me if sid == my_session_id else remotes.get(sid)
@@ -468,6 +474,21 @@ func _on_chat_send(text: String) -> void:
 	if match_id == "":
 		return
 	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text}))
+
+func _spawn_damage_label(pos: Vector2, dmg: int) -> void:
+	var lbl := Label.new()
+	lbl.text = "-%d" % dmg
+	lbl.add_theme_font_size_override("font_size", 18)
+	lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	lbl.add_theme_constant_override("outline_size", 4)
+	lbl.position = pos + Vector2(randf_range(-8, 8), -32)
+	lbl.z_index = 200
+	world.add_child(lbl)
+	var tween := create_tween()
+	tween.parallel().tween_property(lbl, "position:y", lbl.position.y - 30, 0.9)
+	tween.parallel().tween_property(lbl, "modulate:a", 0.0, 0.9).set_delay(0.2)
+	tween.finished.connect(lbl.queue_free)
 
 func _spawn_arrow(body: Dictionary) -> void:
 	if bool(body.get("melee", false)):

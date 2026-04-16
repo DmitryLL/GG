@@ -178,8 +178,12 @@ func _update_bow_position() -> void:
 			bow_sprite.z_index = 1
 
 var _punch_t := 0.0
+var _bow_shot_t := 0.0
 func play_punch() -> void:
 	_punch_t = 0.25
+
+func play_bow_shot() -> void:
+	_bow_shot_t = 0.35
 
 func _set_facing_from(delta: Vector2) -> void:
 	if abs(delta.x) < 0.01 and abs(delta.y) < 0.01:
@@ -192,6 +196,24 @@ func _set_facing_from(delta: Vector2) -> void:
 
 func _animate(delta: float) -> void:
 	var base := facing * 3
+	# Bow shot visual: pull back bow, then release forward with slight recoil.
+	if _bow_shot_t > 0.0:
+		_bow_shot_t -= delta
+		var phase := 1.0 - clamp(_bow_shot_t / 0.35, 0.0, 1.0)
+		var pull_dir := Vector2.ZERO
+		match facing:
+			Dir.DOWN: pull_dir = Vector2(0, -1)
+			Dir.UP: pull_dir = Vector2(0, 1)
+			Dir.LEFT: pull_dir = Vector2(1, 0)
+			Dir.RIGHT: pull_dir = Vector2(-1, 0)
+		var amount := 4.0 * sin(phase * PI)  # ease up & down
+		if bow_sprite and bow_sprite.visible:
+			_update_bow_position()
+			bow_sprite.position += pull_dir * amount
+			bow_sprite.scale = Vector2(0.6 + 0.1 * sin(phase * PI), 0.6)
+		sprite.offset = Vector2(0, -16) + pull_dir * (amount * 0.3)
+		sprite.frame = base
+		return
 	# Punch visual: lunge sprite toward facing direction briefly.
 	if _punch_t > 0.0:
 		_punch_t -= delta
@@ -206,6 +228,9 @@ func _animate(delta: float) -> void:
 		return
 	else:
 		sprite.offset = Vector2(0, -16)
+		if bow_sprite and bow_sprite.visible:
+			bow_sprite.scale = Vector2(0.6, 0.6)
+			_update_bow_position()
 	if not moving:
 		sprite.frame = base
 		anim_t = 0.0
