@@ -18,6 +18,8 @@ enum Dir { DOWN = 0, LEFT = 1, RIGHT = 2, UP = 3 }
 var world: World
 var sprite: Sprite2D
 var bow_sprite: Sprite2D
+var bow_string: Line2D
+var bow_arrow: Line2D
 var label: Label
 var hp_bg: ColorRect
 var hp_fill: ColorRect
@@ -47,11 +49,29 @@ func _ready() -> void:
 	add_child(sprite)
 
 	bow_sprite = Sprite2D.new()
-	bow_sprite.texture = load("res://assets/sprites/class_archer.png")
+	bow_sprite.texture = load("res://assets/sprites/bow_hand.png")
 	bow_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	bow_sprite.scale = Vector2(0.6, 0.6)
+	bow_sprite.scale = Vector2(0.55, 0.55)
 	bow_sprite.visible = false
 	add_child(bow_sprite)
+
+	# Видимая тетива и стрела, появляются во время выстрела
+	bow_string = Line2D.new()
+	bow_string.default_color = Color(0.95, 0.95, 0.85, 0.9)
+	bow_string.width = 1.0
+	bow_string.add_point(Vector2.ZERO)
+	bow_string.add_point(Vector2(0, -12))
+	bow_string.add_point(Vector2(0, 12))
+	bow_string.visible = false
+	add_child(bow_string)
+
+	bow_arrow = Line2D.new()
+	bow_arrow.default_color = Color(0.08, 0.05, 0.12, 1.0)
+	bow_arrow.width = 1.5
+	bow_arrow.add_point(Vector2.ZERO)
+	bow_arrow.add_point(Vector2(12, 0))
+	bow_arrow.visible = false
+	add_child(bow_arrow)
 
 	label = Label.new()
 	label.text = display_name
@@ -160,29 +180,27 @@ func _update_bow_position() -> void:
 	if bow_sprite == null or not bow_sprite.visible:
 		return
 	bow_sprite.centered = true
+	# Лук держится вертикально в руке (как долгий лук). Персонаж поворачивается —
+	# лук остаётся вертикальным сбоку от него.
 	match facing:
 		Dir.DOWN:
-			# Персонаж лицом к нам — лук сбоку, вертикально
-			bow_sprite.position = Vector2(10, -18)
+			bow_sprite.position = Vector2(8, -18)
 			bow_sprite.rotation = 0
 			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
 		Dir.UP:
-			# Спиной — лук сбоку чуть меньше заметен
-			bow_sprite.position = Vector2(-10, -20)
+			bow_sprite.position = Vector2(-8, -20)
 			bow_sprite.rotation = 0
 			bow_sprite.flip_h = true
 			bow_sprite.z_index = -1
 		Dir.LEFT:
-			# Лук направлен вперёд (влево), дугой от персонажа
-			bow_sprite.position = Vector2(-12, -20)
-			bow_sprite.rotation = deg_to_rad(90)
+			bow_sprite.position = Vector2(-6, -20)
+			bow_sprite.rotation = 0
 			bow_sprite.flip_h = true
 			bow_sprite.z_index = 1
 		Dir.RIGHT:
-			# Лук направлен вперёд (вправо)
-			bow_sprite.position = Vector2(12, -20)
-			bow_sprite.rotation = deg_to_rad(90)
+			bow_sprite.position = Vector2(6, -20)
+			bow_sprite.rotation = 0
 			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
 
@@ -209,39 +227,52 @@ func _animate(delta: float) -> void:
 	if _bow_shot_t > 0.0:
 		_bow_shot_t -= delta
 		var elapsed: float = 0.55 - _bow_shot_t
-		var back_dir := Vector2.ZERO  # direction opposite to facing (recoil)
-		var forward_dir := Vector2.ZERO
+		var forward_dir := Vector2.ZERO  # from character toward target
 		match facing:
-			Dir.DOWN:  back_dir = Vector2(0, -1); forward_dir = Vector2(0, 1)
-			Dir.UP:    back_dir = Vector2(0, 1);  forward_dir = Vector2(0, -1)
-			Dir.LEFT:  back_dir = Vector2(1, 0);  forward_dir = Vector2(-1, 0)
-			Dir.RIGHT: back_dir = Vector2(-1, 0); forward_dir = Vector2(1, 0)
+			Dir.DOWN:  forward_dir = Vector2(0, 1)
+			Dir.UP:    forward_dir = Vector2(0, -1)
+			Dir.LEFT:  forward_dir = Vector2(-1, 0)
+			Dir.RIGHT: forward_dir = Vector2(1, 0)
+		var back_dir := -forward_dir
 		var body_off := Vector2.ZERO
-		var bow_off := Vector2.ZERO
-		var bow_scale_extra := 0.0
+		var draw_amount := 0.0  # 0..1 how far string is pulled
 		if elapsed < 0.2:
-			# Aim: subtle lean backward, bow steady
 			var k: float = elapsed / 0.2
-			body_off = back_dir * (2.0 * k)
+			body_off = back_dir * (1.5 * k)
 		elif elapsed < 0.45:
-			# Draw: body rock back, bow shifts slightly forward, scale pulses
 			var k: float = (elapsed - 0.2) / 0.25
-			body_off = back_dir * (2.0 + 2.0 * k)
-			bow_off = forward_dir * (1.5 * k)
-			bow_scale_extra = 0.08 * k
+			body_off = back_dir * (1.5 + 2.5 * k)
+			draw_amount = k
 		else:
-			# Release: snap forward, bow recoil backward
 			var k: float = (elapsed - 0.45) / 0.1
 			body_off = back_dir * (4.0 * (1.0 - k)) + forward_dir * (1.0 * k)
-			bow_off = back_dir * (3.0 * (1.0 - k * 0.5))
-			bow_scale_extra = 0.08 * (1.0 - k)
+			draw_amount = 1.0 - k
 		if bow_sprite and bow_sprite.visible:
 			_update_bow_position()
-			bow_sprite.position += bow_off
-			bow_sprite.scale = Vector2(0.6 + bow_scale_extra, 0.6)
+		# Видимая тетива + стрела только во время выстрела
+		if bow_sprite and bow_sprite.visible and draw_amount > 0.01:
+			bow_string.visible = true
+			bow_arrow.visible = true
+			# Тетива: треугольник, вершина смещается назад относительно лука
+			var bow_pos: Vector2 = bow_sprite.position
+			var pull_offset: Vector2 = back_dir * (8.0 * draw_amount)
+			bow_string.clear_points()
+			bow_string.add_point(bow_pos + Vector2(0, -14))
+			bow_string.add_point(bow_pos + pull_offset)
+			bow_string.add_point(bow_pos + Vector2(0, 14))
+			# Стрела — от натянутой вершины вперёд
+			bow_arrow.clear_points()
+			bow_arrow.add_point(bow_pos + pull_offset)
+			bow_arrow.add_point(bow_pos + pull_offset + forward_dir * 16.0)
+		else:
+			bow_string.visible = false
+			bow_arrow.visible = false
 		sprite.offset = Vector2(0, -16) + body_off
 		sprite.frame = base
 		return
+	else:
+		if bow_string: bow_string.visible = false
+		if bow_arrow: bow_arrow.visible = false
 	# Punch visual: lunge sprite toward facing direction briefly.
 	if _punch_t > 0.0:
 		_punch_t -= delta

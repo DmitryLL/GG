@@ -700,12 +700,16 @@ func _spawn_damage_label(pos: Vector2, dmg: int, is_crit: bool = false, is_poiso
 
 func _spawn_arrow(body: Dictionary) -> void:
 	if bool(body.get("melee", false)):
-		return  # melee punch — no arrow visual
+		return
 	var from := Vector2(float(body.get("fx", 0)), float(body.get("fy", 0)))
 	var to := Vector2(float(body.get("tx", 0)), float(body.get("ty", 0)))
+	var style := "normal"
+	if bool(body.get("crit", false)): style = "crit"
+	elif bool(body.get("poison", false)): style = "poison"
+	elif bool(body.get("ghost", false)): style = "ghost"
 	var arrow: Arrow = ARROW_SCRIPT.new()
 	entities.add_child(arrow)
-	arrow.shoot(from, to)
+	arrow.shoot(from, to, style)
 
 func _mm_me() -> Vector2:
 	return me.position if me != null else Vector2.ZERO
