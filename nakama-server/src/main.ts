@@ -504,14 +504,22 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
 }
 
+const MAX_LEVEL = 20;
+
 function grantXp(p: MatchPlayer, amount: number): void {
+    if (p.level >= MAX_LEVEL) {
+        p.xp = 0;  // на капе XP не копится
+        markMe(p);
+        return;
+    }
     p.xp += amount;
-    while (p.xp >= XP_FOR_LEVEL(p.level)) {
+    while (p.xp >= XP_FOR_LEVEL(p.level) && p.level < MAX_LEVEL) {
         p.xp -= XP_FOR_LEVEL(p.level);
         p.level += 1;
         p.hpMax = computeHpMax(p);
         p.hp = p.hpMax;
     }
+    if (p.level >= MAX_LEVEL) p.xp = 0;
     markMe(p);
 }
 
@@ -519,6 +527,13 @@ function grantXp(p: MatchPlayer, amount: number): void {
 function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, dispatcher: nkruntime.MatchDispatcher, tick: number, state: WorldState, messages: nkruntime.MatchMessage[]): { state: WorldState } | null {
     state.tick = tick;
     const t = now();
+
+    // Автосохранение прогресса каждых 200 тиков (~10s при tickRate=20)
+    // Защита от потери инвентаря/золота/уровня при крэше/рестарте сервера.
+    if (tick % 200 === 0 && tick > 0) {
+        const pk = Object.keys(state.players);
+        for (let i = 0; i < pk.length; i++) saveProgress(nk, state.players[pk[i]]);
+    }
 
     // --- client → server ---
     for (let i = 0; i < messages.length; i++) {
@@ -1002,7 +1017,7 @@ function adminApply(state: WorldState, payload: string): { ok: boolean; error?: 
         case "set_level": {
             const p = findPlayerByName(state, String(body.target || ""));
             if (!p) return { ok: false, error: "no player" };
-            p.level = Math.max(1, Math.min(99, Number(body.level) || 1));
+            p.level = Math.max(1, Math.min(MAX_LEVEL, Number(body.level) || 1));
             p.hpMax = computeHpMax(p);
             p.hp = p.hpMax;
             p.dirtyPos = true;
