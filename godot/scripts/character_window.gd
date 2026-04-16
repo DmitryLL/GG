@@ -381,6 +381,8 @@ func _item_fits_slot(item_id: String, slot: String) -> bool:
 	var s := String(def.get("slot", ""))
 	if s == "":
 		return false
+	if slot == "weapon" and not item_id.contains("bow"):
+		return false
 	if s == slot:
 		return true
 	if s == "ring" and (slot == "ring1" or slot == "ring2"):

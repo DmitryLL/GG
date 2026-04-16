@@ -45,13 +45,9 @@ func _ready() -> void:
 	v.add_child(top)
 
 	var class_icon := TextureRect.new()
-	var items_tex: Texture2D = load("res://assets/sprites/items.png")
-	var atlas_tex := AtlasTexture.new()
-	atlas_tex.atlas = items_tex
-	atlas_tex.region = Rect2(96, 0, 16, 16)
-	class_icon.texture = atlas_tex
+	class_icon.texture = load("res://assets/sprites/class_archer.png")
 	class_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	class_icon.custom_minimum_size = Vector2(20, 20)
+	class_icon.custom_minimum_size = Vector2(24, 24)
 	class_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	top.add_child(class_icon)
 
