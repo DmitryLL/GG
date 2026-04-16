@@ -8,6 +8,10 @@ on:
       - ".github/workflows/deploy-godot.yml"
   workflow_dispatch:
 
+concurrency:
+  group: deploy-godot
+  cancel-in-progress: true
+
 env:
   GODOT_VERSION: "4.4"
   GODOT_TAG: "4.4-stable"
