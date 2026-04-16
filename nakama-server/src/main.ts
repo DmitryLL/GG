@@ -219,6 +219,9 @@ interface WorldState {
     tick: number;
 }
 
+// Снимок состояния матча для debug_state RPC. Обновляется ~5 раз/сек.
+let LAST_SNAPSHOT: any = { ts: 0, players: [], mobs: [], zones: [] };
+
 function now(): number { return Date.now(); }
 function dist(a: Vec2, b: Vec2): number { const dx = a.x - b.x; const dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
 function clamp(v: number, lo: number, hi: number): number { return v < lo ? lo : v > hi ? hi : v; }
@@ -876,6 +879,36 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: mUpdates, full: false }));
     }
 
+    // Snapshot для debug_state RPC: ~5 раз/сек (tick rate 20 → каждый 4-й)
+    if (tick % 4 === 0) {
+        const snapPlayers: any[] = [];
+        for (const sk of Object.keys(state.players)) {
+            const p = state.players[sk];
+            snapPlayers.push({
+                sid: p.sessionId, uid: p.userId, name: p.username,
+                pos: p.pos, hp: p.hp, hpMax: p.hpMax, level: p.level,
+                xp: p.xp, gold: p.gold,
+                equipment: p.equipment, inventory: p.inventory,
+                skillCd: p.skillCd, invulnUntil: p.invulnUntil,
+                atkSpeedBoostUntil: p.atkSpeedBoostUntil,
+                lastAttackAt: p.lastAttackAt,
+            });
+        }
+        const snapMobs: any[] = [];
+        for (const mk of Object.keys(state.mobs)) {
+            const m = state.mobs[mk];
+            snapMobs.push({
+                id: m.id, type: m.type,
+                pos: m.pos, home: m.home,
+                hp: m.hp, hpMax: m.hpMax, state: m.state,
+                respawnAt: m.respawnAt, debuff: m.debuff || null,
+            });
+        }
+        LAST_SNAPSHOT = {
+            ts: t, tick: tick,
+            players: snapPlayers, mobs: snapMobs, zones: state.zones,
+        };
+    }
     return { state: state };
 }
 
@@ -897,6 +930,18 @@ function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk
     return JSON.stringify({ match_id: matchId });
 }
 
+// Debug RPC — возвращает снимок состояния матча (обновляется ~5 раз/сек).
+// Поля: players, mobs, zones, ts, tick. Параметр payload может содержать
+// {"filter": "mob"|"player"|"zone"} для уменьшения объёма.
+function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, payload: string): string {
+    let filter = "";
+    try { filter = String((JSON.parse(payload || "{}") as any).filter || ""); } catch (_e) {}
+    if (filter === "player") return JSON.stringify({ ts: LAST_SNAPSHOT.ts, players: LAST_SNAPSHOT.players });
+    if (filter === "mob") return JSON.stringify({ ts: LAST_SNAPSHOT.ts, mobs: LAST_SNAPSHOT.mobs });
+    if (filter === "zone") return JSON.stringify({ ts: LAST_SNAPSHOT.ts, zones: LAST_SNAPSHOT.zones });
+    return JSON.stringify(LAST_SNAPSHOT);
+}
+
 function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkruntime.Nakama, initializer: nkruntime.Initializer): void {
     initializer.registerMatch(MATCH_MODULE, {
         matchInit: matchInit,
@@ -908,6 +953,7 @@ function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkru
         matchSignal: matchSignal,
     });
     initializer.registerRpc("get_world_match", rpcGetWorldMatch);
+    initializer.registerRpc("debug_state", rpcDebugState);
     logger.info("GG runtime loaded. mobs=" + WORLD.mobSpawns.length + " npcs=" + NPCS.length);
 }
 
