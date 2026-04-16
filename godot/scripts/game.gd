@@ -76,6 +76,7 @@ var _click_marker_t := 0.0
 var _prev_highlight: Mob = null
 var skillbar: SkillBar
 var targeting_skill: int = -1  # -1 = нет таргетинга, иначе индекс скилла в SKILLS
+var _targeting_ring: Sprite2D
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -128,6 +129,11 @@ func _ready() -> void:
 	_click_marker.visible = false
 	_click_marker.z_index = 100
 	world.add_child(_click_marker)
+
+	_targeting_ring = _make_circle_sprite(80, Color(1.0, 0.6, 0.2, 0.6))
+	_targeting_ring.visible = false
+	_targeting_ring.z_index = 95
+	world.add_child(_targeting_ring)
 
 	nameplate = NAMEPLATE_SCRIPT.new()
 	add_child(nameplate)
@@ -209,7 +215,7 @@ func _process(delta: float) -> void:
 			attack_target = null
 		else:
 			var has_bow: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
-			var atk_range: float = PLAYER_ATTACK_RANGE if has_bow else 50.0
+			var atk_range: float = PLAYER_ATTACK_RANGE if has_bow else 36.0
 			var d: float = me.position.distance_to(attack_target.position)
 			if d <= atk_range:
 				me.has_target = false
@@ -222,12 +228,29 @@ func _process(delta: float) -> void:
 					else:
 						me.play_punch()
 			else:
-				me.request_move_to(attack_target.position)
+				if has_bow:
+					me.request_move_to(attack_target.position)
+				else:
+					var diff: Vector2 = attack_target.position - me.position
+					var approach: Vector2
+					if absf(diff.x) > absf(diff.y):
+						approach = attack_target.position + Vector2(-signf(diff.x) * 28.0, 0)
+					else:
+						approach = attack_target.position + Vector2(0, -signf(diff.y) * 28.0)
+					me.request_move_to(approach)
 	if attack_cooldown > 0.0:
 		attack_cooldown -= delta
 
 	if nameplate:
 		nameplate.update_target(attack_target)
+
+	if _targeting_ring:
+		if targeting_skill >= 0:
+			_targeting_ring.visible = true
+			_targeting_ring.position = get_viewport().get_camera_2d().get_global_mouse_position()
+			_targeting_ring.modulate.a = 0.5 + 0.2 * sin(Time.get_ticks_msec() * 0.006)
+		else:
+			_targeting_ring.visible = false
 
 	if _click_marker and _click_marker.visible:
 		_click_marker_t -= delta
@@ -503,8 +526,26 @@ func _handle_skill_fx(body: Dictionary) -> void:
 		var px := float(body.get("fx", 0)); var py := float(body.get("fy", 0))
 		var p: Player = me if sid == my_session_id else remotes.get(sid)
 		if p:
-			p.position = Vector2(px, py)
+			var dodge_target := Vector2(px, py)
+			var tw := create_tween()
+			tw.tween_property(p, "position", dodge_target, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 			p.flash()
+			# Trail effect
+			for i in range(3):
+				var ghost := Sprite2D.new()
+				ghost.texture = p.sprite.texture
+				ghost.hframes = p.sprite.hframes
+				ghost.vframes = p.sprite.vframes
+				ghost.frame = p.sprite.frame
+				ghost.scale = p.sprite.scale
+				ghost.offset = Vector2(0, -16)
+				ghost.modulate = Color(0.5, 0.9, 1.0, 0.5 - i * 0.15)
+				ghost.position = p.position
+				ghost.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+				world.add_child(ghost)
+				var gt := create_tween()
+				gt.tween_property(ghost, "modulate:a", 0.0, 0.4 + i * 0.1)
+				gt.finished.connect(ghost.queue_free)
 
 func _spawn_rain_zone(pos: Vector2, radius: float, duration_ms: int) -> void:
 	var node := Node2D.new()
@@ -535,18 +576,39 @@ func _spawn_rain_zone(pos: Vector2, radius: float, duration_ms: int) -> void:
 	node.add_child(timer)
 
 func _spawn_falling_arrow(target: Vector2) -> void:
-	var arrow := Sprite2D.new()
-	arrow.texture = load("res://assets/sprites/class_archer.png")
-	arrow.scale = Vector2(0.4, 0.4)
-	arrow.rotation = deg_to_rad(90)
-	arrow.position = target + Vector2(0, -200)
+	var arrow := Line2D.new()
+	arrow.add_point(Vector2.ZERO)
+	arrow.add_point(Vector2(0, 18))
+	arrow.default_color = Color(0.85, 0.55, 0.25)
+	arrow.width = 2.5
+	arrow.position = target + Vector2(0, -260)
 	arrow.z_index = 110
-	arrow.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	world.add_child(arrow)
 	var tw := create_tween()
-	tw.tween_property(arrow, "position", target, 0.25)
-	tw.tween_property(arrow, "modulate:a", 0.0, 0.15)
+	tw.tween_property(arrow, "position", target + Vector2(0, -18), 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func(): _spawn_impact_puff(target))
+	tw.tween_property(arrow, "modulate:a", 0.0, 0.2)
 	tw.finished.connect(arrow.queue_free)
+
+func _spawn_impact_puff(pos: Vector2) -> void:
+	var puff := Sprite2D.new()
+	var d := 14
+	var img := Image.create(d, d, false, Image.FORMAT_RGBA8)
+	var c := Vector2(d * 0.5, d * 0.5)
+	for y in range(d):
+		for x in range(d):
+			var dd: float = Vector2(x, y).distance_to(c)
+			if dd < 6.5:
+				img.set_pixel(x, y, Color(1.0, 0.85, 0.4, 0.8 - dd / 8.0))
+	puff.texture = ImageTexture.create_from_image(img)
+	puff.position = pos
+	puff.z_index = 100
+	puff.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	world.add_child(puff)
+	var tw := create_tween()
+	tw.parallel().tween_property(puff, "scale", Vector2(2.5, 2.5), 0.3)
+	tw.parallel().tween_property(puff, "modulate:a", 0.0, 0.3)
+	tw.finished.connect(puff.queue_free)
 
 func _make_circle_sprite(radius: float, color: Color) -> Sprite2D:
 	var d := int(ceil(radius * 2))

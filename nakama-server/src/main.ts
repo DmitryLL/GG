@@ -538,7 +538,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     const atkCd = t < player.atkSpeedBoostUntil ? PLAYER_ATTACK_COOLDOWN_MS * 0.5 : PLAYER_ATTACK_COOLDOWN_MS;
                     if (t - player.lastAttackAt < atkCd) break;
                     const hasBow = (player.equipment.weapon || "").includes("bow");
-                    const atkRange = hasBow ? PLAYER_ATTACK_RANGE : 50;
+                    const atkRange = hasBow ? PLAYER_ATTACK_RANGE : 36;
                     if (dist(mob.pos, player.pos) > atkRange) break;
                     player.lastAttackAt = t;
                     const dmg = computeDamage(player);
