@@ -769,12 +769,29 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         for (const mk of Object.keys(state.mobs)) {
             const m = state.mobs[mk];
             if (m.state !== "alive") continue;
-            // Квадрат: моб должен быть внутри AABB зоны (radius = half-side)
             if (Math.abs(m.pos.x - z.x) > z.radius || Math.abs(m.pos.y - z.y) > z.radius) continue;
             m.hp -= ownerDmg;
             m.dirty = true;
             dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: m.id, dmg: ownerDmg }));
             if (m.hp <= 0 && owner) killMob(m, owner, t);
+        }
+        // PvP: бьём чужих игроков в зоне (исключая владельца)
+        for (const sk of Object.keys(state.players)) {
+            const tp = state.players[sk];
+            if (tp.sessionId === z.ownerSid || tp.hp <= 0) continue;
+            if (t < tp.invulnUntil) continue;
+            if (Math.abs(tp.pos.x - z.x) > z.radius || Math.abs(tp.pos.y - z.y) > z.radius) continue;
+            tp.hp -= ownerDmg;
+            if (tp.hp < 0) tp.hp = 0;
+            markMe(tp);
+            dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({
+                sessionId: tp.sessionId, by: z.ownerSid, dmg: ownerDmg,
+            }));
+            if (tp.hp <= 0) {
+                tp.pos.x = WORLD.playerSpawn.x; tp.pos.y = WORLD.playerSpawn.y;
+                tp.hp = tp.hpMax; tp.lastTouchedByMob = {};
+                tp.dirtyPos = true; markMe(tp);
+            }
         }
     }
 
@@ -850,13 +867,13 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
 
     // --- broadcasts ---
-    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; lv: number; hb: boolean }[] = [];
+    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean }[] = [];
     const pKeys = Object.keys(state.players);
     for (let i = 0; i < pKeys.length; i++) {
         const p = state.players[pKeys[i]];
         if (!p.dirtyPos) continue;
         const hasBowBroadcast = (p.equipment.weapon || "").includes("bow");
-        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, lv: p.level, hb: hasBowBroadcast });
+        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, lv: p.level, hb: hasBowBroadcast });
         p.dirtyPos = false;
     }
     if (pUpdates.length > 0) {

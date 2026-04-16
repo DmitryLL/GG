@@ -483,7 +483,7 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 				p.flash()
 				var dmg := int(body.get("dmg", 0))
 				if dmg > 0:
-					_spawn_damage_label(p.position, dmg, bool(body.get("crit", false)), bool(body.get("poison", false)), false)
+					_spawn_damage_label(p.position, dmg, bool(body.get("crit", false)), bool(body.get("poison", false)), bool(body.get("ghost", false)))
 		OP_ME:         _apply_me(body)
 		OP_NPCS:       _apply_npcs(body)
 		OP_ARROW:      _spawn_arrow(body)
@@ -519,7 +519,8 @@ func _apply_positions(body: Dictionary) -> void:
 		var new_pos := Vector2(x, y)
 		remote.remote_update(new_pos)
 		remote.set_has_bow(has_bow_remote)
-		remote.set_hp(hp, 100.0)
+		var hp_max_remote: float = float(p.get("hpMax", 100))
+		remote.set_hp(hp, hp_max_remote)
 
 func _apply_mobs(body: Dictionary) -> void:
 	for m in body.get("mobs", []):
