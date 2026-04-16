@@ -5,27 +5,26 @@ extends RefCounted
 
 const TEX_PANEL  := preload("res://assets/sprites/ui/panel_frame.png")
 const TEX_SLOT   := preload("res://assets/sprites/ui/slot.png")
-const TEX_BANNER := preload("res://assets/sprites/ui/banner.png")
 
-# Магическая палитра — тёмно-синий/фиолетовый фон, серебристо-голубые акценты.
-const BG_DEEP        := Color(0.035, 0.030, 0.055, 1.0)
-const BG_PANEL       := Color(0.082, 0.065, 0.115, 1.0)
-const BG_INNER       := Color(0.115, 0.090, 0.160, 0.92)
-const BG_SLOT        := Color(0.055, 0.040, 0.085, 1.0)
-const BG_SLOT_HOVER  := Color(0.110, 0.080, 0.160, 1.0)
-const BORDER_DIM     := Color(0.305, 0.260, 0.440, 1.0)
-const BORDER_MID     := Color(0.520, 0.470, 0.720, 1.0)
-const MAGIC_ACCENT   := Color(0.700, 0.820, 1.000, 1.0)  # светло-голубой (кристаллы)
-const MAGIC_GLOW     := Color(0.840, 0.780, 1.000, 1.0)  # фиолетовое свечение
+# Магическая палитра — тёмно-фиолетовая рамка, тёплые бежевые акценты текста.
+const BG_DEEP        := Color(0.040, 0.032, 0.055, 1.0)
+const BG_PANEL       := Color(0.095, 0.078, 0.120, 1.0)
+const BG_INNER       := Color(0.165, 0.130, 0.095, 0.92)  # тёплый пергаментный коричневый
+const BG_SLOT        := Color(0.070, 0.055, 0.095, 1.0)
+const BG_SLOT_HOVER  := Color(0.125, 0.098, 0.155, 1.0)
+const BORDER_DIM     := Color(0.460, 0.380, 0.260, 1.0)   # тёплый коричневый border
+const BORDER_MID     := Color(0.720, 0.610, 0.430, 1.0)   # светлый бежевый
+const MAGIC_ACCENT   := Color(0.945, 0.855, 0.640, 1.0)  # светло-бежевый (пергамент)
+const MAGIC_GLOW     := Color(0.995, 0.920, 0.745, 1.0)  # тёплый кремовый
 const GOLD           := Color(0.970, 0.820, 0.380, 1.0)  # для монет золота
 const GOLD_SOFT      := Color(0.820, 0.690, 0.340, 1.0)
-const TEXT_MAIN      := Color(0.940, 0.930, 0.960, 1.0)
-const TEXT_DIM       := Color(0.660, 0.640, 0.760, 1.0)
-const TEXT_MUTED     := Color(0.480, 0.460, 0.580, 1.0)
-const HP_RED         := Color(0.88, 0.30, 0.40, 1.0)
-const HP_BG          := Color(0.16, 0.07, 0.12, 1.0)
-const XP_ORANGE      := Color(0.72, 0.55, 1.00, 1.0)     # фиолетовый под магический стиль
-const XP_BG          := Color(0.14, 0.10, 0.22, 1.0)
+const TEXT_MAIN      := Color(0.965, 0.925, 0.830, 1.0)  # кремовый основной текст
+const TEXT_DIM       := Color(0.780, 0.715, 0.600, 1.0)  # приглушённый бежевый
+const TEXT_MUTED     := Color(0.580, 0.520, 0.440, 1.0)  # коричневато-серый
+const HP_RED         := Color(0.88, 0.34, 0.38, 1.0)
+const HP_BG          := Color(0.16, 0.07, 0.10, 1.0)
+const XP_ORANGE      := Color(0.955, 0.720, 0.360, 1.0)  # тёплый янтарный
+const XP_BG          := Color(0.18, 0.12, 0.06, 1.0)
 
 # Основная панель — nine-slice по ассету panel_frame.png (256×256, декоративные углы ~50).
 static func panel_style(radius: int = 10, border_w: int = 2) -> StyleBox:
@@ -88,46 +87,7 @@ static func section_title(text: String) -> Label:
 	l.add_theme_color_override("font_color", MAGIC_ACCENT)
 	return l
 
-# Горизонтальный баннер-заголовок на ассете banner.png (320×80) как NinePatchRect-фон
-# + Label поверх. Используется вместо простого Label для титулов окон.
-static func title_banner(text: String, font_size: int = 22) -> Control:
-	var wrap := Control.new()
-	wrap.custom_minimum_size = Vector2(260, 48)
-
-	var np := NinePatchRect.new()
-	np.texture = TEX_BANNER
-	np.patch_margin_left = 60
-	np.patch_margin_right = 60
-	np.patch_margin_top = 20
-	np.patch_margin_bottom = 20
-	np.anchor_right = 1.0
-	np.anchor_bottom = 1.0
-	np.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	np.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	wrap.add_child(np)
-
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.name = "Title"
-	lbl.add_theme_font_size_override("font_size", font_size)
-	lbl.add_theme_color_override("font_color", MAGIC_GLOW)
-	lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
-	lbl.add_theme_constant_override("shadow_offset_x", 1)
-	lbl.add_theme_constant_override("shadow_offset_y", 1)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.anchor_right = 1.0
-	lbl.anchor_bottom = 1.0
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	wrap.add_child(lbl)
-	return wrap
-
-static func title_banner_set(wrap: Control, text: String) -> void:
-	var lbl: Label = wrap.get_node_or_null("Title")
-	if lbl:
-		lbl.text = text
-
-# Стиль кнопки «призыв к действию» — магический голубой.
+# Стиль кнопки «призыв к действию» — тёплый бежевый акцент.
 static func button_primary() -> Array:
 	var n := StyleBoxFlat.new()
 	n.bg_color = Color(0.18, 0.14, 0.28, 1.0)

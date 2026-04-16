@@ -63,15 +63,20 @@ func _build_header(parent: Container) -> void:
 
 	var titles := VBoxContainer.new()
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	titles.add_theme_constant_override("separation", 4)
+	titles.add_theme_constant_override("separation", 2)
 	top.add_child(titles)
-	var banner := UI.title_banner("Сумка", 22)
-	titles.add_child(banner)
+	var t := Label.new()
+	t.text = "Сумка"
+	t.add_theme_font_size_override("font_size", 24)
+	t.add_theme_color_override("font_color", UI.MAGIC_ACCENT)
+	t.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
+	t.add_theme_constant_override("shadow_offset_x", 1)
+	t.add_theme_constant_override("shadow_offset_y", 1)
+	titles.add_child(t)
 	usage_label = Label.new()
 	usage_label.text = "0 / %d ячеек" % SLOT_COUNT
 	usage_label.add_theme_font_size_override("font_size", 11)
 	usage_label.add_theme_color_override("font_color", UI.TEXT_DIM)
-	usage_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	titles.add_child(usage_label)
 
 	var close_btn := Button.new()

@@ -96,19 +96,22 @@ func _build_header(parent: Container) -> void:
 
 	var titles := VBoxContainer.new()
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	titles.add_theme_constant_override("separation", 4)
+	titles.add_theme_constant_override("separation", 2)
 	top.add_child(titles)
 
-	var banner := UI.title_banner("Персонаж", 22)
-	banner.name = "TitleBanner"
-	titles.add_child(banner)
-	title_name = banner.get_node("Title") as Label
+	title_name = Label.new()
+	title_name.text = "Персонаж"
+	title_name.add_theme_font_size_override("font_size", 24)
+	title_name.add_theme_color_override("font_color", UI.MAGIC_ACCENT)
+	title_name.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
+	title_name.add_theme_constant_override("shadow_offset_x", 1)
+	title_name.add_theme_constant_override("shadow_offset_y", 1)
+	titles.add_child(title_name)
 
 	title_level = Label.new()
 	title_level.text = "Уровень 1"
 	title_level.add_theme_font_size_override("font_size", 12)
 	title_level.add_theme_color_override("font_color", UI.TEXT_DIM)
-	title_level.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	titles.add_child(title_level)
 
 	var close_btn := Button.new()
