@@ -15,6 +15,7 @@ const CHARACTER_SCRIPT := preload("res://scripts/character_window.gd")
 const BAG_SCRIPT := preload("res://scripts/bag_window.gd")
 const LOOT_SCRIPT := preload("res://scripts/loot_window.gd")
 const SKILLBAR_SCRIPT := preload("res://scripts/skillbar.gd")
+const ADMIN_SCRIPT := preload("res://scripts/admin_panel.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -83,6 +84,7 @@ var _prev_highlight: Mob = null
 var skillbar: SkillBar
 var targeting_skill: int = -1  # -1 = нет таргетинга, иначе индекс скилла в SKILLS
 var _targeting_ring: Sprite2D
+var admin_panel: AdminPanel
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -162,6 +164,10 @@ func _ready() -> void:
 	skillbar = SKILLBAR_SCRIPT.new()
 	add_child(skillbar)
 	skillbar.skill_activated.connect(_on_skill_activated)
+
+	admin_panel = ADMIN_SCRIPT.new()
+	add_child(admin_panel)
+	admin_panel.action_requested.connect(_on_admin_action)
 
 	loot_win = LOOT_SCRIPT.new()
 	add_child(loot_win)
@@ -863,6 +869,38 @@ func _make_circle_sprite(radius: float, color: Color) -> Sprite2D:
 	s.texture = tex
 	s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	return s
+
+func _on_admin_action(action: String) -> void:
+	var my_name: String = String(Session.auth.username if Session.auth else "")
+	if my_name == "":
+		return
+	var payload: Dictionary
+	match action:
+		"heal_self":
+			payload = {"op": "set_hp", "target": my_name, "hp": 99999}
+		"heal_all":
+			payload = {"op": "heal_all"}
+		"give_gold":
+			payload = {"op": "give_gold", "target": my_name, "amount": 1000}
+		"give_golden_bow":
+			payload = {"op": "give_item", "target": my_name, "itemId": "golden_bow", "qty": 1}
+		"level_up":
+			var cur_lvl: int = int(last_me.get("level", 1))
+			payload = {"op": "set_level", "target": my_name, "level": cur_lvl + 5}
+		"killall_mobs":
+			payload = {"op": "killall_mobs"}
+		"respawn_mobs":
+			payload = {"op": "respawn_mobs"}
+		"teleport_cursor":
+			var cursor: Vector2 = get_viewport().get_camera_2d().get_global_mouse_position()
+			payload = {"op": "teleport", "target": my_name, "x": cursor.x, "y": cursor.y}
+		_:
+			return
+	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "admin", JSON.stringify(payload))
+	if rpc_res.is_exception():
+		admin_panel.log_result("ERR: " + rpc_res.get_exception().message)
+		return
+	admin_panel.log_result(rpc_res.payload)
 
 func _on_skill_activated(index: int) -> void:
 	if match_id == "" or Session.socket == null:

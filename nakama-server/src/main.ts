@@ -962,7 +962,110 @@ function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nk
             data: JSON.stringify({ ts: tNow, tick: tick, players: snapPlayers, mobs: snapMobs, zones: state.zones }),
         };
     }
+    if (data && data.indexOf("admin:") === 0) {
+        const result = adminApply(state, data.substring("admin:".length));
+        return { state: state, data: JSON.stringify(result) };
+    }
     return { state: state };
+}
+
+function findPlayerByName(state: WorldState, name: string): MatchPlayer | null {
+    const lower = name.toLowerCase();
+    for (const sk of Object.keys(state.players)) {
+        if (state.players[sk].username.toLowerCase() === lower) return state.players[sk];
+    }
+    return null;
+}
+
+function adminApply(state: WorldState, payload: string): { ok: boolean; error?: string; info?: string } {
+    let body: any;
+    try { body = JSON.parse(payload); } catch { return { ok: false, error: "bad json" }; }
+    const op = String(body.op || "");
+    const t = Date.now();
+    switch (op) {
+        case "give_gold": {
+            const p = findPlayerByName(state, String(body.target || ""));
+            if (!p) return { ok: false, error: "no player" };
+            p.gold += Number(body.amount) || 0;
+            markMe(p);
+            return { ok: true, info: `${p.username} gold=${p.gold}` };
+        }
+        case "give_item": {
+            const p = findPlayerByName(state, String(body.target || ""));
+            if (!p) return { ok: false, error: "no player" };
+            const itemId = String(body.itemId || "");
+            const qty = Number(body.qty) || 1;
+            if (!ITEMS[itemId]) return { ok: false, error: "no item" };
+            addToInventory(p, itemId, qty);
+            return { ok: true, info: `${p.username} +${qty} ${itemId}` };
+        }
+        case "set_level": {
+            const p = findPlayerByName(state, String(body.target || ""));
+            if (!p) return { ok: false, error: "no player" };
+            p.level = Math.max(1, Math.min(99, Number(body.level) || 1));
+            p.hpMax = computeHpMax(p);
+            p.hp = p.hpMax;
+            p.dirtyPos = true;
+            markMe(p);
+            return { ok: true, info: `${p.username} lv=${p.level}` };
+        }
+        case "set_hp": {
+            const p = findPlayerByName(state, String(body.target || ""));
+            if (!p) return { ok: false, error: "no player" };
+            p.hp = Math.max(0, Math.min(p.hpMax, Number(body.hp) || p.hpMax));
+            p.dirtyPos = true;
+            markMe(p);
+            return { ok: true, info: `${p.username} hp=${p.hp}` };
+        }
+        case "heal_all": {
+            for (const sk of Object.keys(state.players)) {
+                const p = state.players[sk];
+                p.hp = p.hpMax;
+                p.dirtyPos = true;
+                markMe(p);
+            }
+            return { ok: true, info: "healed all" };
+        }
+        case "teleport": {
+            const p = findPlayerByName(state, String(body.target || ""));
+            if (!p) return { ok: false, error: "no player" };
+            p.pos.x = Number(body.x) || p.pos.x;
+            p.pos.y = Number(body.y) || p.pos.y;
+            p.dirtyPos = true;
+            return { ok: true, info: `${p.username} -> (${p.pos.x|0},${p.pos.y|0})` };
+        }
+        case "kill_mob": {
+            const mid = String(body.mobId || "");
+            const m = state.mobs[mid];
+            if (!m) return { ok: false, error: "no mob" };
+            m.hp = 0; m.state = "dead";
+            m.respawnAt = t + MOB_TYPES[m.type].respawnMs;
+            m.dirty = true;
+            return { ok: true, info: `killed ${mid}` };
+        }
+        case "killall_mobs": {
+            let n = 0;
+            for (const mk of Object.keys(state.mobs)) {
+                const m = state.mobs[mk];
+                if (m.state === "alive") {
+                    m.hp = 0; m.state = "dead";
+                    m.respawnAt = t + MOB_TYPES[m.type].respawnMs;
+                    m.dirty = true;
+                    n++;
+                }
+            }
+            return { ok: true, info: `killed ${n} mobs` };
+        }
+        case "respawn_mobs": {
+            for (const mk of Object.keys(state.mobs)) {
+                const m = state.mobs[mk];
+                m.respawnAt = t;  // респавн на следующем тике
+            }
+            return { ok: true, info: "all mobs scheduled to respawn" };
+        }
+        default:
+            return { ok: false, error: "unknown op " + op };
+    }
 }
 
 function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
@@ -990,6 +1093,29 @@ function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
     return JSON.stringify(snap);
 }
 
+// ===== ADMIN =====
+// Whitelist админ-имён (lowercase). Нельзя редактировать через API — только в коде.
+const ADMIN_USERNAMES = ["dmitryll", "admin"];
+
+function isAdminCtx(ctx: nkruntime.Context): boolean {
+    const name = String(ctx.username || "").toLowerCase();
+    return ADMIN_USERNAMES.indexOf(name) >= 0;
+}
+
+// rpcAdmin — единый endpoint для админ-команд. payload:
+// { op: "kick"|"give_gold"|"give_item"|"set_level"|"set_hp"
+//      |"kill_mob"|"spawn_mob"|"teleport"|"heal_all"|"killall_mobs",
+//   target?: string, mobId?: string, type?: string,
+//   itemId?: string, qty?: number, amount?: number, level?: number, hp?: number,
+//   x?: number, y?: number }
+function rpcAdmin(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!isAdminCtx(ctx)) return JSON.stringify({ ok: false, error: "not admin" });
+    const matches = nk.matchList(1, true, MATCH_LABEL);
+    if (matches.length === 0) return JSON.stringify({ ok: false, error: "no match" });
+    const result = nk.matchSignal(matches[0].matchId, "admin:" + payload);
+    return result || JSON.stringify({ ok: false, error: "no signal response" });
+}
+
 function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkruntime.Nakama, initializer: nkruntime.Initializer): void {
     initializer.registerMatch(MATCH_MODULE, {
         matchInit: matchInit,
@@ -1002,6 +1128,7 @@ function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkru
     });
     initializer.registerRpc("get_world_match", rpcGetWorldMatch);
     initializer.registerRpc("debug_state", rpcDebugState);
+    initializer.registerRpc("admin", rpcAdmin);
     logger.info("GG runtime loaded. mobs=" + WORLD.mobSpawns.length + " npcs=" + NPCS.length);
 }
 
