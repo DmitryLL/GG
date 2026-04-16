@@ -25,6 +25,13 @@ func _ready() -> void:
 	title.text = "Вход / Регистрация"
 	hint.text = "Введи ник и пароль. Если ника нет — нажми «Регистрация»."
 	pass_input.secret = true
+
+	# Мобилка: вместо LineEdit используем HTML prompt() через JSBridge
+	if _is_mobile_web():
+		name_input.gui_input.connect(_on_name_tap)
+		pass_input.gui_input.connect(_on_pass_tap)
+		hint.text = "Нажми на поле чтобы ввести (Android/iOS)"
+
 	# Подставляем сохранённый ник
 	var saved := _read_storage()
 	if saved != "":
@@ -32,6 +39,34 @@ func _ready() -> void:
 		pass_input.grab_focus()
 	else:
 		name_input.grab_focus()
+
+func _is_mobile_web() -> bool:
+	if not OS.has_feature("web"):
+		return false
+	var ua: Variant = JavaScriptBridge.eval("navigator.userAgent", true)
+	if ua == null: return false
+	var s := String(ua).to_lower()
+	return "android" in s or "iphone" in s or "ipad" in s or "mobile" in s
+
+func _on_name_tap(event: InputEvent) -> void:
+	if event is InputEventScreenTouch and event.pressed:
+		_prompt_for("Никнейм", name_input.text, name_input)
+	elif event is InputEventMouseButton and event.pressed:
+		_prompt_for("Никнейм", name_input.text, name_input)
+
+func _on_pass_tap(event: InputEvent) -> void:
+	if event is InputEventScreenTouch and event.pressed:
+		_prompt_for("Пароль", "", pass_input)
+	elif event is InputEventMouseButton and event.pressed:
+		_prompt_for("Пароль", "", pass_input)
+
+func _prompt_for(label: String, default_val: String, target: LineEdit) -> void:
+	var escaped := label.replace("'", "\\'")
+	var def_esc := default_val.replace("'", "\\'")
+	var code := "var v = window.prompt('%s', '%s'); v === null ? '' : v" % [escaped, def_esc]
+	var v: Variant = JavaScriptBridge.eval(code, true)
+	if v != null and String(v) != "":
+		target.text = String(v)
 
 func _set_busy(busy: bool) -> void:
 	enter_btn.disabled = busy
