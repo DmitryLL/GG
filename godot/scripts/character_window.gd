@@ -65,10 +65,10 @@ func _ready() -> void:
 	card.anchor_top = 0.5
 	card.anchor_right = 0.5
 	card.anchor_bottom = 0.5
-	card.offset_left = -390
-	card.offset_top = -290
-	card.offset_right = 390
-	card.offset_bottom = 290
+	card.offset_left = -410
+	card.offset_top = -320
+	card.offset_right = 410
+	card.offset_bottom = 320
 	card.add_theme_stylebox_override("panel", UI.panel_style(12, 2))
 	overlay.add_child(card)
 
@@ -96,19 +96,19 @@ func _build_header(parent: Container) -> void:
 
 	var titles := VBoxContainer.new()
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	titles.add_theme_constant_override("separation", 2)
+	titles.add_theme_constant_override("separation", 4)
 	top.add_child(titles)
 
-	title_name = Label.new()
-	title_name.text = "Персонаж"
-	title_name.add_theme_font_size_override("font_size", 22)
-	title_name.add_theme_color_override("font_color", UI.GOLD)
-	titles.add_child(title_name)
+	var banner := UI.title_banner("Персонаж", 22)
+	banner.name = "TitleBanner"
+	titles.add_child(banner)
+	title_name = banner.get_node("Title") as Label
 
 	title_level = Label.new()
 	title_level.text = "Уровень 1"
 	title_level.add_theme_font_size_override("font_size", 12)
 	title_level.add_theme_color_override("font_color", UI.TEXT_DIM)
+	title_level.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	titles.add_child(title_level)
 
 	var close_btn := Button.new()
@@ -132,15 +132,15 @@ func _build_doll(parent: Container) -> void:
 	niche.custom_minimum_size = Vector2(100, 160)
 	niche.size = niche.custom_minimum_size
 	var niche_sb := StyleBoxFlat.new()
-	niche_sb.bg_color = Color(0.160, 0.125, 0.085, 1.0)
+	niche_sb.bg_color = Color(0.095, 0.080, 0.160, 1.0)
 	niche_sb.border_color = UI.BORDER_DIM
 	niche_sb.set_border_width_all(1)
 	niche_sb.corner_radius_top_left = 50
 	niche_sb.corner_radius_top_right = 50
 	niche_sb.corner_radius_bottom_left = 20
 	niche_sb.corner_radius_bottom_right = 20
-	niche_sb.shadow_color = Color(0.95, 0.72, 0.25, 0.10)
-	niche_sb.shadow_size = 18
+	niche_sb.shadow_color = Color(0.55, 0.70, 1.00, 0.14)
+	niche_sb.shadow_size = 20
 	niche.add_theme_stylebox_override("panel", niche_sb)
 	doll_root.add_child(niche)
 
@@ -180,7 +180,7 @@ func _build_stats(parent: Container) -> void:
 	sv.add_child(UI.divider())
 
 	# Level
-	stats_level = _stat_row(sv, "Уровень", "1", UI.GOLD)
+	stats_level = _stat_row(sv, "Уровень", "1", UI.MAGIC_ACCENT)
 	# HP с баром
 	var hp_wrap := VBoxContainer.new()
 	hp_wrap.add_theme_constant_override("separation", 4)
@@ -343,7 +343,7 @@ func _build_picker() -> void:
 	v.add_child(top)
 	picker_title = Label.new()
 	picker_title.add_theme_font_size_override("font_size", 16)
-	picker_title.add_theme_color_override("font_color", UI.GOLD)
+	picker_title.add_theme_color_override("font_color", UI.MAGIC_ACCENT)
 	picker_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(picker_title)
 	var close_btn := Button.new()
@@ -479,7 +479,7 @@ func _make_picker_row(item_id: String, qty: int, hint_text: String, on_take: Cal
 	var hint := Label.new()
 	hint.text = hint_text
 	hint.add_theme_font_size_override("font_size", 12)
-	hint.add_theme_color_override("font_color", UI.GOLD if not is_unequip else Color(0.85, 0.52, 0.40))
+	hint.add_theme_color_override("font_color", UI.MAGIC_ACCENT if not is_unequip else Color(0.85, 0.52, 0.40))
 	hb.add_child(hint)
 	return btn
 

@@ -37,10 +37,10 @@ func _ready() -> void:
 	card.anchor_top = 0.5
 	card.anchor_right = 0.5
 	card.anchor_bottom = 0.5
-	card.offset_left = -260
-	card.offset_top = -290
-	card.offset_right = 260
-	card.offset_bottom = 290
+	card.offset_left = -280
+	card.offset_top = -320
+	card.offset_right = 280
+	card.offset_bottom = 320
 	card.add_theme_stylebox_override("panel", UI.panel_style(12, 2))
 	overlay.add_child(card)
 
@@ -63,17 +63,15 @@ func _build_header(parent: Container) -> void:
 
 	var titles := VBoxContainer.new()
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	titles.add_theme_constant_override("separation", 2)
+	titles.add_theme_constant_override("separation", 4)
 	top.add_child(titles)
-	var t := Label.new()
-	t.text = "Сумка"
-	t.add_theme_font_size_override("font_size", 22)
-	t.add_theme_color_override("font_color", UI.GOLD)
-	titles.add_child(t)
+	var banner := UI.title_banner("Сумка", 22)
+	titles.add_child(banner)
 	usage_label = Label.new()
 	usage_label.text = "0 / %d ячеек" % SLOT_COUNT
 	usage_label.add_theme_font_size_override("font_size", 11)
 	usage_label.add_theme_color_override("font_color", UI.TEXT_DIM)
+	usage_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	titles.add_child(usage_label)
 
 	var close_btn := Button.new()
