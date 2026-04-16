@@ -192,6 +192,9 @@ func _process(delta: float) -> void:
 	if attack_cooldown > 0.0:
 		attack_cooldown -= delta
 
+	if nameplate:
+		nameplate.update_target(attack_target)
+
 	send_accum += delta
 	if send_accum < 1.0 / MOVE_SEND_HZ:
 		return

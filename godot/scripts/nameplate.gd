@@ -10,6 +10,11 @@ var hp_text: Label
 var hp_bar: ProgressBar
 var xp_bar: ProgressBar
 
+var target_panel: PanelContainer
+var target_name: Label
+var target_hp_bar: ProgressBar
+var target_hp_text: Label
+
 func _ready() -> void:
 	var root := Control.new()
 	root.anchor_right = 1.0
@@ -94,6 +99,73 @@ func _ready() -> void:
 	xp_bg.set_corner_radius_all(2)
 	xp_bar.add_theme_stylebox_override("background", xp_bg)
 	v.add_child(xp_bar)
+
+	# --- Target panel (right side, mirror of player panel) ---
+	target_panel = PanelContainer.new()
+	target_panel.anchor_left = 1.0
+	target_panel.anchor_top = 0.0
+	target_panel.offset_left = -248
+	target_panel.offset_top = 8
+	target_panel.offset_right = -8
+	target_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	target_panel.visible = false
+	var tsb := StyleBoxFlat.new()
+	tsb.bg_color = Color(0, 0, 0, 0.65)
+	tsb.set_corner_radius_all(4)
+	tsb.set_content_margin_all(8)
+	target_panel.add_theme_stylebox_override("panel", tsb)
+	root.add_child(target_panel)
+
+	var tv := VBoxContainer.new()
+	tv.add_theme_constant_override("separation", 4)
+	target_panel.add_child(tv)
+
+	target_name = Label.new()
+	target_name.text = ""
+	target_name.add_theme_font_size_override("font_size", 18)
+	target_name.add_theme_color_override("font_color", Color(0.95, 0.65, 0.65))
+	target_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tv.add_child(target_name)
+
+	target_hp_bar = ProgressBar.new()
+	target_hp_bar.min_value = 0
+	target_hp_bar.max_value = 100
+	target_hp_bar.value = 100
+	target_hp_bar.show_percentage = false
+	target_hp_bar.custom_minimum_size = Vector2(220, 14)
+	var thp_fg := StyleBoxFlat.new()
+	thp_fg.bg_color = Color(0.85, 0.30, 0.30, 1.0)
+	thp_fg.set_corner_radius_all(2)
+	target_hp_bar.add_theme_stylebox_override("fill", thp_fg)
+	var thp_bg := StyleBoxFlat.new()
+	thp_bg.bg_color = Color(0.10, 0.10, 0.10, 1.0)
+	thp_bg.set_corner_radius_all(2)
+	target_hp_bar.add_theme_stylebox_override("background", thp_bg)
+	tv.add_child(target_hp_bar)
+
+	target_hp_text = Label.new()
+	target_hp_text.text = ""
+	target_hp_text.add_theme_font_size_override("font_size", 10)
+	target_hp_text.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95))
+	target_hp_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	target_hp_text.add_theme_constant_override("outline_size", 3)
+	target_hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	target_hp_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	target_hp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	target_hp_bar.add_child(target_hp_text)
+	target_hp_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+const MOB_NAMES := { "slime": "Слайм", "goblin": "Гоблин" }
+
+func update_target(mob) -> void:
+	if mob == null or not is_instance_valid(mob):
+		target_panel.visible = false
+		return
+	target_panel.visible = true
+	target_name.text = MOB_NAMES.get(mob.kind, mob.kind.capitalize())
+	target_hp_bar.max_value = mob.hp_max
+	target_hp_bar.value = mob.hp
+	target_hp_text.text = "%d / %d" % [int(mob.hp), int(mob.hp_max)]
 
 func set_player_name(n: String) -> void:
 	name_label.text = n
