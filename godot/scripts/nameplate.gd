@@ -41,8 +41,19 @@ func _ready() -> void:
 	panel.add_child(v)
 
 	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 8)
+	top.add_theme_constant_override("separation", 4)
 	v.add_child(top)
+
+	var class_icon := TextureRect.new()
+	var items_tex: Texture2D = load("res://assets/sprites/items.png")
+	var atlas_tex := AtlasTexture.new()
+	atlas_tex.atlas = items_tex
+	atlas_tex.region = Rect2(96, 0, 16, 16)
+	class_icon.texture = atlas_tex
+	class_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	class_icon.custom_minimum_size = Vector2(20, 20)
+	class_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	top.add_child(class_icon)
 
 	name_label = Label.new()
 	name_label.text = "—"

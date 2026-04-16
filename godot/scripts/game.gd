@@ -418,7 +418,11 @@ func _on_inv_click(idx: int) -> void:
 	var kind := String(def.get("kind", ""))
 	if kind == "consumable":
 		Session.socket.send_match_state_async(match_id, OP_USE, JSON.stringify({"slot": idx}))
-	elif kind == "weapon" or kind == "armor":
+	elif kind == "weapon":
+		if not item_id.contains("bow"):
+			return
+		Session.socket.send_match_state_async(match_id, OP_EQUIP, JSON.stringify({"slot": idx}))
+	elif kind == "armor":
 		Session.socket.send_match_state_async(match_id, OP_EQUIP, JSON.stringify({"slot": idx}))
 
 func _on_unequip(slot: String) -> void:

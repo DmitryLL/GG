@@ -540,6 +540,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         target = targetSlotFor(entry.itemId, player.equipment);
                     }
                     if (!target) break;
+                    // Класс «Лучник»: в слот weapon только луки.
+                    if (target === "weapon" && !entry.itemId.includes("bow")) break;
                     const prev = player.equipment[target];
                     player.equipment[target] = entry.itemId;
                     entry.qty -= 1;
