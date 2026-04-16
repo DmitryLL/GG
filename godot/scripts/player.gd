@@ -173,9 +173,22 @@ func show_bubble(text: String) -> void:
 func face_toward(target: Vector2) -> void:
 	_set_facing_from(target - position)
 
+var _has_bow := false
 func set_has_bow(on: bool) -> void:
+	if _has_bow == on: return
+	_has_bow = on
+	# Встроенный в спрайт лук — свой overlay прячем полностью
 	if bow_sprite:
-		bow_sprite.visible = on
+		bow_sprite.visible = false
+	if bow_string: bow_string.visible = false
+	if bow_arrow: bow_arrow.visible = false
+	if on:
+		sprite.texture = load("res://assets/sprites/char_archer_walk.png")
+	else:
+		sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
+	sprite.hframes = 3
+	sprite.vframes = 4
+	sprite.frame = facing * 3
 
 func _update_bow_position() -> void:
 	if bow_sprite == null or not bow_sprite.visible:
@@ -207,11 +220,18 @@ func _update_bow_position() -> void:
 
 var _punch_t := 0.0
 var _bow_shot_t := 0.0
+const BOW_SHOT_DURATION := 0.55
+const BOW_SHOT_FRAMES := 7
+
 func play_punch() -> void:
 	_punch_t = 0.25
 
 func play_bow_shot() -> void:
-	_bow_shot_t = 0.55
+	if not _has_bow: return
+	_bow_shot_t = BOW_SHOT_DURATION
+	sprite.texture = load("res://assets/sprites/char_archer_shoot.png")
+	sprite.hframes = BOW_SHOT_FRAMES
+	sprite.vframes = 4
 
 func _set_facing_from(delta: Vector2) -> void:
 	if abs(delta.x) < 0.01 and abs(delta.y) < 0.01:
@@ -224,56 +244,20 @@ func _set_facing_from(delta: Vector2) -> void:
 
 func _animate(delta: float) -> void:
 	var base := facing * 3
-	# Bow shot: 3 phases — aim (0-0.2) → draw string (0.2-0.45) → release recoil (0.45-0.55)
+	# Bow shot: проигрываем 7-кадровую анимацию throw-object из char_archer_shoot.png
 	if _bow_shot_t > 0.0:
 		_bow_shot_t -= delta
-		var elapsed: float = 0.55 - _bow_shot_t
-		var forward_dir := Vector2.ZERO  # from character toward target
-		match facing:
-			Dir.DOWN:  forward_dir = Vector2(0, 1)
-			Dir.UP:    forward_dir = Vector2(0, -1)
-			Dir.LEFT:  forward_dir = Vector2(-1, 0)
-			Dir.RIGHT: forward_dir = Vector2(1, 0)
-		var back_dir := -forward_dir
-		var body_off := Vector2.ZERO
-		var draw_amount := 0.0  # 0..1 how far string is pulled
-		if elapsed < 0.2:
-			var k: float = elapsed / 0.2
-			body_off = back_dir * (1.5 * k)
-		elif elapsed < 0.45:
-			var k: float = (elapsed - 0.2) / 0.25
-			body_off = back_dir * (1.5 + 2.5 * k)
-			draw_amount = k
-		else:
-			var k: float = (elapsed - 0.45) / 0.1
-			body_off = back_dir * (4.0 * (1.0 - k)) + forward_dir * (1.0 * k)
-			draw_amount = 1.0 - k
-		if bow_sprite and bow_sprite.visible:
-			_update_bow_position()
-		# Видимая тетива + стрела только во время выстрела
-		if bow_sprite and bow_sprite.visible and draw_amount > 0.01:
-			bow_string.visible = true
-			bow_arrow.visible = true
-			# Тетива: треугольник, вершина смещается назад относительно лука
-			var bow_pos: Vector2 = bow_sprite.position
-			var pull_offset: Vector2 = back_dir * (8.0 * draw_amount)
-			bow_string.clear_points()
-			bow_string.add_point(bow_pos + Vector2(0, -14))
-			bow_string.add_point(bow_pos + pull_offset)
-			bow_string.add_point(bow_pos + Vector2(0, 14))
-			# Стрела — от натянутой вершины вперёд
-			bow_arrow.clear_points()
-			bow_arrow.add_point(bow_pos + pull_offset)
-			bow_arrow.add_point(bow_pos + pull_offset + forward_dir * 16.0)
-		else:
-			bow_string.visible = false
-			bow_arrow.visible = false
-		sprite.offset = Vector2(0, -16) + body_off
-		sprite.frame = base
+		var progress: float = 1.0 - (_bow_shot_t / BOW_SHOT_DURATION)
+		var frame_in_row: int = clampi(int(progress * BOW_SHOT_FRAMES), 0, BOW_SHOT_FRAMES - 1)
+		sprite.frame = facing * BOW_SHOT_FRAMES + frame_in_row
+		sprite.offset = Vector2(0, -16)
+		if _bow_shot_t <= 0.0:
+			# Вернуться к walk-спрайту
+			sprite.texture = load("res://assets/sprites/char_archer_walk.png")
+			sprite.hframes = 3
+			sprite.vframes = 4
+			sprite.frame = facing * 3
 		return
-	else:
-		if bow_string: bow_string.visible = false
-		if bow_arrow: bow_arrow.visible = false
 	# Punch visual: lunge sprite toward facing direction briefly.
 	if _punch_t > 0.0:
 		_punch_t -= delta
