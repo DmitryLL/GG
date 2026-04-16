@@ -159,24 +159,29 @@ func set_has_bow(on: bool) -> void:
 func _update_bow_position() -> void:
 	if bow_sprite == null or not bow_sprite.visible:
 		return
+	bow_sprite.centered = true
 	match facing:
 		Dir.DOWN:
-			bow_sprite.position = Vector2(6, -16)
+			# Персонаж лицом к нам — лук сбоку, вертикально
+			bow_sprite.position = Vector2(10, -18)
 			bow_sprite.rotation = 0
 			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
 		Dir.UP:
-			bow_sprite.position = Vector2(-6, -18)
+			# Спиной — лук сбоку чуть меньше заметен
+			bow_sprite.position = Vector2(-10, -20)
 			bow_sprite.rotation = 0
 			bow_sprite.flip_h = true
 			bow_sprite.z_index = -1
 		Dir.LEFT:
-			bow_sprite.position = Vector2(-4, -20)
-			bow_sprite.rotation = deg_to_rad(-90)
-			bow_sprite.flip_h = false
+			# Лук направлен вперёд (влево), дугой от персонажа
+			bow_sprite.position = Vector2(-12, -20)
+			bow_sprite.rotation = deg_to_rad(90)
+			bow_sprite.flip_h = true
 			bow_sprite.z_index = 1
 		Dir.RIGHT:
-			bow_sprite.position = Vector2(4, -20)
+			# Лук направлен вперёд (вправо)
+			bow_sprite.position = Vector2(12, -20)
 			bow_sprite.rotation = deg_to_rad(90)
 			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
@@ -187,7 +192,7 @@ func play_punch() -> void:
 	_punch_t = 0.25
 
 func play_bow_shot() -> void:
-	_bow_shot_t = 0.35
+	_bow_shot_t = 0.55
 
 func _set_facing_from(delta: Vector2) -> void:
 	if abs(delta.x) < 0.01 and abs(delta.y) < 0.01:
@@ -200,22 +205,41 @@ func _set_facing_from(delta: Vector2) -> void:
 
 func _animate(delta: float) -> void:
 	var base := facing * 3
-	# Bow shot visual: pull back bow, then release forward with slight recoil.
+	# Bow shot: 3 phases — aim (0-0.2) → draw string (0.2-0.45) → release recoil (0.45-0.55)
 	if _bow_shot_t > 0.0:
 		_bow_shot_t -= delta
-		var phase: float = 1.0 - clampf(_bow_shot_t / 0.35, 0.0, 1.0)
-		var pull_dir := Vector2.ZERO
+		var elapsed: float = 0.55 - _bow_shot_t
+		var back_dir := Vector2.ZERO  # direction opposite to facing (recoil)
+		var forward_dir := Vector2.ZERO
 		match facing:
-			Dir.DOWN: pull_dir = Vector2(0, -1)
-			Dir.UP: pull_dir = Vector2(0, 1)
-			Dir.LEFT: pull_dir = Vector2(1, 0)
-			Dir.RIGHT: pull_dir = Vector2(-1, 0)
-		var amount: float = 4.0 * sin(phase * PI)
+			Dir.DOWN:  back_dir = Vector2(0, -1); forward_dir = Vector2(0, 1)
+			Dir.UP:    back_dir = Vector2(0, 1);  forward_dir = Vector2(0, -1)
+			Dir.LEFT:  back_dir = Vector2(1, 0);  forward_dir = Vector2(-1, 0)
+			Dir.RIGHT: back_dir = Vector2(-1, 0); forward_dir = Vector2(1, 0)
+		var body_off := Vector2.ZERO
+		var bow_off := Vector2.ZERO
+		var bow_scale_extra := 0.0
+		if elapsed < 0.2:
+			# Aim: subtle lean backward, bow steady
+			var k: float = elapsed / 0.2
+			body_off = back_dir * (2.0 * k)
+		elif elapsed < 0.45:
+			# Draw: body rock back, bow shifts slightly forward, scale pulses
+			var k: float = (elapsed - 0.2) / 0.25
+			body_off = back_dir * (2.0 + 2.0 * k)
+			bow_off = forward_dir * (1.5 * k)
+			bow_scale_extra = 0.08 * k
+		else:
+			# Release: snap forward, bow recoil backward
+			var k: float = (elapsed - 0.45) / 0.1
+			body_off = back_dir * (4.0 * (1.0 - k)) + forward_dir * (1.0 * k)
+			bow_off = back_dir * (3.0 * (1.0 - k * 0.5))
+			bow_scale_extra = 0.08 * (1.0 - k)
 		if bow_sprite and bow_sprite.visible:
 			_update_bow_position()
-			bow_sprite.position += pull_dir * amount
-			bow_sprite.scale = Vector2(0.6 + 0.1 * sin(phase * PI), 0.6)
-		sprite.offset = Vector2(0, -16) + pull_dir * (amount * 0.3)
+			bow_sprite.position += bow_off
+			bow_sprite.scale = Vector2(0.6 + bow_scale_extra, 0.6)
+		sprite.offset = Vector2(0, -16) + body_off
 		sprite.frame = base
 		return
 	# Punch visual: lunge sprite toward facing direction briefly.

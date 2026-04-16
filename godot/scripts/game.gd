@@ -168,12 +168,27 @@ func _ready() -> void:
 	_connect_and_join()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and targeting_skill >= 0:
+		targeting_skill = -1
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT and targeting_skill >= 0:
+		targeting_skill = -1
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var world_pos := get_viewport().get_camera_2d().get_global_mouse_position()
 		if targeting_skill >= 0:
 			var idx := targeting_skill
+			var sk: Dictionary = skillbar.SKILLS[idx]
 			targeting_skill = -1
-			_send_skill(idx, {"skill": idx, "x": world_pos.x, "y": world_pos.y})
+			Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+			if bool(sk["targets_mob"]):
+				var mob_hit := _mob_at(world_pos)
+				if mob_hit != null and mob_hit.alive:
+					_send_skill(idx, {"skill": idx, "mobId": mob_hit.mob_id})
+			else:
+				_send_skill(idx, {"skill": idx, "x": world_pos.x, "y": world_pos.y})
 			return
 		# NPC takes priority over mobs/move.
 		var npc := _npc_at(world_pos)
@@ -317,7 +332,10 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 				m.flash()
 				var dmg := int(body.get("dmg", 0))
 				if dmg > 0:
-					_spawn_damage_label(m.position, dmg)
+					var is_crit := bool(body.get("crit", false))
+					var is_poison := bool(body.get("poison", false))
+					var is_ghost := bool(body.get("ghost", false))
+					_spawn_damage_label(m.position, dmg, is_crit, is_poison, is_ghost)
 		OP_PLAYER_HIT:
 			var sid: String = String(body.get("sessionId", ""))
 			var p: Player = me if sid == my_session_id else remotes.get(sid)
@@ -634,13 +652,9 @@ func _on_skill_activated(index: int) -> void:
 	var sk: Dictionary = skillbar.SKILLS[index]
 	if skillbar.cooldowns[index] > 0.0:
 		return
-	if bool(sk["targets_ground"]):
+	if bool(sk["targets_ground"]) or bool(sk["targets_mob"]):
 		targeting_skill = index
-		return
-	if bool(sk["targets_mob"]):
-		if attack_target == null or not is_instance_valid(attack_target) or not attack_target.alive:
-			return
-		_send_skill(index, {"skill": index, "mobId": attack_target.mob_id})
+		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
 		return
 	# self / non-targeted — e.g. dodge
 	var payload := {"skill": index}
@@ -656,11 +670,22 @@ func _send_skill(index: int, payload: Dictionary) -> void:
 	elif index == 4:
 		me.play_bow_shot()
 
-func _spawn_damage_label(pos: Vector2, dmg: int) -> void:
+func _spawn_damage_label(pos: Vector2, dmg: int, is_crit: bool = false, is_poison: bool = false, is_ghost: bool = false) -> void:
 	var lbl := Label.new()
-	lbl.text = "-%d" % dmg
-	lbl.add_theme_font_size_override("font_size", 18)
-	lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	var size := 18
+	var color := Color(1.0, 0.85, 0.2)
+	var prefix := "-"
+	if is_crit:
+		size = 26
+		color = Color(1.0, 0.35, 0.25)
+		prefix = "КРИТ! -"
+	elif is_poison:
+		color = Color(0.55, 0.95, 0.35)
+	elif is_ghost:
+		color = Color(0.72, 0.82, 1.0)
+	lbl.text = "%s%d" % [prefix, dmg]
+	lbl.add_theme_font_size_override("font_size", size)
+	lbl.add_theme_color_override("font_color", color)
 	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	lbl.add_theme_constant_override("outline_size", 4)
 	lbl.position = pos + Vector2(randf_range(-8, 8), -32)
