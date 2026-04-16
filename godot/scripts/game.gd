@@ -242,21 +242,23 @@ func _process(delta: float) -> void:
 				else:
 					me.request_move_to(attack_target.position)
 			else:
-				# Melee: точка в 28px от ног моба по доминирующей оси.
-				# mob.position = центр спрайта; ноги моба ниже на ~20px.
-				var mob_feet := Vector2(attack_target.position.x, attack_target.position.y + 20.0)
-				var diff: Vector2 = mob_feet - me.position
+				# Melee: встаём кардинально относительно моба. Player.position = ноги,
+				# mob.position = центр спрайта (ноги моба = mob.y + 20, голова = mob.y - 22).
+				var mob_feet_y: float = attack_target.position.y + 20.0
+				var mob_head_y: float = attack_target.position.y - 22.0
+				var diff: Vector2 = attack_target.position - me.position
 				var cardinal_spot: Vector2
 				if absf(diff.x) >= absf(diff.y):
-					# Сбоку — ноги игрока на уровне ног моба
-					cardinal_spot = Vector2(attack_target.position.x - signf(diff.x) * 28.0, mob_feet.y)
+					# Сбоку: ноги игрока на уровне ног моба, сдвиг 28px по X
+					cardinal_spot = Vector2(attack_target.position.x - signf(diff.x) * 28.0, mob_feet_y)
+				elif diff.y > 0:
+					# Моб НИЖЕ игрока (diff.y>0) → игрок стоит СВЕРХУ,
+					# ноги игрока над головой моба (+2px зазор)
+					cardinal_spot = Vector2(attack_target.position.x, mob_head_y - 2.0)
 				else:
-					if diff.y > 0:
-						# Атакуем снизу — игрок ниже ног моба
-						cardinal_spot = Vector2(attack_target.position.x, mob_feet.y + 28.0)
-					else:
-						# Атакуем сверху — игрок над головой моба
-						cardinal_spot = Vector2(attack_target.position.x, attack_target.position.y - 20.0 - 8.0)
+					# Моб ВЫШЕ игрока → игрок стоит СНИЗУ,
+					# ноги игрока на 34px ниже ног моба (чтобы спрайт не налезал)
+					cardinal_spot = Vector2(attack_target.position.x, mob_feet_y + 34.0)
 				var at_spot: bool = me.position.distance_to(cardinal_spot) <= 3.0
 				if at_spot:
 					me.has_target = false
