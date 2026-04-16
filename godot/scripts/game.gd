@@ -75,6 +75,7 @@ var pvp_target_sid: String = ""
 var attack_cooldown := 0.0
 var queued_skill: int = -1  # скилл ожидающий подхода к цели
 var queued_ground_pos: Vector2 = Vector2.ZERO  # точка каста для ground-скилла
+var queued_approach_pos: Vector2 = Vector2.ZERO  # куда идти чтобы попасть в зону каста
 var _click_marker: Sprite2D
 var _click_marker_t := 0.0
 var _prev_highlight: Mob = null
@@ -206,12 +207,19 @@ func _unhandled_input(event: InputEvent) -> void:
 						queued_skill = idx
 						attack_cooldown = 0.0
 			else:
-				# Ground skill: если далеко — встаём в очередь, идём к точке
 				attack_target = null
 				pvp_target = null
 				_set_mob_highlight(null)
 				queued_skill = idx
 				queued_ground_pos = world_pos
+				# Вычисляем approach один раз: точка в зоне каста ближе к точке клика
+				var max_cast_init: float = PLAYER_ATTACK_RANGE - 20.0
+				var d0: float = me.position.distance_to(world_pos)
+				if d0 <= max_cast_init:
+					queued_approach_pos = me.position  # уже в зоне
+				else:
+					var dir0: Vector2 = (world_pos - me.position).normalized()
+					queued_approach_pos = world_pos - dir0 * max_cast_init
 				attack_cooldown = 0.0
 			return
 		# NPC takes priority over mobs/move.
@@ -298,28 +306,28 @@ func _process(delta: float) -> void:
 			else:
 				me.request_move_to(pvp_target.position)
 
-	# Queued ground skill (например Ливень) — идём к точке и кастуем
+	# Queued ground skill (Ливень/Залп) — идём к зафиксированному approach и кастуем
 	if queued_skill >= 0 and attack_target == null and pvp_target == null:
 		var sk: Dictionary = skillbar.SKILLS[queued_skill]
 		if bool(sk["targets_ground"]):
 			if skillbar.cooldowns[queued_skill] > 0.0:
 				queued_skill = -1
 			else:
-				var d_g: float = me.position.distance_to(queued_ground_pos)
+				# Если в зоне каста (по фактической дистанции до самой цели) — каст
+				var d_now: float = me.position.distance_to(queued_ground_pos)
 				var max_cast: float = PLAYER_ATTACK_RANGE - 20.0
-				if d_g > max_cast:
-					# Идём в направлении точки до ближайшей точки в зоне досягаемости
-					var dir: Vector2 = (queued_ground_pos - me.position).normalized()
-					me.request_move_to(queued_ground_pos - dir * max_cast)
+				if d_now <= max_cast:
+					me.has_target = false
+					me.face_toward(queued_ground_pos)
+					Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": me.position.x, "y": me.position.y}))
+					last_sent_pos = me.position
+					_send_skill(queued_skill, {"skill": queued_skill + 1, "x": queued_ground_pos.x, "y": queued_ground_pos.y})
+					attack_cooldown = PLAYER_ATTACK_COOLDOWN
+					queued_skill = -1
 					return
-				# В дальности — отправляем
-				me.has_target = false
-				me.face_toward(queued_ground_pos)
-				Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": me.position.x, "y": me.position.y}))
-				last_sent_pos = me.position
-				_send_skill(queued_skill, {"skill": queued_skill + 1, "x": queued_ground_pos.x, "y": queued_ground_pos.y})
-				attack_cooldown = PLAYER_ATTACK_COOLDOWN
-				queued_skill = -1
+				# Иначе идём к approach (точка зафиксирована в момент queue, не дёргается)
+				if not me.has_target:
+					me.request_move_to(queued_approach_pos)
 				return
 
 	# Auto-pursuit: keep walking toward the locked target and shoot/punch when in range.
