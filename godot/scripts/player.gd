@@ -255,8 +255,11 @@ func _update_bow_position() -> void:
 
 var _punch_t := 0.0
 var _bow_shot_t := 0.0
+var _roll_t := 0.0
 const BOW_SHOT_DURATION := 0.55
 const BOW_SHOT_FRAMES := 6
+const ROLL_DURATION := 0.4
+const ROLL_FRAMES := 6
 
 func play_punch() -> void:
 	_punch_t = 0.25
@@ -266,6 +269,13 @@ func play_bow_shot() -> void:
 	_bow_shot_t = BOW_SHOT_DURATION
 	sprite.texture = load("res://assets/sprites/char_archer_shoot.png")
 	sprite.hframes = BOW_SHOT_FRAMES
+	sprite.vframes = 4
+
+func play_roll() -> void:
+	_roll_t = ROLL_DURATION
+	var path: String = "res://assets/sprites/char_archer_roll.png" if _has_bow else "res://assets/sprites/char_base_roll.png"
+	sprite.texture = load(path)
+	sprite.hframes = ROLL_FRAMES
 	sprite.vframes = 4
 
 func play_bow_shot_upward() -> void:
@@ -286,7 +296,21 @@ func _set_facing_from(delta: Vector2) -> void:
 
 func _animate(delta: float) -> void:
 	var base := facing * 3
-	# Bow shot: проигрываем 7-кадровую анимацию throw-object из char_archer_shoot.png
+	# Roll (отскок): приоритетная анимация front-flip
+	if _roll_t > 0.0:
+		_roll_t -= delta
+		var rprog: float = 1.0 - (_roll_t / ROLL_DURATION)
+		var rframe: int = clampi(int(rprog * ROLL_FRAMES), 0, ROLL_FRAMES - 1)
+		sprite.frame = facing * ROLL_FRAMES + rframe
+		sprite.offset = Vector2(0, -16)
+		if _roll_t <= 0.0:
+			var walk_path: String = "res://assets/sprites/char_archer_walk.png" if _has_bow else "res://assets/sprites/char_%d.png" % variant
+			sprite.texture = load(walk_path)
+			sprite.hframes = 3
+			sprite.vframes = 4
+			sprite.frame = facing * 3
+		return
+	# Bow shot: проигрываем 6-кадровую анимацию fireball
 	if _bow_shot_t > 0.0:
 		_bow_shot_t -= delta
 		var progress: float = 1.0 - (_bow_shot_t / BOW_SHOT_DURATION)

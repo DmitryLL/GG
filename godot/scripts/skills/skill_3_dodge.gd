@@ -10,9 +10,10 @@ func _init() -> void:
 	# Не таргет-скилл: исполняется на себе (с учётом текущей цели)
 	arrow_style = ""
 
-func on_send(_game) -> void:
-	# Никакой анимации лука — это прыжок. Визуал делает on_fx.
-	pass
+func on_send(game) -> void:
+	# Запускаем анимацию переката сразу, не дожидаясь сервер-fx
+	if game.me:
+		game.me.play_roll()
 
 func on_fx(game, body: Dictionary) -> bool:
 	if String(body.get("kind", "")) != "dodge":
@@ -27,6 +28,9 @@ func on_fx(game, body: Dictionary) -> bool:
 	var tw: Tween = game.create_tween()
 	tw.tween_property(p, "position", dodge_target, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	p.flash()
+	# Для remote: запустить анимацию переката (свой персонаж уже играет from on_send)
+	if sid != game.my_session_id:
+		p.play_roll()
 	for i in range(3):
 		var ghost := Sprite2D.new()
 		ghost.texture = p.sprite.texture
