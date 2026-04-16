@@ -28,9 +28,11 @@ func _ready() -> void:
 
 	# Мобилка: вместо LineEdit используем HTML prompt() через JSBridge
 	if _is_mobile_web():
+		name_input.editable = false
+		pass_input.editable = false
 		name_input.gui_input.connect(_on_name_tap)
 		pass_input.gui_input.connect(_on_pass_tap)
-		hint.text = "Нажми на поле чтобы ввести (Android/iOS)"
+		hint.text = "Нажми на поле чтобы ввести"
 
 	# Подставляем сохранённый ник
 	var saved := _read_storage()
@@ -43,21 +45,25 @@ func _ready() -> void:
 func _is_mobile_web() -> bool:
 	if not OS.has_feature("web"):
 		return false
-	var ua: Variant = JavaScriptBridge.eval("navigator.userAgent", true)
-	if ua == null: return false
-	var s := String(ua).to_lower()
-	return "android" in s or "iphone" in s or "ipad" in s or "mobile" in s
+	# Проверяем и UA, и touch-capability — чтобы ловить все мобильные случаи
+	var code := """(function(){
+		var ua = (navigator.userAgent || '').toLowerCase();
+		var isMobileUA = /android|iphone|ipad|ipod|mobile|tablet/.test(ua);
+		var hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+		var isSmall = Math.min(window.innerWidth, window.innerHeight) < 900;
+		return isMobileUA || (hasTouch && isSmall);
+	})()"""
+	var r: Variant = JavaScriptBridge.eval(code, true)
+	return bool(r)
 
 func _on_name_tap(event: InputEvent) -> void:
-	if event is InputEventScreenTouch and event.pressed:
-		_prompt_for("Никнейм", name_input.text, name_input)
-	elif event is InputEventMouseButton and event.pressed:
+	if (event is InputEventScreenTouch and event.pressed) or (event is InputEventMouseButton and event.pressed):
+		name_input.release_focus()
 		_prompt_for("Никнейм", name_input.text, name_input)
 
 func _on_pass_tap(event: InputEvent) -> void:
-	if event is InputEventScreenTouch and event.pressed:
-		_prompt_for("Пароль", "", pass_input)
-	elif event is InputEventMouseButton and event.pressed:
+	if (event is InputEventScreenTouch and event.pressed) or (event is InputEventMouseButton and event.pressed):
+		pass_input.release_focus()
 		_prompt_for("Пароль", "", pass_input)
 
 func _prompt_for(label: String, default_val: String, target: LineEdit) -> void:
