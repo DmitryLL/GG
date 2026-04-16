@@ -230,31 +230,37 @@ func _process(delta: float) -> void:
 			attack_target = null
 		else:
 			var has_bow: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
-			var atk_range: float = PLAYER_ATTACK_RANGE if has_bow else 36.0
-			var d: float = me.position.distance_to(attack_target.position)
-			var diff: Vector2 = attack_target.position - me.position
-			# Для ближнего боя требуем кардинального выравнивания (моб строго сверху/снизу/слева/справа)
-			var cardinal_ok := has_bow or (absf(diff.x) < 10.0 or absf(diff.y) < 10.0)
-			if d <= atk_range and cardinal_ok:
-				me.has_target = false
-				me.face_toward(attack_target.position)
-				if attack_cooldown <= 0.0:
-					Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": attack_target.mob_id}))
-					attack_cooldown = PLAYER_ATTACK_COOLDOWN
-					if has_bow:
+			if has_bow:
+				var d_bow: float = me.position.distance_to(attack_target.position)
+				if d_bow <= PLAYER_ATTACK_RANGE:
+					me.has_target = false
+					me.face_toward(attack_target.position)
+					if attack_cooldown <= 0.0:
+						Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": attack_target.mob_id}))
+						attack_cooldown = PLAYER_ATTACK_COOLDOWN
 						me.play_bow_shot()
-					else:
-						me.play_punch()
-			else:
-				if has_bow:
-					me.request_move_to(attack_target.position)
 				else:
-					var approach: Vector2
-					if absf(diff.x) > absf(diff.y):
-						approach = attack_target.position + Vector2(-signf(diff.x) * 28.0, 0)
-					else:
-						approach = attack_target.position + Vector2(0, -signf(diff.y) * 28.0)
-					me.request_move_to(approach)
+					me.request_move_to(attack_target.position)
+			else:
+				# Melee: рассчитываем точную кардинальную точку в 28px от моба
+				var diff: Vector2 = attack_target.position - me.position
+				var cardinal_spot: Vector2
+				if absf(diff.x) >= absf(diff.y):
+					cardinal_spot = attack_target.position + Vector2(-signf(diff.x) * 28.0, 0)
+				else:
+					cardinal_spot = attack_target.position + Vector2(0, -signf(diff.y) * 28.0)
+				var at_spot: bool = me.position.distance_to(cardinal_spot) <= 3.0
+				if at_spot:
+					me.has_target = false
+					# Snap position to exact cardinal point — больше никаких диагоналей
+					me.position = cardinal_spot
+					me.face_toward(attack_target.position)
+					if attack_cooldown <= 0.0:
+						Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": attack_target.mob_id}))
+						attack_cooldown = PLAYER_ATTACK_COOLDOWN
+						me.play_punch()
+				else:
+					me.request_move_to(cardinal_spot)
 	if attack_cooldown > 0.0:
 		attack_cooldown -= delta
 
