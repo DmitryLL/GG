@@ -221,7 +221,7 @@ func _update_bow_position() -> void:
 var _punch_t := 0.0
 var _bow_shot_t := 0.0
 const BOW_SHOT_DURATION := 0.55
-const BOW_SHOT_FRAMES := 7
+const BOW_SHOT_FRAMES := 6
 
 func play_punch() -> void:
 	_punch_t = 0.25
