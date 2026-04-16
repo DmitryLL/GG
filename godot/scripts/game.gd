@@ -715,6 +715,10 @@ func _spawn_arrow(body: Dictionary) -> void:
 		return
 	var from := Vector2(float(body.get("fx", 0)), float(body.get("fy", 0)))
 	var to := Vector2(float(body.get("tx", 0)), float(body.get("ty", 0)))
+	# Стрела вылетает из лука (рука), а не от ног. Подъём 22px + небольшой
+	# сдвиг в сторону цели, чтобы визуально стартовала из руки.
+	var dir: Vector2 = (to - from).normalized()
+	from = Vector2(from.x + dir.x * 10.0, from.y - 22.0)
 	var style := "normal"
 	if bool(body.get("crit", false)): style = "crit"
 	elif bool(body.get("poison", false)): style = "poison"
