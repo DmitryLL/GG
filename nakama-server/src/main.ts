@@ -531,14 +531,42 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             case OP_ATTACK: {
                 try {
                     if (player.hp <= 0) break;
-                    const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string };
-                    const mobId = String(body.mobId || "");
-                    const mob = state.mobs[mobId];
-                    if (!mob || mob.state !== "alive") break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string; sid?: string };
                     const atkCd = t < player.atkSpeedBoostUntil ? PLAYER_ATTACK_COOLDOWN_MS * 0.5 : PLAYER_ATTACK_COOLDOWN_MS;
                     if (t - player.lastAttackAt < atkCd) break;
                     const hasBow = (player.equipment.weapon || "").includes("bow");
                     const atkRange = hasBow ? PLAYER_ATTACK_RANGE : 36;
+
+                    // PvP: атакуем другого игрока
+                    if (body.sid && body.sid !== player.sessionId) {
+                        const foe = state.players[body.sid];
+                        if (!foe || foe.hp <= 0) break;
+                        if (dist(foe.pos, player.pos) > atkRange) break;
+                        if (t < foe.invulnUntil) break;
+                        player.lastAttackAt = t;
+                        const dmgP = computeDamage(player);
+                        foe.hp -= dmgP;
+                        if (foe.hp < 0) foe.hp = 0;
+                        markMe(foe);
+                        dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
+                            fx: player.pos.x, fy: player.pos.y,
+                            tx: foe.pos.x, ty: foe.pos.y,
+                            melee: !hasBow,
+                        }));
+                        dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: foe.sessionId, by: player.sessionId, dmg: dmgP }));
+                        if (foe.hp <= 0) {
+                            foe.pos.x = WORLD.playerSpawn.x; foe.pos.y = WORLD.playerSpawn.y;
+                            foe.hp = foe.hpMax;
+                            foe.lastTouchedByMob = {};
+                            foe.dirtyPos = true;
+                            markMe(foe);
+                        }
+                        break;
+                    }
+
+                    const mobId = String(body.mobId || "");
+                    const mob = state.mobs[mobId];
+                    if (!mob || mob.state !== "alive") break;
                     if (dist(mob.pos, player.pos) > atkRange) break;
                     player.lastAttackAt = t;
                     const dmg = computeDamage(player);

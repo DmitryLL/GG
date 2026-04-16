@@ -70,6 +70,8 @@ var last_me: Dictionary = {}
 var send_accum := 0.0
 var last_sent_pos: Vector2 = Vector2.INF
 var attack_target: Mob = null
+var pvp_target: Player = null
+var pvp_target_sid: String = ""
 var attack_cooldown := 0.0
 var _click_marker: Sprite2D
 var _click_marker_t := 0.0
@@ -204,10 +206,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mob_hit != null:
 			if mob_hit.alive:
 				attack_target = mob_hit
+				pvp_target = null
 				_set_mob_highlight(mob_hit)
 				_hide_marker()
 				return
 			attack_target = null
+			pvp_target = null
 			_set_mob_highlight(null)
 			var d_corpse: float = me.position.distance_to(mob_hit.position)
 			if d_corpse <= 60.0:
@@ -215,7 +219,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				me.request_move_to(mob_hit.position)
 			return
+		# Check for remote player click (PvP)
+		var sid_hit: String = _player_at(world_pos)
+		if sid_hit != "":
+			pvp_target = remotes.get(sid_hit)
+			pvp_target_sid = sid_hit
+			attack_target = null
+			_set_mob_highlight(null)
+			_hide_marker()
+			return
 		attack_target = null
+		pvp_target = null
 		_set_mob_highlight(null)
 		_show_marker(world_pos)
 		me.request_move_to(world_pos)
@@ -223,6 +237,27 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if match_id == "" or Session.socket == null:
 		return
+
+	# PvP auto-pursuit — атаковать другого игрока
+	if pvp_target != null:
+		if not is_instance_valid(pvp_target):
+			pvp_target = null; pvp_target_sid = ""
+		else:
+			var has_bow_pvp: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
+			var atk_range_pvp: float = PLAYER_ATTACK_RANGE if has_bow_pvp else 36.0
+			var d_pvp: float = me.position.distance_to(pvp_target.position)
+			if d_pvp <= atk_range_pvp:
+				me.has_target = false
+				me.face_toward(pvp_target.position)
+				if attack_cooldown <= 0.0:
+					Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"sid": pvp_target_sid}))
+					attack_cooldown = PLAYER_ATTACK_COOLDOWN
+					if has_bow_pvp:
+						me.play_bow_shot()
+					else:
+						me.play_punch()
+			else:
+				me.request_move_to(pvp_target.position)
 
 	# Auto-pursuit: keep walking toward the locked target and shoot/punch when in range.
 	if attack_target != null:
@@ -353,7 +388,11 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_PLAYER_HIT:
 			var sid: String = String(body.get("sessionId", ""))
 			var p: Player = me if sid == my_session_id else remotes.get(sid)
-			if p: p.flash()
+			if p:
+				p.flash()
+				var dmg := int(body.get("dmg", 0))
+				if dmg > 0:
+					_spawn_damage_label(p.position, dmg)
 		OP_ME:         _apply_me(body)
 		OP_NPCS:       _apply_npcs(body)
 		OP_ARROW:      _spawn_arrow(body)
@@ -467,6 +506,19 @@ func _on_presence(ev: NakamaRTAPI.MatchPresenceEvent) -> void:
 			remotes.erase(sid)
 	if status_label:
 		status_label.text = "В мире · игроков: %d" % (remotes.size() + 1)
+
+func _player_at(world_pos: Vector2) -> String:
+	var best_sid := ""
+	var best_d: float = 40.0
+	for sid in remotes.keys():
+		var p: Player = remotes[sid]
+		if p == null or not is_instance_valid(p):
+			continue
+		var d: float = world_pos.distance_to(p.position + Vector2(0, -16))
+		if d < best_d:
+			best_d = d
+			best_sid = sid
+	return best_sid
 
 func _mob_at(world_pos: Vector2) -> Mob:
 	var best: Mob = null
