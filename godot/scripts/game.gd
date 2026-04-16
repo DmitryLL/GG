@@ -746,6 +746,11 @@ func _on_skill_activated(index: int) -> void:
 	var sk: Dictionary = skillbar.SKILLS[index]
 	if skillbar.cooldowns[index] > 0.0:
 		return
+	# Если цель уже выбрана и скилл — таргет на моба, ставим в очередь без курсора-прицела
+	if bool(sk["targets_mob"]) and attack_target != null and is_instance_valid(attack_target) and attack_target.alive:
+		queued_skill = index
+		attack_cooldown = 0.0
+		return
 	if bool(sk["targets_ground"]) or bool(sk["targets_mob"]):
 		targeting_skill = index
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
