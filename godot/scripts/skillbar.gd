@@ -4,18 +4,31 @@ extends CanvasLayer
 
 signal skill_activated(index: int)
 
-const SKILLS := [
-	{ "name": "Меткий выстрел", "key": "1", "icon": "res://assets/sprites/skill_1.png", "cd": 5.0, "targets_mob": true,  "targets_ground": false },
-	{ "name": "Ливень стрел",   "key": "2", "icon": "res://assets/sprites/skill_2.png", "cd": 12.0,"targets_mob": false, "targets_ground": true  },
-	{ "name": "Отскок",         "key": "3", "icon": "res://assets/sprites/skill_3.png", "cd": 8.0, "targets_mob": false, "targets_ground": false },
-	{ "name": "Отравленная стрела", "key": "4", "icon": "res://assets/sprites/skill_4.png", "cd": 6.0, "targets_mob": true,  "targets_ground": false },
-	{ "name": "Призрачный залп","key": "5", "icon": "res://assets/sprites/skill_5.png", "cd": 15.0,"targets_mob": false, "targets_ground": true  },
-]
+var SKILLS: Array = []  # массив словарей-обёрток вокруг SkillDef для совместимости
+
+func _build_skills_list() -> void:
+	SKILLS.clear()
+	var defs: Array = SkillRegistry.all()
+	for i in range(defs.size()):
+		var d: SkillDef = defs[i]
+		SKILLS.append({
+			"name": d.display_name,
+			"key": str(i + 1),
+			"icon": d.icon_path,
+			"cd": d.cooldown,
+			"targets_mob": d.targets_mob,
+			"targets_ground": d.targets_ground,
+			"def": d,
+		})
 
 var slots: Array = []
-var cooldowns: Array = [0.0, 0.0, 0.0, 0.0, 0.0]
+var cooldowns: Array = []
 
 func _ready() -> void:
+	_build_skills_list()
+	cooldowns.resize(SKILLS.size())
+	for i in range(cooldowns.size()):
+		cooldowns[i] = 0.0
 	var root := Control.new()
 	root.anchor_left = 0.5
 	root.anchor_right = 0.5

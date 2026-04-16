@@ -629,37 +629,10 @@ func _on_chat_send(text: String) -> void:
 	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text}))
 
 func _handle_skill_fx(body: Dictionary) -> void:
-	var kind := String(body.get("kind", ""))
-	if kind == "rain_start":
-		var pos := Vector2(float(body.get("x", 0)), float(body.get("y", 0)))
-		var r := float(body.get("r", 80))
-		var dur_ms := int(body.get("duration", 3500))
-		_spawn_rain_zone(pos, r, dur_ms)
-	elif kind == "dodge":
-		var sid := String(body.get("sid", ""))
-		var px := float(body.get("fx", 0)); var py := float(body.get("fy", 0))
-		var p: Player = me if sid == my_session_id else remotes.get(sid)
-		if p:
-			var dodge_target := Vector2(px, py)
-			var tw := create_tween()
-			tw.tween_property(p, "position", dodge_target, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-			p.flash()
-			# Trail effect
-			for i in range(3):
-				var ghost := Sprite2D.new()
-				ghost.texture = p.sprite.texture
-				ghost.hframes = p.sprite.hframes
-				ghost.vframes = p.sprite.vframes
-				ghost.frame = p.sprite.frame
-				ghost.scale = p.sprite.scale
-				ghost.offset = Vector2(0, -16)
-				ghost.modulate = Color(0.5, 0.9, 1.0, 0.5 - i * 0.15)
-				ghost.position = p.position
-				ghost.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-				world.add_child(ghost)
-				var gt := create_tween()
-				gt.tween_property(ghost, "modulate:a", 0.0, 0.4 + i * 0.1)
-				gt.finished.connect(ghost.queue_free)
+	# Передаём событие каждому скиллу — кто узнал свой kind, тот и обрабатывает.
+	for def in SkillRegistry.all():
+		if def.on_fx(self, body):
+			return
 
 func _spawn_rain_zone(pos: Vector2, radius: float, duration_ms: int) -> void:
 	var node := Node2D.new()
@@ -765,10 +738,9 @@ func _on_skill_activated(index: int) -> void:
 func _send_skill(index: int, payload: Dictionary) -> void:
 	Session.socket.send_match_state_async(match_id, OP_SKILL, JSON.stringify(payload))
 	skillbar.trigger_cooldown(index)
-	if index == 0 or index == 3:  # bow shot skills
-		me.play_bow_shot()
-	elif index == 4:
-		me.play_bow_shot()
+	var sk_def := SkillRegistry.by_index(index)
+	if sk_def:
+		sk_def.on_send(self)
 
 func _spawn_damage_label(pos: Vector2, dmg: int, is_crit: bool = false, is_poison: bool = false, is_ghost: bool = false) -> void:
 	var lbl := Label.new()

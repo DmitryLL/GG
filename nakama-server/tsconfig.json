@@ -15,6 +15,12 @@
   "files": [
     "./nakama-runtime.d.ts",
     "./src/data.gen.ts",
+    "./src/skills/types.ts",
+    "./src/skills/skill_1_precise_shot.ts",
+    "./src/skills/skill_2_arrow_rain.ts",
+    "./src/skills/skill_3_dodge.ts",
+    "./src/skills/skill_4_poison_arrow.ts",
+    "./src/skills/skill_5_ghost_volley.ts",
     "./src/main.ts"
   ]
 }
