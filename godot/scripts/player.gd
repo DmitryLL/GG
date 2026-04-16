@@ -27,6 +27,8 @@ var hp: float = 100.0
 var hp_max: float = 100.0
 var move_target: Vector2 = Vector2.ZERO
 var has_target: bool = false
+var _path: PackedVector2Array = PackedVector2Array()
+var _path_idx: int = 0
 var _remote_target: Vector2 = Vector2.ZERO
 var _remote_has_target: bool = false
 var facing: int = Dir.DOWN
@@ -136,7 +138,14 @@ func _process(delta: float) -> void:
 		var s := SPEED * delta
 		if dist <= s:
 			step = to
-			has_target = false
+			# Дошли до waypoint'а — переходим к следующему или останавливаемся
+			if _path.size() > 0 and _path_idx + 1 < _path.size():
+				_path_idx += 1
+				move_target = _path[_path_idx]
+			else:
+				has_target = false
+				_path = PackedVector2Array()
+				_path_idx = 0
 		else:
 			step = to.normalized() * s
 		now_moving = dist > 0.3
@@ -353,7 +362,20 @@ func _animate(delta: float) -> void:
 	sprite.frame = base + offsets[cycle]
 
 func request_move_to(world_pos: Vector2) -> void:
-	move_target = world_pos
+	if world == null:
+		move_target = world_pos
+		has_target = true
+		return
+	# Строим путь A*. Если путь пуст или из 1 точки — идём напрямую.
+	var p := world.find_path(position, world_pos)
+	if p.size() <= 1:
+		move_target = world_pos
+		_path = PackedVector2Array()
+		_path_idx = 0
+	else:
+		_path = p
+		_path_idx = 1  # 0 — текущая клетка, начинаем со следующей
+		move_target = _path[_path_idx]
 	has_target = true
 
 static func variant_from(id: String) -> int:
