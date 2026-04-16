@@ -83,13 +83,15 @@ func _make_icon_button(icon_tex: Texture2D, fallback_text: String, tint: Color, 
 	b.add_theme_stylebox_override("focus", sb_n)
 
 	if icon_tex:
+		# Фиксированный квадрат 40×40 точно в центре кнопки (через anchor 0.5).
 		var r := TextureRect.new()
 		r.texture = icon_tex
 		r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		r.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		r.anchor_right = 1.0; r.anchor_bottom = 1.0
-		r.offset_left = 4; r.offset_top = 4
-		r.offset_right = -4; r.offset_bottom = -4
+		r.anchor_left = 0.5; r.anchor_top = 0.5
+		r.anchor_right = 0.5; r.anchor_bottom = 0.5
+		r.offset_left = -20; r.offset_top = -20
+		r.offset_right = 20; r.offset_bottom = 20
 		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(r)
 	else:
