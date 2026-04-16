@@ -232,7 +232,10 @@ func _process(delta: float) -> void:
 			var has_bow: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
 			var atk_range: float = PLAYER_ATTACK_RANGE if has_bow else 36.0
 			var d: float = me.position.distance_to(attack_target.position)
-			if d <= atk_range:
+			var diff: Vector2 = attack_target.position - me.position
+			# Для ближнего боя требуем кардинального выравнивания (моб строго сверху/снизу/слева/справа)
+			var cardinal_ok := has_bow or (absf(diff.x) < 10.0 or absf(diff.y) < 10.0)
+			if d <= atk_range and cardinal_ok:
 				me.has_target = false
 				me.face_toward(attack_target.position)
 				if attack_cooldown <= 0.0:
@@ -246,7 +249,6 @@ func _process(delta: float) -> void:
 				if has_bow:
 					me.request_move_to(attack_target.position)
 				else:
-					var diff: Vector2 = attack_target.position - me.position
 					var approach: Vector2
 					if absf(diff.x) > absf(diff.y):
 						approach = attack_target.position + Vector2(-signf(diff.x) * 28.0, 0)
