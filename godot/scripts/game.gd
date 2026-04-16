@@ -188,6 +188,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			targeting_skill = -1
 			Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 			if bool(sk["targets_mob"]):
+				# Сначала пытаемся попасть в моба, потом в другого игрока
 				var mob_hit := _mob_at(world_pos)
 				if mob_hit != null and mob_hit.alive:
 					attack_target = mob_hit
@@ -195,6 +196,15 @@ func _unhandled_input(event: InputEvent) -> void:
 					_set_mob_highlight(mob_hit)
 					queued_skill = idx
 					attack_cooldown = 0.0
+				else:
+					var sid_skill: String = _player_at(world_pos)
+					if sid_skill != "":
+						pvp_target = remotes.get(sid_skill)
+						pvp_target_sid = sid_skill
+						attack_target = null
+						_set_mob_highlight(null)
+						queued_skill = idx
+						attack_cooldown = 0.0
 			else:
 				# Ground skill: если далеко — встаём в очередь, идём к точке
 				attack_target = null
@@ -250,14 +260,31 @@ func _process(delta: float) -> void:
 	if match_id == "" or Session.socket == null:
 		return
 
-	# PvP auto-pursuit — атаковать другого игрока
+	# PvP auto-pursuit — атаковать другого игрока (включая queued skill)
 	if pvp_target != null:
 		if not is_instance_valid(pvp_target):
 			pvp_target = null; pvp_target_sid = ""
+			queued_skill = -1
 		else:
 			var has_bow_pvp: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
 			var atk_range_pvp: float = PLAYER_ATTACK_RANGE if has_bow_pvp else 36.0
 			var d_pvp: float = me.position.distance_to(pvp_target.position)
+
+			# Queued skill в PvP — приоритет над авто-атакой
+			if queued_skill >= 0:
+				if d_pvp > atk_range_pvp:
+					me.request_move_to(pvp_target.position)
+					return
+				me.has_target = false
+				me.face_toward(pvp_target.position)
+				if skillbar.cooldowns[queued_skill] <= 0.0:
+					Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": me.position.x, "y": me.position.y}))
+					last_sent_pos = me.position
+					_send_skill(queued_skill, {"skill": queued_skill + 1, "sid": pvp_target_sid})
+					attack_cooldown = PLAYER_ATTACK_COOLDOWN
+					queued_skill = -1
+				return
+
 			if d_pvp <= atk_range_pvp:
 				me.has_target = false
 				me.face_toward(pvp_target.position)
@@ -451,7 +478,7 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 				p.flash()
 				var dmg := int(body.get("dmg", 0))
 				if dmg > 0:
-					_spawn_damage_label(p.position, dmg)
+					_spawn_damage_label(p.position, dmg, bool(body.get("crit", false)), bool(body.get("poison", false)), false)
 		OP_ME:         _apply_me(body)
 		OP_NPCS:       _apply_npcs(body)
 		OP_ARROW:      _spawn_arrow(body)
@@ -792,11 +819,16 @@ func _on_skill_activated(index: int) -> void:
 	var sk: Dictionary = skillbar.SKILLS[index]
 	if skillbar.cooldowns[index] > 0.0:
 		return
-	# Если цель уже выбрана и скилл — таргет на моба, ставим в очередь без курсора-прицела
-	if bool(sk["targets_mob"]) and attack_target != null and is_instance_valid(attack_target) and attack_target.alive:
-		queued_skill = index
-		attack_cooldown = 0.0
-		return
+	# Если цель уже выбрана и скилл — таргет на моба/игрока, ставим в очередь
+	if bool(sk["targets_mob"]):
+		if attack_target != null and is_instance_valid(attack_target) and attack_target.alive:
+			queued_skill = index
+			attack_cooldown = 0.0
+			return
+		if pvp_target != null and is_instance_valid(pvp_target):
+			queued_skill = index
+			attack_cooldown = 0.0
+			return
 	if bool(sk["targets_ground"]) or bool(sk["targets_mob"]):
 		targeting_skill = index
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS)

@@ -4,6 +4,33 @@ registerSkill(4, {
     cooldownMs: 6000,
     handler: function (ctx: SkillContext): void {
         const { player, body, t, state, dispatcher, baseDmg } = ctx;
+
+        // PvP: прямой урон (без debuff пока)
+        if (body.sid && body.sid !== player.sessionId) {
+            const foe = state.players[String(body.sid)];
+            if (!foe || foe.hp <= 0) return;
+            if (dist(foe.pos, player.pos) > PLAYER_ATTACK_RANGE + 40) return;
+            if (t < foe.invulnUntil) return;
+            foe.hp -= baseDmg;
+            if (foe.hp < 0) foe.hp = 0;
+            markMe(foe);
+            dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
+                fx: player.pos.x, fy: player.pos.y,
+                tx: foe.pos.x, ty: foe.pos.y,
+                poison: true,
+            }));
+            dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({
+                sessionId: foe.sessionId, by: player.sessionId, dmg: baseDmg, poison: true,
+            }));
+            if (foe.hp <= 0) {
+                foe.pos.x = WORLD.playerSpawn.x; foe.pos.y = WORLD.playerSpawn.y;
+                foe.hp = foe.hpMax; foe.lastTouchedByMob = {};
+                foe.dirtyPos = true; markMe(foe);
+            }
+            player.skillCd[4] = t + 6000;
+            return;
+        }
+
         const mob = state.mobs[String(body.mobId || "")];
         if (!mob || mob.state !== "alive") return;
         if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE + 40) return;
