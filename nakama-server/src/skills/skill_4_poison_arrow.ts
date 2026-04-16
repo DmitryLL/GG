@@ -13,6 +13,7 @@ registerSkill(4, {
             if (t < foe.invulnUntil) return;
             foe.hp -= baseDmg;
             if (foe.hp < 0) foe.hp = 0;
+            foe.dirtyPos = true;
             markMe(foe);
             dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
                 fx: player.pos.x, fy: player.pos.y,

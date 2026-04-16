@@ -54,6 +54,7 @@ registerSkill(5, {
                     const dmg = Math.floor(baseDmg * 0.8);
                     tp.hp -= dmg;
                     if (tp.hp < 0) tp.hp = 0;
+                    tp.dirtyPos = true;
                     markMe(tp);
                     hit.add(tp.sessionId);
                     dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({

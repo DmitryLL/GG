@@ -472,6 +472,7 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 				m.flash()
 				var dmg := int(body.get("dmg", 0))
 				if dmg > 0:
+					m.set_hp(max(0.0, m.hp - dmg), m.hp_max)
 					var is_crit := bool(body.get("crit", false))
 					var is_poison := bool(body.get("poison", false))
 					var is_ghost := bool(body.get("ghost", false))
@@ -483,6 +484,8 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 				p.flash()
 				var dmg := int(body.get("dmg", 0))
 				if dmg > 0:
+					# Мгновенно уменьшаем HP локально — для быстрого UX
+					p.set_hp(max(0.0, p.hp - dmg), p.hp_max)
 					_spawn_damage_label(p.position, dmg, bool(body.get("crit", false)), bool(body.get("poison", false)), bool(body.get("ghost", false)))
 		OP_ME:         _apply_me(body)
 		OP_NPCS:       _apply_npcs(body)

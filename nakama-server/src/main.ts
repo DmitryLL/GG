@@ -547,6 +547,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         const dmgP = computeDamage(player);
                         foe.hp -= dmgP;
                         if (foe.hp < 0) foe.hp = 0;
+                        foe.dirtyPos = true;
                         markMe(foe);
                         dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
                             fx: player.pos.x, fy: player.pos.y,
@@ -783,6 +784,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             if (Math.abs(tp.pos.x - z.x) > z.radius || Math.abs(tp.pos.y - z.y) > z.radius) continue;
             tp.hp -= ownerDmg;
             if (tp.hp < 0) tp.hp = 0;
+            tp.dirtyPos = true;
             markMe(tp);
             dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({
                 sessionId: tp.sessionId, by: z.ownerSid, dmg: ownerDmg,
