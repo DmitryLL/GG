@@ -242,18 +242,20 @@ func _process(delta: float) -> void:
 				else:
 					me.request_move_to(attack_target.position)
 			else:
-				# Melee: cardinal positions ~28-30px from mob center (server max 36px)
+				# Melee: Player.position = ноги, mob.position = центр (ноги моба на +20).
+				# Все дистанции < 36px, чтобы сервер принимал атаку.
+				var mob_feet_y: float = attack_target.position.y + 20.0
 				var diff: Vector2 = attack_target.position - me.position
 				var cardinal_spot: Vector2
 				if absf(diff.x) >= absf(diff.y):
-					# Сбоку: на 28px по X, Y на уровне мобского центра
-					cardinal_spot = attack_target.position + Vector2(-signf(diff.x) * 28.0, 0.0)
+					# Сбоку: ноги игрока на уровне ног моба
+					cardinal_spot = Vector2(attack_target.position.x - signf(diff.x) * 28.0, mob_feet_y)
 				elif diff.y > 0:
-					# Сверху: Y на 26px над центром моба
-					cardinal_spot = attack_target.position + Vector2(0.0, -26.0)
+					# Сверху: ноги над головой моба
+					cardinal_spot = Vector2(attack_target.position.x, attack_target.position.y - 24.0)
 				else:
-					# Снизу: Y на 28px ниже центра моба (сервер примет, перекрытие минимально)
-					cardinal_spot = attack_target.position + Vector2(0.0, 28.0)
+					# Снизу: ноги НИЖЕ ног моба (персонаж всё равно рисуется поверх z_index)
+					cardinal_spot = Vector2(attack_target.position.x, mob_feet_y + 12.0)
 				var at_spot: bool = me.position.distance_to(cardinal_spot) <= 3.0
 				if at_spot:
 					me.has_target = false

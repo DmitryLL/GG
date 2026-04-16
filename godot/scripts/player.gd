@@ -47,6 +47,7 @@ func _ready() -> void:
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sprite.offset = Vector2(0, -16)
 	add_child(sprite)
+	z_index = 50  # игрок всегда поверх мобов/деревьев
 
 	bow_sprite = Sprite2D.new()
 	bow_sprite.texture = load("res://assets/sprites/bow_hand.png")
