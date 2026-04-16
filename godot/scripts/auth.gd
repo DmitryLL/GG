@@ -1,28 +1,55 @@
-# Тестовый вход без пароля. Ввёл имя — получил персонаж 1 уровня.
-# Используем authenticateCustom: id = слаг от имени, username = имя.
+# Тестовый вход без пароля. Имя сохраняется в localStorage браузера —
+# при повторном заходе предлагаем продолжить или сменить ник.
 extends Control
 
 signal auth_changed
 
+@onready var title: Label = %Title
+@onready var hint: Label = %Hint
 @onready var name_input: LineEdit = %NameInput
 @onready var enter_btn: Button = %EnterBtn
+@onready var switch_btn: Button = %SwitchBtn
 @onready var error_label: Label = %ErrorLabel
 @onready var busy_label: Label = %BusyLabel
 
+const STORAGE_KEY := "gg_player_name"
+var saved_name: String = ""
+
 func _ready() -> void:
 	enter_btn.pressed.connect(_on_enter)
+	switch_btn.pressed.connect(_on_switch)
 	name_input.text_submitted.connect(func(_t): _on_enter())
 	busy_label.hide()
 	error_label.text = ""
-	name_input.grab_focus()
+	saved_name = _read_storage()
+	_apply_mode()
+
+func _apply_mode() -> void:
+	if saved_name != "":
+		title.text = "Продолжить как %s?" % saved_name
+		hint.text = "Сохранённый персонаж в этом браузере"
+		name_input.visible = false
+		enter_btn.text = "Войти как %s" % saved_name
+		switch_btn.visible = true
+	else:
+		title.text = "Введи имя"
+		hint.text = "Тестовый режим — пароля нет"
+		name_input.visible = true
+		enter_btn.text = "Играть"
+		switch_btn.visible = false
+		name_input.grab_focus()
+
+func _on_switch() -> void:
+	saved_name = ""
+	name_input.text = ""
+	_apply_mode()
 
 func _set_busy(busy: bool) -> void:
 	enter_btn.disabled = busy
+	switch_btn.disabled = busy
 	busy_label.visible = busy
 
 func _slug(s: String) -> String:
-	# Кастомный id Nakama: 6-128 символов, ASCII. Берём lower+латиницу/цифры/_,
-	# остальное — заменяем нижним подчёркиванием. Дополняем "_test" чтобы было ≥6.
 	var lo := s.to_lower().strip_edges()
 	var out := ""
 	for ch in lo:
@@ -38,7 +65,7 @@ func _slug(s: String) -> String:
 	return out
 
 func _on_enter() -> void:
-	var raw := name_input.text.strip_edges()
+	var raw: String = saved_name if saved_name != "" else name_input.text.strip_edges()
 	if raw.length() < 2:
 		error_label.text = "Минимум 2 символа"
 		return
@@ -49,5 +76,21 @@ func _on_enter() -> void:
 	if session.is_exception():
 		error_label.text = "Ошибка: " + session.get_exception().message
 		return
+	_write_storage(raw)
 	Session.auth = session
 	auth_changed.emit()
+
+func _read_storage() -> String:
+	if not OS.has_feature("web"):
+		return ""
+	var bridge: JavaScriptObject = JavaScriptBridge.get_interface("window")
+	if bridge == null:
+		return ""
+	var v = JavaScriptBridge.eval("window.localStorage.getItem('%s') || ''" % STORAGE_KEY, true)
+	return String(v) if v != null else ""
+
+func _write_storage(name: String) -> void:
+	if not OS.has_feature("web"):
+		return
+	var safe := name.replace("'", "\\'")
+	JavaScriptBridge.eval("window.localStorage.setItem('%s', '%s')" % [STORAGE_KEY, safe], true)
