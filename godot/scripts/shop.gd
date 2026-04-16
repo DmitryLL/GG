@@ -36,6 +36,7 @@ var open_npc_id: String = ""
 var last_player_state: Dictionary = {}
 
 func _ready() -> void:
+	layer = 10
 	overlay = ColorRect.new()
 	overlay.color = Color(0, 0, 0, 0.85)
 	overlay.anchor_right = 1.0

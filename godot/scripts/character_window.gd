@@ -3,6 +3,7 @@
 # Клик по слоту открывает попап выбора из сумки.
 class_name CharacterWindow
 extends CanvasLayer
+# Выше skillbar и HUD — чтобы окно персонажа перекрывало их
 
 signal unequip_requested(slot: String)
 signal equip_requested(inv_index: int, target_slot: String)
@@ -50,6 +51,7 @@ var last_inv: Array = []
 var last_eq: Dictionary = {}
 
 func _ready() -> void:
+	layer = 10  # выше skillbar (default 0) и HUD
 	overlay = ColorRect.new()
 	overlay.color = Color(0, 0, 0, 0.78)
 	overlay.anchor_right = 1.0

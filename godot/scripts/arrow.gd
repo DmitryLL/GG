@@ -4,22 +4,24 @@ extends Node2D
 
 const FLIGHT_S := 0.18
 const ARROW_TEX := preload("res://assets/sprites/arrow.png")
+const ARROW_CRIT_TEX := preload("res://assets/sprites/arrow_crit.png")
 
 func shoot(from: Vector2, to: Vector2, style: String = "normal") -> void:
 	position = from
 	var delta := to - from
 	rotation = delta.angle()
 
-	# Стилевая модуляция + glow для особых стрел
 	var modulate_color := Color(1, 1, 1, 1)
 	var glow_color := Color(0, 0, 0, 0)
 	var glow_radius := 0.0
+	var texture := ARROW_TEX
+	var scale_v := Vector2(0.55, 0.55)
 	match style:
 		"crit":
-			# Тёмная стрела с красным свечением — «Меткий выстрел»
-			modulate_color = Color(0.35, 0.15, 0.15, 1.0)
-			glow_color = Color(1.0, 0.25, 0.2, 0.9)
-			glow_radius = 18.0
+			texture = ARROW_CRIT_TEX
+			scale_v = Vector2(0.75, 0.75)
+			glow_color = Color(1.0, 0.2, 0.15, 0.95)
+			glow_radius = 26.0
 		"poison":
 			modulate_color = Color(0.55, 1.0, 0.45, 1.0)
 			glow_color = Color(0.4, 1.0, 0.3, 0.7)
@@ -38,8 +40,8 @@ func shoot(from: Vector2, to: Vector2, style: String = "normal") -> void:
 		add_child(glow)
 
 	var spr := Sprite2D.new()
-	spr.texture = ARROW_TEX
-	spr.scale = Vector2(0.55, 0.55)
+	spr.texture = texture
+	spr.scale = scale_v
 	spr.modulate = modulate_color
 	spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(spr)

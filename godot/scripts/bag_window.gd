@@ -23,6 +23,7 @@ var tip_name: Label
 var tip_sub: Label
 
 func _ready() -> void:
+	layer = 10
 	overlay = ColorRect.new()
 	overlay.color = Color(0, 0, 0, 0.78)
 	overlay.anchor_right = 1.0

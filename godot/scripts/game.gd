@@ -309,7 +309,11 @@ func _process(delta: float) -> void:
 		nameplate.update_target(attack_target)
 
 	if _targeting_ring:
+		var show_ring := false
 		if targeting_skill >= 0:
+			var sk_cfg: Dictionary = skillbar.SKILLS[targeting_skill]
+			show_ring = bool(sk_cfg["targets_ground"])
+		if show_ring:
 			_targeting_ring.visible = true
 			_targeting_ring.position = get_viewport().get_camera_2d().get_global_mouse_position()
 			_targeting_ring.modulate.a = 0.5 + 0.2 * sin(Time.get_ticks_msec() * 0.006)

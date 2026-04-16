@@ -17,6 +17,7 @@ var take_all_btn: Button
 var current_mob_id: String = ""
 
 func _ready() -> void:
+	layer = 10
 	overlay = ColorRect.new()
 	overlay.color = Color(0, 0, 0, 0.6)
 	overlay.anchor_right = 1.0
