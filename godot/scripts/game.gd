@@ -73,6 +73,7 @@ var attack_target: Mob = null
 var pvp_target: Player = null
 var pvp_target_sid: String = ""
 var attack_cooldown := 0.0
+var queued_skill: int = -1  # скилл ожидающий подхода к цели
 var _click_marker: Sprite2D
 var _click_marker_t := 0.0
 var _prev_highlight: Mob = null
@@ -188,7 +189,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			if bool(sk["targets_mob"]):
 				var mob_hit := _mob_at(world_pos)
 				if mob_hit != null and mob_hit.alive:
-					_send_skill(idx, {"skill": idx + 1, "mobId": mob_hit.mob_id})
+					# Выделяем цель (покажется HP панель) и ставим скилл в очередь —
+					# при подходе в дальность сработает автоматически.
+					attack_target = mob_hit
+					pvp_target = null
+					_set_mob_highlight(mob_hit)
+					queued_skill = idx
 			else:
 				_send_skill(idx, {"skill": idx + 1, "x": world_pos.x, "y": world_pos.y})
 			return
@@ -263,8 +269,22 @@ func _process(delta: float) -> void:
 	if attack_target != null:
 		if not is_instance_valid(attack_target) or not attack_target.alive:
 			attack_target = null
+			queued_skill = -1
 		else:
 			var has_bow: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
+			# Queued skill: при наличии дальности и отсутствии кд — выпустить
+			if queued_skill >= 0 and skillbar.cooldowns[queued_skill] <= 0.0 and attack_cooldown <= 0.0:
+				var q_range: float = PLAYER_ATTACK_RANGE if has_bow else 36.0
+				var q_d: float = me.position.distance_to(attack_target.position)
+				if q_d <= q_range:
+					me.has_target = false
+					me.face_toward(attack_target.position)
+					_send_skill(queued_skill, {"skill": queued_skill + 1, "mobId": attack_target.mob_id})
+					attack_cooldown = PLAYER_ATTACK_COOLDOWN
+					queued_skill = -1
+				else:
+					me.request_move_to(attack_target.position)
+					return
 			if has_bow:
 				var d_bow: float = me.position.distance_to(attack_target.position)
 				if d_bow <= PLAYER_ATTACK_RANGE:
