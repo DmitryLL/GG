@@ -133,8 +133,8 @@ func _make_ring_texture() -> ImageTexture:
 			var r_out := size * 0.48
 			var r_in := size * 0.34
 			if d >= r_in and d <= r_out:
-				var edge := min(d - r_in, r_out - d) / 2.0
-				var a := clamp(edge, 0.0, 1.0)
+				var edge: float = minf(d - r_in, r_out - d) / 2.0
+				var a: float = clampf(edge, 0.0, 1.0)
 				img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
 	return ImageTexture.create_from_image(img)
 
