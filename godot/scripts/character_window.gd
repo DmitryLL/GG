@@ -135,15 +135,15 @@ func _build_doll(parent: Container) -> void:
 	niche.custom_minimum_size = Vector2(100, 160)
 	niche.size = niche.custom_minimum_size
 	var niche_sb := StyleBoxFlat.new()
-	niche_sb.bg_color = Color(0.095, 0.080, 0.160, 1.0)
+	niche_sb.bg_color = Color(0.075, 0.055, 0.035, 1.0)  # тёмная кожа
 	niche_sb.border_color = UI.BORDER_DIM
 	niche_sb.set_border_width_all(1)
 	niche_sb.corner_radius_top_left = 50
 	niche_sb.corner_radius_top_right = 50
 	niche_sb.corner_radius_bottom_left = 20
 	niche_sb.corner_radius_bottom_right = 20
-	niche_sb.shadow_color = Color(0.55, 0.70, 1.00, 0.14)
-	niche_sb.shadow_size = 20
+	niche_sb.shadow_color = Color(1.00, 0.80, 0.35, 0.18)  # золотое свечение
+	niche_sb.shadow_size = 22
 	niche.add_theme_stylebox_override("panel", niche_sb)
 	doll_root.add_child(niche)
 

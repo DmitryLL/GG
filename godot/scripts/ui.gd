@@ -6,38 +6,38 @@ extends RefCounted
 const TEX_PANEL  := preload("res://assets/sprites/ui/panel_frame.png")
 const TEX_SLOT   := preload("res://assets/sprites/ui/slot.png")
 
-# Магическая палитра — тёмно-фиолетовая рамка, тёплые бежевые акценты текста.
-const BG_DEEP        := Color(0.040, 0.032, 0.055, 1.0)
-const BG_PANEL       := Color(0.095, 0.078, 0.120, 1.0)
-const BG_INNER       := Color(0.165, 0.130, 0.095, 0.92)  # тёплый пергаментный коричневый
-const BG_SLOT        := Color(0.070, 0.055, 0.095, 1.0)
-const BG_SLOT_HOVER  := Color(0.125, 0.098, 0.155, 1.0)
-const BORDER_DIM     := Color(0.460, 0.380, 0.260, 1.0)   # тёплый коричневый border
-const BORDER_MID     := Color(0.720, 0.610, 0.430, 1.0)   # светлый бежевый
-const MAGIC_ACCENT   := Color(0.945, 0.855, 0.640, 1.0)  # светло-бежевый (пергамент)
-const MAGIC_GLOW     := Color(0.995, 0.920, 0.745, 1.0)  # тёплый кремовый
-const GOLD           := Color(0.970, 0.820, 0.380, 1.0)  # для монет золота
-const GOLD_SOFT      := Color(0.820, 0.690, 0.340, 1.0)
-const TEXT_MAIN      := Color(0.965, 0.925, 0.830, 1.0)  # кремовый основной текст
-const TEXT_DIM       := Color(0.780, 0.715, 0.600, 1.0)  # приглушённый бежевый
-const TEXT_MUTED     := Color(0.580, 0.520, 0.440, 1.0)  # коричневато-серый
-const HP_RED         := Color(0.88, 0.34, 0.38, 1.0)
-const HP_BG          := Color(0.16, 0.07, 0.10, 1.0)
-const XP_ORANGE      := Color(0.955, 0.720, 0.360, 1.0)  # тёплый янтарный
-const XP_BG          := Color(0.18, 0.12, 0.06, 1.0)
+# Бронзово-деревянная палитра — тёплое дерево, бронза, рубин.
+const BG_DEEP        := Color(0.055, 0.040, 0.025, 1.0)  # почти чёрный тёплый
+const BG_PANEL       := Color(0.110, 0.080, 0.050, 1.0)  # тёмное дерево
+const BG_INNER       := Color(0.175, 0.130, 0.082, 0.92) # пергаментный коричневый
+const BG_SLOT        := Color(0.085, 0.060, 0.035, 1.0)  # тёмная кожа
+const BG_SLOT_HOVER  := Color(0.150, 0.105, 0.055, 1.0)
+const BORDER_DIM     := Color(0.435, 0.320, 0.180, 1.0)  # старая бронза
+const BORDER_MID     := Color(0.735, 0.555, 0.290, 1.0)  # полированная бронза
+const MAGIC_ACCENT   := Color(0.975, 0.830, 0.470, 1.0)  # золотая эмаль
+const MAGIC_GLOW     := Color(1.000, 0.910, 0.600, 1.0)  # горячее золото
+const GOLD           := Color(0.990, 0.820, 0.340, 1.0)  # для монет
+const GOLD_SOFT      := Color(0.840, 0.670, 0.280, 1.0)
+const TEXT_MAIN      := Color(0.975, 0.920, 0.810, 1.0)  # кремовый
+const TEXT_DIM       := Color(0.790, 0.695, 0.555, 1.0)  # приглушённый бежевый
+const TEXT_MUTED     := Color(0.570, 0.490, 0.385, 1.0)
+const HP_RED         := Color(0.890, 0.290, 0.280, 1.0)
+const HP_BG          := Color(0.180, 0.070, 0.050, 1.0)
+const XP_ORANGE      := Color(0.975, 0.670, 0.285, 1.0)  # янтарно-оранжевый
+const XP_BG          := Color(0.180, 0.100, 0.040, 1.0)
 
-# Основная панель — nine-slice по ассету panel_frame.png (256×256, декоративные углы ~50).
+# Основная панель — nine-slice по ассету panel_frame.png (256×256, бронзовые углы ~60).
 static func panel_style(radius: int = 10, border_w: int = 2) -> StyleBox:
 	var sb := StyleBoxTexture.new()
 	sb.texture = TEX_PANEL
-	sb.texture_margin_left = 54
-	sb.texture_margin_right = 54
-	sb.texture_margin_top = 54
-	sb.texture_margin_bottom = 54
-	sb.content_margin_left = 28
-	sb.content_margin_right = 28
-	sb.content_margin_top = 28
-	sb.content_margin_bottom = 28
+	sb.texture_margin_left = 62
+	sb.texture_margin_right = 62
+	sb.texture_margin_top = 62
+	sb.texture_margin_bottom = 62
+	sb.content_margin_left = 24
+	sb.content_margin_right = 24
+	sb.content_margin_top = 24
+	sb.content_margin_bottom = 24
 	return sb
 
 # Внутренний блок (статы/списки) — полупрозрачный тёмно-фиолетовый, чтобы не спорить с рамкой.
@@ -50,15 +50,15 @@ static func inner_style(radius: int = 8) -> StyleBoxFlat:
 	sb.set_content_margin_all(12)
 	return sb
 
-# Ячейка инвентаря — nine-slice по slot.png (64×64, декоративные углы ~14).
-# Редкость передаётся тинтом через modulate_color; hover — чуть ярче.
+# Ячейка инвентаря — nine-slice по slot.png (64×64, бронзовые углы ~16).
+# Редкость передаётся лёгким тинтом; hover — чуть ярче.
 static func slot_style(rarity: int, hover: bool, radius: int = 6) -> StyleBox:
 	var sb := StyleBoxTexture.new()
 	sb.texture = TEX_SLOT
-	sb.texture_margin_left = 14
-	sb.texture_margin_right = 14
-	sb.texture_margin_top = 14
-	sb.texture_margin_bottom = 14
+	sb.texture_margin_left = 16
+	sb.texture_margin_right = 16
+	sb.texture_margin_top = 16
+	sb.texture_margin_bottom = 16
 	sb.content_margin_left = 6
 	sb.content_margin_right = 6
 	sb.content_margin_top = 6
@@ -66,9 +66,9 @@ static func slot_style(rarity: int, hover: bool, radius: int = 6) -> StyleBox:
 	var tint := Color(1, 1, 1, 1)
 	if rarity >= 0:
 		var base: Color = Items.rarity_color(rarity)
-		tint = Color(1, 1, 1).lerp(base, 0.55)
+		tint = Color(1, 1, 1).lerp(base, 0.35)
 	if hover:
-		tint = Color(tint.r * 1.22, tint.g * 1.22, tint.b * 1.22, 1.0)
+		tint = Color(min(tint.r * 1.22, 1.0), min(tint.g * 1.22, 1.0), min(tint.b * 1.22, 1.0), 1.0)
 	sb.modulate_color = tint
 	return sb
 
