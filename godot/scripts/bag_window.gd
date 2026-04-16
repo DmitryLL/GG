@@ -37,10 +37,10 @@ func _ready() -> void:
 	card.anchor_top = 0.5
 	card.anchor_right = 0.5
 	card.anchor_bottom = 0.5
-	card.offset_left = -280
-	card.offset_top = -320
-	card.offset_right = 280
-	card.offset_bottom = 320
+	card.offset_left = -238
+	card.offset_top = -260
+	card.offset_right = 238
+	card.offset_bottom = 260
 	card.add_theme_stylebox_override("panel", UI.panel_style(12, 2))
 	overlay.add_child(card)
 
@@ -67,7 +67,7 @@ func _build_header(parent: Container) -> void:
 	top.add_child(titles)
 	var t := Label.new()
 	t.text = "Сумка"
-	t.add_theme_font_size_override("font_size", 24)
+	t.add_theme_font_size_override("font_size", 20)
 	t.add_theme_color_override("font_color", UI.MAGIC_ACCENT)
 	t.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
 	t.add_theme_constant_override("shadow_offset_x", 1)
@@ -192,7 +192,7 @@ func _show_tip_for(idx: int) -> void:
 
 func _make_slot_button() -> Button:
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(60, 60)
+	b.custom_minimum_size = Vector2(52, 52)
 	b.add_theme_stylebox_override("normal", UI.slot_style(-1, false))
 	b.add_theme_stylebox_override("hover", UI.slot_style(-1, true))
 	b.add_theme_stylebox_override("pressed", UI.slot_style(-1, true))
@@ -216,9 +216,9 @@ func _set_slot_icon(btn: Button, item_id: String, qty: int) -> void:
 	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
 	var icon := TextureRect.new()
 	icon.texture = at
-	icon.custom_minimum_size = Vector2(44, 44)
-	icon.size = Vector2(44, 44)
-	icon.position = Vector2(8, 8)
+	icon.custom_minimum_size = Vector2(38, 38)
+	icon.size = Vector2(38, 38)
+	icon.position = Vector2(7, 7)
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -231,9 +231,9 @@ func _set_slot_icon(btn: Button, item_id: String, qty: int) -> void:
 		sb.set_border_width_all(1)
 		sb.set_corner_radius_all(4)
 		q_bg.add_theme_stylebox_override("panel", sb)
-		q_bg.position = Vector2(34, 34)
-		q_bg.custom_minimum_size = Vector2(22, 18)
-		q_bg.size = Vector2(22, 18)
+		q_bg.position = Vector2(30, 30)
+		q_bg.custom_minimum_size = Vector2(20, 16)
+		q_bg.size = Vector2(20, 16)
 		q_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(q_bg)
 		var q := Label.new()

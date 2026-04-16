@@ -34,20 +34,20 @@ static func panel_style(radius: int = 10, border_w: int = 2) -> StyleBox:
 	sb.texture_margin_right = 62
 	sb.texture_margin_top = 62
 	sb.texture_margin_bottom = 62
-	sb.content_margin_left = 24
-	sb.content_margin_right = 24
-	sb.content_margin_top = 24
-	sb.content_margin_bottom = 24
+	sb.content_margin_left = 18
+	sb.content_margin_right = 18
+	sb.content_margin_top = 18
+	sb.content_margin_bottom = 18
 	return sb
 
-# Внутренний блок (статы/списки) — полупрозрачный тёмно-фиолетовый, чтобы не спорить с рамкой.
+# Внутренний блок (статы/списки) — пергаментный тёплый фон.
 static func inner_style(radius: int = 8) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = BG_INNER
 	sb.border_color = BORDER_DIM
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(radius)
-	sb.set_content_margin_all(12)
+	sb.set_content_margin_all(10)
 	return sb
 
 # Ячейка инвентаря — nine-slice по slot.png (64×64, бронзовые углы ~16).

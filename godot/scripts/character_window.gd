@@ -12,15 +12,15 @@ signal closed
 const ITEMS_TEX := preload("res://assets/sprites/items.png")
 
 const SLOT_LAYOUT := [
-	{ "slot": "head",   "x":   0, "y": -150, "label": "Шлем" },
-	{ "slot": "amulet", "x": -110, "y": -100, "label": "Амулет" },
-	{ "slot": "cloak",  "x":  110, "y": -100, "label": "Плащ" },
-	{ "slot": "weapon", "x": -110, "y":  -10, "label": "Оружие" },
-	{ "slot": "body",   "x":  110, "y":  -10, "label": "Броня" },
-	{ "slot": "ring1",  "x": -110, "y":   80, "label": "Кольцо I" },
-	{ "slot": "ring2",  "x":  110, "y":   80, "label": "Кольцо II" },
-	{ "slot": "belt",   "x":    0, "y":   85, "label": "Пояс" },
-	{ "slot": "boots",  "x":    0, "y":  160, "label": "Сапоги" },
+	{ "slot": "head",   "x":   0, "y": -124, "label": "Шлем" },
+	{ "slot": "amulet", "x":  -90, "y":  -82, "label": "Амулет" },
+	{ "slot": "cloak",  "x":   90, "y":  -82, "label": "Плащ" },
+	{ "slot": "weapon", "x":  -90, "y":   -8, "label": "Оружие" },
+	{ "slot": "body",   "x":   90, "y":   -8, "label": "Броня" },
+	{ "slot": "ring1",  "x":  -90, "y":   66, "label": "Кольцо I" },
+	{ "slot": "ring2",  "x":   90, "y":   66, "label": "Кольцо II" },
+	{ "slot": "belt",   "x":    0, "y":   70, "label": "Пояс" },
+	{ "slot": "boots",  "x":    0, "y":  132, "label": "Сапоги" },
 ]
 
 var overlay: ColorRect
@@ -65,10 +65,10 @@ func _ready() -> void:
 	card.anchor_top = 0.5
 	card.anchor_right = 0.5
 	card.anchor_bottom = 0.5
-	card.offset_left = -410
-	card.offset_top = -320
-	card.offset_right = 410
-	card.offset_bottom = 320
+	card.offset_left = -340
+	card.offset_top = -260
+	card.offset_right = 340
+	card.offset_bottom = 260
 	card.add_theme_stylebox_override("panel", UI.panel_style(12, 2))
 	overlay.add_child(card)
 
@@ -101,7 +101,7 @@ func _build_header(parent: Container) -> void:
 
 	title_name = Label.new()
 	title_name.text = "Персонаж"
-	title_name.add_theme_font_size_override("font_size", 24)
+	title_name.add_theme_font_size_override("font_size", 20)
 	title_name.add_theme_color_override("font_color", UI.MAGIC_ACCENT)
 	title_name.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
 	title_name.add_theme_constant_override("shadow_offset_x", 1)
@@ -121,18 +121,18 @@ func _build_header(parent: Container) -> void:
 
 func _build_doll(parent: Container) -> void:
 	var wrap := PanelContainer.new()
-	wrap.custom_minimum_size = Vector2(360, 430)
+	wrap.custom_minimum_size = Vector2(300, 360)
 	wrap.add_theme_stylebox_override("panel", UI.inner_style(10))
 	parent.add_child(wrap)
 
 	doll_root = Control.new()
-	doll_root.custom_minimum_size = Vector2(340, 410)
+	doll_root.custom_minimum_size = Vector2(280, 340)
 	wrap.add_child(doll_root)
 
 	# Вертикальная «ниша» под куклой — мягкая подсветка силуэта.
 	var niche := Panel.new()
-	niche.position = Vector2(120, 120)
-	niche.custom_minimum_size = Vector2(100, 160)
+	niche.position = Vector2(98, 110)
+	niche.custom_minimum_size = Vector2(84, 130)
 	niche.size = niche.custom_minimum_size
 	var niche_sb := StyleBoxFlat.new()
 	niche_sb.bg_color = Color(0.075, 0.055, 0.035, 1.0)  # тёмная кожа
@@ -148,15 +148,15 @@ func _build_doll(parent: Container) -> void:
 	doll_root.add_child(niche)
 
 	doll_sprite = Sprite2D.new()
-	doll_sprite.position = Vector2(170, 205)
-	doll_sprite.scale = Vector2(3.2, 3.2)
+	doll_sprite.position = Vector2(140, 175)
+	doll_sprite.scale = Vector2(2.7, 2.7)
 	doll_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	doll_root.add_child(doll_sprite)
 
 	for entry in SLOT_LAYOUT:
 		var slot_name: String = entry["slot"]
 		var btn := _make_slot_button()
-		btn.position = Vector2(170 + int(entry["x"]) - 28, 205 + int(entry["y"]) - 28)
+		btn.position = Vector2(140 + int(entry["x"]) - 25, 175 + int(entry["y"]) - 25)
 		var lbl: String = String(entry["label"])
 		btn.tooltip_text = lbl
 		btn.pressed.connect(func(): _open_picker(slot_name))
@@ -280,7 +280,7 @@ func _stat_row(parent: Container, title: String, val: String, val_color: Color) 
 
 func _make_slot_button() -> Button:
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(56, 56)
+	b.custom_minimum_size = Vector2(50, 50)
 	b.add_theme_stylebox_override("normal", UI.slot_style(-1, false))
 	b.add_theme_stylebox_override("hover", UI.slot_style(-1, true))
 	b.add_theme_stylebox_override("pressed", UI.slot_style(-1, true))
@@ -314,8 +314,8 @@ func _fill_slot(btn: Button, item_id: String, fallback_label: String) -> void:
 	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
 	var icon := TextureRect.new()
 	icon.texture = at
-	icon.custom_minimum_size = Vector2(42, 42)
-	icon.size = Vector2(42, 42)
+	icon.custom_minimum_size = Vector2(36, 36)
+	icon.size = Vector2(36, 36)
 	icon.position = Vector2(7, 7)
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -330,10 +330,10 @@ func _build_picker() -> void:
 	picker.anchor_top = 0.5
 	picker.anchor_right = 0.5
 	picker.anchor_bottom = 0.5
-	picker.offset_left = -180
-	picker.offset_top = -200
-	picker.offset_right = 180
-	picker.offset_bottom = 200
+	picker.offset_left = -160
+	picker.offset_top = -180
+	picker.offset_right = 160
+	picker.offset_bottom = 180
 	picker.add_theme_stylebox_override("panel", UI.panel_style(10, 2))
 	picker.visible = false
 	overlay.add_child(picker)
