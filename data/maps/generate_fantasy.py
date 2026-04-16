@@ -220,6 +220,19 @@ def find_forest_edge(fcx, fcy, radius=10):
     candidates.sort(key=lambda c: c[2])
     return candidates
 
+# Training dummies near spawn
+dummy_positions = [
+    (spawn_cx - 6, spawn_cy - 2),
+    (spawn_cx - 6, spawn_cy),
+    (spawn_cx - 6, spawn_cy + 2),
+]
+for dx, dy in dummy_positions:
+    if get_tile(dx, dy) in (GRASS, PATH):
+        mobs.append({"id": mob_id, "name": "", "type": "dummy",
+                     "x": dx*TILE, "y": dy*TILE, "width": TILE, "height": TILE,
+                     "rotation": 0, "visible": True})
+        mob_id += 1
+
 goblin_forest_targets = [
     (6, 28, 2),   # southwest forest, 2 goblins
     (50, 8, 3),   # northeast forest, 3 goblins

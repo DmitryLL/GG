@@ -42,6 +42,7 @@ func _ready() -> void:
 	sprite.frame = Dir.DOWN * 3
 	sprite.scale = Vector2(1.5, 1.5)
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.offset = Vector2(0, -16)
 	add_child(sprite)
 
 	label = Label.new()
@@ -51,18 +52,18 @@ func _ready() -> void:
 	label.add_theme_constant_override("outline_size", 3)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.size = Vector2(120, 16)
-	label.position = Vector2(-60, -42)
+	label.position = Vector2(-60, -58)
 	add_child(label)
 
 	hp_bg = ColorRect.new()
 	hp_bg.color = Color(0, 0, 0, 0.7)
 	hp_bg.size = Vector2(28, 4)
-	hp_bg.position = Vector2(-14, -26)
+	hp_bg.position = Vector2(-14, -42)
 	add_child(hp_bg)
 	hp_fill = ColorRect.new()
 	hp_fill.color = Color(0.29, 0.87, 0.5, 1.0)
 	hp_fill.size = Vector2(28, 4)
-	hp_fill.position = Vector2(-14, -26)
+	hp_fill.position = Vector2(-14, -42)
 	add_child(hp_fill)
 
 func _process(delta: float) -> void:
@@ -127,7 +128,7 @@ func show_bubble(text: String) -> void:
 	lbl.custom_minimum_size = Vector2(160, 0)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(lbl)
-	panel.position = Vector2(-80, -72)
+	panel.position = Vector2(-80, -88)
 	add_child(panel)
 	_bubble = panel
 	_bubble_timer = get_tree().create_timer(4.0)

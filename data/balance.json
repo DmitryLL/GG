@@ -4,7 +4,7 @@
     "hpBase": 100,
     "perLevelHpBonus": 10,
     "perLevelDamageBonus": 2,
-    "attackDamage": 10,
+    "attackDamage": 3,
     "attackRange": 220,
     "attackCooldownMs": 600
   },

@@ -18,6 +18,10 @@ const DEFS := {
 	"steel_sword":     { "name": "Стальной меч",       "icon": 2, "slot": "weapon", "damage": 15 },
 	"golden_sword":    { "name": "Золотой меч",        "icon": 2, "slot": "weapon", "damage": 22 },
 
+	"wood_bow":        { "name": "Деревянный лук",    "icon": 6, "slot": "weapon", "damage": 6 },
+	"iron_bow":        { "name": "Железный лук",       "icon": 6, "slot": "weapon", "damage": 12 },
+	"golden_bow":      { "name": "Золотой лук",        "icon": 6, "slot": "weapon", "damage": 20 },
+
 	"cloth_armor":     { "name": "Тканая броня",       "icon": 3, "slot": "body", "hp": 12 },
 	"leather_armor":   { "name": "Кожаная броня",      "icon": 3, "slot": "body", "hp": 22 },
 	"bronze_armor":    { "name": "Бронзовая броня",    "icon": 4, "slot": "body", "hp": 32 },

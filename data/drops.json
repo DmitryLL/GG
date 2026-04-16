@@ -11,6 +11,10 @@
       { "itemId": "leather_belt",   "weight": 4  }
     ]
   },
+  "dummy": {
+    "missWeight": 100,
+    "table": []
+  },
   "goblin": {
     "missWeight": 20,
     "table": [
@@ -24,7 +28,9 @@
       { "itemId": "wool_cloak",     "weight": 5  },
       { "itemId": "silver_ring",    "weight": 4  },
       { "itemId": "ruby_ring",      "weight": 2  },
-      { "itemId": "bronze_amulet",  "weight": 3  }
+      { "itemId": "bronze_amulet",  "weight": 3  },
+      { "itemId": "wood_bow",       "weight": 8  },
+      { "itemId": "iron_bow",       "weight": 3  }
     ]
   }
 }

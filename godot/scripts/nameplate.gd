@@ -155,7 +155,7 @@ func _ready() -> void:
 	target_hp_bar.add_child(target_hp_text)
 	target_hp_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-const MOB_NAMES := { "slime": "Слайм", "goblin": "Гоблин" }
+const MOB_NAMES := { "slime": "Слайм", "goblin": "Гоблин", "dummy": "Манекен" }
 
 func update_target(mob) -> void:
 	if mob == null or not is_instance_valid(mob):

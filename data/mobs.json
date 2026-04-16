@@ -10,6 +10,17 @@
     "xp": 12,
     "gold": 1
   },
+  "dummy": {
+    "hpMax": 999999,
+    "touchDamage": 0,
+    "speed": 0,
+    "wanderRadius": 0,
+    "touchRange": 0,
+    "touchCooldownMs": 999999,
+    "respawnMs": 3000,
+    "xp": 0,
+    "gold": 0
+  },
   "goblin": {
     "hpMax": 60,
     "touchDamage": 10,
