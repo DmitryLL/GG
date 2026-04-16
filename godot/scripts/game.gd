@@ -242,17 +242,24 @@ func _process(delta: float) -> void:
 				else:
 					me.request_move_to(attack_target.position)
 			else:
-				# Melee: рассчитываем точную кардинальную точку в 28px от моба
-				var diff: Vector2 = attack_target.position - me.position
+				# Melee: точка в 28px от ног моба по доминирующей оси.
+				# mob.position = центр спрайта; ноги моба ниже на ~20px.
+				var mob_feet := Vector2(attack_target.position.x, attack_target.position.y + 20.0)
+				var diff: Vector2 = mob_feet - me.position
 				var cardinal_spot: Vector2
 				if absf(diff.x) >= absf(diff.y):
-					cardinal_spot = attack_target.position + Vector2(-signf(diff.x) * 28.0, 0)
+					# Сбоку — ноги игрока на уровне ног моба
+					cardinal_spot = Vector2(attack_target.position.x - signf(diff.x) * 28.0, mob_feet.y)
 				else:
-					cardinal_spot = attack_target.position + Vector2(0, -signf(diff.y) * 28.0)
+					if diff.y > 0:
+						# Атакуем снизу — игрок ниже ног моба
+						cardinal_spot = Vector2(attack_target.position.x, mob_feet.y + 28.0)
+					else:
+						# Атакуем сверху — игрок над головой моба
+						cardinal_spot = Vector2(attack_target.position.x, attack_target.position.y - 20.0 - 8.0)
 				var at_spot: bool = me.position.distance_to(cardinal_spot) <= 3.0
 				if at_spot:
 					me.has_target = false
-					# Snap position to exact cardinal point — больше никаких диагоналей
 					me.position = cardinal_spot
 					me.face_toward(attack_target.position)
 					if attack_cooldown <= 0.0:
