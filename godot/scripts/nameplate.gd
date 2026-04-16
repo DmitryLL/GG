@@ -30,8 +30,11 @@ func _ready() -> void:
 	panel.offset_right = 248
 	panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0, 0, 0, 0.65)
-	sb.set_corner_radius_all(4)
+	sb.bg_color = Color(0.08, 0.08, 0.10, 1.0)
+	sb.border_color = Color(0.35, 0.30, 0.20, 1.0)
+	sb.border_width_left = 2; sb.border_width_top = 2
+	sb.border_width_right = 2; sb.border_width_bottom = 2
+	sb.set_corner_radius_all(6)
 	sb.set_content_margin_all(8)
 	panel.add_theme_stylebox_override("panel", sb)
 	root.add_child(panel)
@@ -117,8 +120,11 @@ func _ready() -> void:
 	target_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	target_panel.visible = false
 	var tsb := StyleBoxFlat.new()
-	tsb.bg_color = Color(0, 0, 0, 0.65)
-	tsb.set_corner_radius_all(4)
+	tsb.bg_color = Color(0.08, 0.08, 0.10, 1.0)
+	tsb.border_color = Color(0.55, 0.22, 0.22, 1.0)
+	tsb.border_width_left = 2; tsb.border_width_top = 2
+	tsb.border_width_right = 2; tsb.border_width_bottom = 2
+	tsb.set_corner_radius_all(6)
 	tsb.set_content_margin_all(8)
 	target_panel.add_theme_stylebox_override("panel", tsb)
 	root.add_child(target_panel)
