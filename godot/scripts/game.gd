@@ -189,17 +189,22 @@ func _process(delta: float) -> void:
 	if match_id == "" or Session.socket == null:
 		return
 
-	# Auto-pursuit: keep walking toward the locked target and shoot when in range.
+	# Auto-pursuit: keep walking toward the locked target and shoot/punch when in range.
 	if attack_target != null:
 		if not is_instance_valid(attack_target) or not attack_target.alive:
 			attack_target = null
 		else:
+			var has_bow: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
+			var atk_range: float = PLAYER_ATTACK_RANGE if has_bow else 50.0
 			var d: float = me.position.distance_to(attack_target.position)
-			if d <= PLAYER_ATTACK_RANGE:
+			if d <= atk_range:
 				me.has_target = false
+				me.face_toward(attack_target.position)
 				if attack_cooldown <= 0.0:
 					Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": attack_target.mob_id}))
 					attack_cooldown = PLAYER_ATTACK_COOLDOWN
+					if not has_bow:
+						me.play_punch()
 			else:
 				me.request_move_to(attack_target.position)
 	if attack_cooldown > 0.0:
@@ -340,6 +345,7 @@ func _apply_me(body: Dictionary) -> void:
 		minimap.set_gold(int(body.get("gold", 0)))
 	shop.refresh(body)
 	me.set_hp(float(body.get("hp", 0)), float(body.get("hpMax", 100)))
+	me.set_has_bow(String(body.get("eq", {}).get("weapon", "")).contains("bow"))
 
 func _on_character_button() -> void:
 	character_win.open(last_me)
@@ -464,6 +470,8 @@ func _on_chat_send(text: String) -> void:
 	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text}))
 
 func _spawn_arrow(body: Dictionary) -> void:
+	if bool(body.get("melee", false)):
+		return  # melee punch — no arrow visual
 	var from := Vector2(float(body.get("fx", 0)), float(body.get("fy", 0)))
 	var to := Vector2(float(body.get("tx", 0)), float(body.get("ty", 0)))
 	var arrow: Arrow = ARROW_SCRIPT.new()

@@ -17,6 +17,7 @@ enum Dir { DOWN = 0, LEFT = 1, RIGHT = 2, UP = 3 }
 
 var world: World
 var sprite: Sprite2D
+var bow_sprite: Sprite2D
 var label: Label
 var hp_bg: ColorRect
 var hp_fill: ColorRect
@@ -44,6 +45,13 @@ func _ready() -> void:
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sprite.offset = Vector2(0, -16)
 	add_child(sprite)
+
+	bow_sprite = Sprite2D.new()
+	bow_sprite.texture = load("res://assets/sprites/class_archer.png")
+	bow_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	bow_sprite.scale = Vector2(0.6, 0.6)
+	bow_sprite.visible = false
+	add_child(bow_sprite)
 
 	label = Label.new()
 	label.text = display_name
@@ -141,6 +149,38 @@ func show_bubble(text: String) -> void:
 		if is_instance_valid(panel): panel.queue_free()
 	)
 
+func face_toward(target: Vector2) -> void:
+	_set_facing_from(target - position)
+
+func set_has_bow(on: bool) -> void:
+	if bow_sprite:
+		bow_sprite.visible = on
+
+func _update_bow_position() -> void:
+	if bow_sprite == null or not bow_sprite.visible:
+		return
+	match facing:
+		Dir.DOWN:
+			bow_sprite.position = Vector2(8, -14)
+			bow_sprite.flip_h = false
+			bow_sprite.z_index = 1
+		Dir.UP:
+			bow_sprite.position = Vector2(-8, -16)
+			bow_sprite.flip_h = true
+			bow_sprite.z_index = -1
+		Dir.LEFT:
+			bow_sprite.position = Vector2(-10, -14)
+			bow_sprite.flip_h = true
+			bow_sprite.z_index = 1
+		Dir.RIGHT:
+			bow_sprite.position = Vector2(10, -14)
+			bow_sprite.flip_h = false
+			bow_sprite.z_index = 1
+
+var _punch_t := 0.0
+func play_punch() -> void:
+	_punch_t = 0.25
+
 func _set_facing_from(delta: Vector2) -> void:
 	if abs(delta.x) < 0.01 and abs(delta.y) < 0.01:
 		return
@@ -148,9 +188,24 @@ func _set_facing_from(delta: Vector2) -> void:
 		facing = Dir.RIGHT if delta.x > 0 else Dir.LEFT
 	else:
 		facing = Dir.DOWN if delta.y > 0 else Dir.UP
+	_update_bow_position()
 
 func _animate(delta: float) -> void:
 	var base := facing * 3
+	# Punch visual: lunge sprite toward facing direction briefly.
+	if _punch_t > 0.0:
+		_punch_t -= delta
+		var lunge_dir := Vector2.ZERO
+		match facing:
+			Dir.DOWN: lunge_dir = Vector2(0, 6)
+			Dir.UP: lunge_dir = Vector2(0, -6)
+			Dir.LEFT: lunge_dir = Vector2(-6, 0)
+			Dir.RIGHT: lunge_dir = Vector2(6, 0)
+		sprite.offset = Vector2(0, -16) + lunge_dir
+		sprite.frame = base + 2
+		return
+	else:
+		sprite.offset = Vector2(0, -16)
 	if not moving:
 		sprite.frame = base
 		anim_t = 0.0

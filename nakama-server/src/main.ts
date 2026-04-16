@@ -498,13 +498,16 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     const mob = state.mobs[mobId];
                     if (!mob || mob.state !== "alive") break;
                     if (t - player.lastAttackAt < PLAYER_ATTACK_COOLDOWN_MS) break;
-                    if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE) break;
+                    const hasBow = (player.equipment.weapon || "").includes("bow");
+                    const atkRange = hasBow ? PLAYER_ATTACK_RANGE : 50;
+                    if (dist(mob.pos, player.pos) > atkRange) break;
                     player.lastAttackAt = t;
                     mob.hp -= computeDamage(player);
                     mob.dirty = true;
                     dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
                         fx: player.pos.x, fy: player.pos.y,
                         tx: mob.pos.x, ty: mob.pos.y,
+                        melee: !hasBow,
                     }));
                     dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mobId }));
                     if (mob.hp <= 0) {
