@@ -81,6 +81,16 @@ async function admin(token, op, fields) {
             console.log(JSON.stringify(snap, null, 2));
             break;
         }
+        case 'set_password':
+        case 'setpwd': {
+            console.log(await admin(token, 'set_password', { target: args.to, password: args.pwd }));
+            break;
+        }
+        case 'wipe': {
+            const keep = (args.keep || 'Dmitryll').split(',').map(s => s.trim());
+            console.log(await admin(token, 'wipe_users', { keep }));
+            break;
+        }
         case 'list':
         case 'users': {
             const r = await admin(token, 'list_users', {});
@@ -149,7 +159,9 @@ function printHelp() {
 
 Команды:
   state                                    — снимок матча (онлайн)
-  list                                     — все юзеры из Storage (онлайн+оффлайн)
+  list                                     — все юзеры из Storage
+  setpwd to=NAME pwd=PASSWORD              — установить пароль (link email)
+  wipe [keep=Name1,Name2]                  — стереть прогресс всех кроме указанных
   give gold=N to=NAME                      — выдать золото
   give item=ITEM_ID to=NAME [qty=N]        — выдать предмет
   setlevel N to=NAME                       — установить уровень

@@ -1,5 +1,6 @@
-# Тестовый вход без пароля. Имя сохраняется в localStorage браузера —
-# при повторном заходе предлагаем продолжить или сменить ник.
+# Логин по нику + паролю через Nakama authenticate_email.
+# Email синтезируется из ника: <slug>@gg.local — для пользователя
+# виден только ник, email скрыт.
 extends Control
 
 signal auth_changed
@@ -7,46 +8,34 @@ signal auth_changed
 @onready var title: Label = %Title
 @onready var hint: Label = %Hint
 @onready var name_input: LineEdit = %NameInput
+@onready var pass_input: LineEdit = %PassInput
 @onready var enter_btn: Button = %EnterBtn
-@onready var switch_btn: Button = %SwitchBtn
+@onready var register_btn: Button = %RegisterBtn
 @onready var error_label: Label = %ErrorLabel
 @onready var busy_label: Label = %BusyLabel
 
 const STORAGE_KEY := "gg_player_name"
-var saved_name: String = ""
 
 func _ready() -> void:
-	enter_btn.pressed.connect(_on_enter)
-	switch_btn.pressed.connect(_on_switch)
-	name_input.text_submitted.connect(func(_t): _on_enter())
+	enter_btn.pressed.connect(func(): _login(false))
+	register_btn.pressed.connect(func(): _login(true))
+	pass_input.text_submitted.connect(func(_t): _login(false))
 	busy_label.hide()
 	error_label.text = ""
-	saved_name = _read_storage()
-	_apply_mode()
-
-func _apply_mode() -> void:
-	if saved_name != "":
-		title.text = "Продолжить как %s?" % saved_name
-		hint.text = "Сохранённый персонаж в этом браузере"
-		name_input.visible = false
-		enter_btn.text = "Войти как %s" % saved_name
-		switch_btn.visible = true
+	title.text = "Вход / Регистрация"
+	hint.text = "Введи ник и пароль. Если ника нет — нажми «Регистрация»."
+	pass_input.secret = true
+	# Подставляем сохранённый ник
+	var saved := _read_storage()
+	if saved != "":
+		name_input.text = saved
+		pass_input.grab_focus()
 	else:
-		title.text = "Введи имя"
-		hint.text = "Тестовый режим — пароля нет"
-		name_input.visible = true
-		enter_btn.text = "Играть"
-		switch_btn.visible = false
 		name_input.grab_focus()
-
-func _on_switch() -> void:
-	saved_name = ""
-	name_input.text = ""
-	_apply_mode()
 
 func _set_busy(busy: bool) -> void:
 	enter_btn.disabled = busy
-	switch_btn.disabled = busy
+	register_btn.disabled = busy
 	busy_label.visible = busy
 
 func _slug(s: String) -> String:
@@ -58,25 +47,43 @@ func _slug(s: String) -> String:
 			out += ch
 		else:
 			out += "_"
-	while out.length() < 6:
+	while out.length() < 3:
 		out += "_"
-	if out.length() > 64:
-		out = out.substr(0, 64)
+	if out.length() > 60:
+		out = out.substr(0, 60)
 	return out
 
-func _on_enter() -> void:
-	var raw: String = saved_name if saved_name != "" else name_input.text.strip_edges()
-	if raw.length() < 2:
-		error_label.text = "Минимум 2 символа"
+func _make_email(nick: String) -> String:
+	return "%s@gg.local" % _slug(nick)
+
+func _login(create: bool) -> void:
+	var nick := name_input.text.strip_edges()
+	var pwd := pass_input.text
+	if nick.length() < 2:
+		error_label.text = "Имя минимум 2 символа"
+		return
+	if pwd.length() < 1:
+		error_label.text = "Введи пароль"
 		return
 	error_label.text = ""
 	_set_busy(true)
-	var session: NakamaSession = await Session.client.authenticate_custom_async(_slug(raw), raw, true)
+	var email := _make_email(nick)
+	var session: NakamaSession = await Session.client.authenticate_email_async(email, pwd, nick, create)
 	_set_busy(false)
 	if session.is_exception():
-		error_label.text = "Ошибка: " + session.get_exception().message
+		var err := session.get_exception()
+		var msg := err.message
+		# Дружелюбные сообщения
+		if "exists" in msg.to_lower():
+			error_label.text = "Этот ник занят (другой пароль)"
+		elif "invalid" in msg.to_lower() or "credentials" in msg.to_lower():
+			error_label.text = "Неверный пароль"
+		elif "not found" in msg.to_lower():
+			error_label.text = "Юзер не найден — нажми «Регистрация»"
+		else:
+			error_label.text = "Ошибка: " + msg
 		return
-	_write_storage(raw)
+	_write_storage(nick)
 	Session.auth = session
 	auth_changed.emit()
 

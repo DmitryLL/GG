@@ -1116,6 +1116,44 @@ function rpcAdmin(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrunti
     try { body = JSON.parse(payload); } catch (_e) {}
     const op = String(body.op || "");
 
+    // set_password — линкуем email <username>@gg.local с паролем к юзеру
+    if (op === "set_password") {
+        try {
+            const target = String(body.target || "");
+            const password = String(body.password || "");
+            if (!target || password.length < 1) return JSON.stringify({ ok: false, error: "target and password required" });
+            const profiles = nk.usersGetUsername([target]);
+            if (profiles.length === 0) return JSON.stringify({ ok: false, error: "no user " + target });
+            const targetId = profiles[0].userId;
+            const email = target.toLowerCase().replace(/[^a-z0-9_]/g, "_") + "@gg.local";
+            nk.linkEmail(targetId, email, password);
+            return JSON.stringify({ ok: true, info: `password set for ${target} (email: ${email})` });
+        } catch (e: any) {
+            return JSON.stringify({ ok: false, error: String(e) });
+        }
+    }
+
+    // wipe_users — удалить storage прогресс всех юзеров кроме указанных в keep
+    if (op === "wipe_users") {
+        try {
+            const keep: string[] = (body.keep || []).map((s: any) => String(s).toLowerCase());
+            const list = nk.storageList(undefined, STORAGE_COLLECTION, 1000);
+            let deleted = 0;
+            for (const obj of list.objects || []) {
+                const userInfo = nk.usersGetId([obj.userId]);
+                const name = userInfo.length > 0 ? userInfo[0].username.toLowerCase() : "";
+                if (keep.indexOf(name) >= 0) continue;
+                try {
+                    nk.storageDelete([{ collection: STORAGE_COLLECTION, key: STORAGE_KEY, userId: obj.userId }]);
+                    deleted++;
+                } catch (_e) {}
+            }
+            return JSON.stringify({ ok: true, info: `deleted ${deleted} users (kept ${keep.length})` });
+        } catch (e: any) {
+            return JSON.stringify({ ok: false, error: String(e) });
+        }
+    }
+
     // list_users — все игроки из Storage (offline + online)
     if (op === "list_users") {
         try {
