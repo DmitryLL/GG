@@ -78,7 +78,9 @@ func _ready() -> void:
 
 	label = Label.new()
 	label.text = display_name
-	label.add_theme_color_override("font_color", Color(1, 1, 1))
+	# Враждебные игроки — красные ники, свой — белый
+	var nick_color: Color = Color(1, 1, 1) if local else Color(1.0, 0.35, 0.30)
+	label.add_theme_color_override("font_color", nick_color)
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	label.add_theme_constant_override("outline_size", 3)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

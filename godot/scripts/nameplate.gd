@@ -164,15 +164,26 @@ func _ready() -> void:
 
 const MOB_NAMES := { "slime": "Слайм", "goblin": "Гоблин", "dummy": "Манекен" }
 
-func update_target(mob) -> void:
-	if mob == null or not is_instance_valid(mob):
+func update_target(target) -> void:
+	if target == null or not is_instance_valid(target):
 		target_panel.visible = false
 		return
 	target_panel.visible = true
-	target_name.text = MOB_NAMES.get(mob.kind, mob.kind.capitalize())
-	target_hp_bar.max_value = mob.hp_max
-	target_hp_bar.value = mob.hp
-	target_hp_text.text = "%d / %d" % [int(mob.hp), int(mob.hp_max)]
+	# Mob или Player — у обоих есть kind или display_name
+	if "kind" in target:
+		# Mob
+		target_name.text = MOB_NAMES.get(target.kind, target.kind.capitalize())
+		target_name.add_theme_color_override("font_color", Color(0.95, 0.65, 0.65))
+		target_hp_bar.max_value = target.hp_max
+		target_hp_bar.value = target.hp
+		target_hp_text.text = "%d / %d" % [int(target.hp), int(target.hp_max)]
+	elif "display_name" in target:
+		# Player (PvP)
+		target_name.text = target.display_name
+		target_name.add_theme_color_override("font_color", Color(1.0, 0.4, 0.35))
+		target_hp_bar.max_value = target.hp_max
+		target_hp_bar.value = target.hp
+		target_hp_text.text = "%d / %d" % [int(target.hp), int(target.hp_max)]
 
 func set_player_name(n: String) -> void:
 	name_label.text = n

@@ -388,7 +388,12 @@ func _process(delta: float) -> void:
 		attack_cooldown -= delta
 
 	if nameplate:
-		nameplate.update_target(attack_target)
+		if attack_target != null:
+			nameplate.update_target(attack_target)
+		elif pvp_target != null:
+			nameplate.update_target(pvp_target)
+		else:
+			nameplate.update_target(null)
 
 	if _targeting_ring:
 		var show_ring := false
@@ -597,12 +602,12 @@ func _on_presence(ev: NakamaRTAPI.MatchPresenceEvent) -> void:
 
 func _player_at(world_pos: Vector2) -> String:
 	var best_sid := ""
-	var best_d: float = 40.0
+	var best_d: float = 56.0
 	for sid in remotes.keys():
 		var p: Player = remotes[sid]
 		if p == null or not is_instance_valid(p):
 			continue
-		var d: float = world_pos.distance_to(p.position + Vector2(0, -16))
+		var d: float = world_pos.distance_to(p.position + Vector2(0, -20))
 		if d < best_d:
 			best_d = d
 			best_sid = sid
