@@ -488,11 +488,18 @@ func set_nickname(nick: String) -> void:
 	if title_name:
 		title_name.text = nick
 
+var _doll_variant: int = 0
+
 func set_doll(variant: int) -> void:
-	doll_sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
+	_doll_variant = variant
+	_update_doll_sprite(false)
+
+func _update_doll_sprite(has_bow: bool) -> void:
+	var path: String = "res://assets/sprites/char_archer_walk.png" if has_bow else "res://assets/sprites/char_%d.png" % _doll_variant
+	doll_sprite.texture = load(path)
 	doll_sprite.hframes = 3
 	doll_sprite.vframes = 4
-	doll_sprite.frame = 0
+	doll_sprite.frame = 0  # facing-down idle
 
 func open(me: Dictionary) -> void:
 	overlay.visible = true
@@ -522,6 +529,10 @@ func refresh(me: Dictionary) -> void:
 	var eq: Dictionary = me.get("eq", {})
 	last_eq = eq
 	last_inv = me.get("inv", [])
+
+	# Синхронизируем куклу с текущей экипировкой (лук меняет спрайт как у игрока)
+	var weapon_id: String = String(eq.get("weapon", ""))
+	_update_doll_sprite(weapon_id.contains("bow"))
 
 	for entry in SLOT_LAYOUT:
 		var slot: String = entry["slot"]
