@@ -203,14 +203,14 @@ func _animate(delta: float) -> void:
 	# Bow shot visual: pull back bow, then release forward with slight recoil.
 	if _bow_shot_t > 0.0:
 		_bow_shot_t -= delta
-		var phase := 1.0 - clamp(_bow_shot_t / 0.35, 0.0, 1.0)
+		var phase: float = 1.0 - clampf(_bow_shot_t / 0.35, 0.0, 1.0)
 		var pull_dir := Vector2.ZERO
 		match facing:
 			Dir.DOWN: pull_dir = Vector2(0, -1)
 			Dir.UP: pull_dir = Vector2(0, 1)
 			Dir.LEFT: pull_dir = Vector2(1, 0)
 			Dir.RIGHT: pull_dir = Vector2(-1, 0)
-		var amount := 4.0 * sin(phase * PI)  # ease up & down
+		var amount: float = 4.0 * sin(phase * PI)
 		if bow_sprite and bow_sprite.visible:
 			_update_bow_position()
 			bow_sprite.position += pull_dir * amount

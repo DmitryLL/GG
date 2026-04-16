@@ -118,7 +118,7 @@ func _process(delta: float) -> void:
 
 func _set_slot_cd(i: int, remaining: float) -> void:
 	var slot: Control = slots[i]
-	var ctrl := slot.get_child(0)
+	var ctrl: Node = slot.get_child(0)
 	var dim: ColorRect = ctrl.get_meta("dim")
 	var lbl: Label = ctrl.get_meta("cd_label")
 	if remaining > 0.01:
@@ -131,7 +131,7 @@ func _set_slot_cd(i: int, remaining: float) -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		var key := event.keycode
+		var key: int = event.keycode
 		var idx := -1
 		match key:
 			KEY_1: idx = 0
