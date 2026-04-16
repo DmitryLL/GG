@@ -1110,10 +1110,96 @@ function isAdminCtx(ctx: nkruntime.Context): boolean {
 //   x?: number, y?: number }
 function rpcAdmin(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
     if (!isAdminCtx(ctx)) return JSON.stringify({ ok: false, error: "not admin" });
+
+    // Try parse for offline-capable ops
+    let body: any = {};
+    try { body = JSON.parse(payload); } catch (_e) {}
+    const op = String(body.op || "");
+
+    // list_users — все игроки из Storage (offline + online)
+    if (op === "list_users") {
+        try {
+            const list = nk.storageList(undefined, STORAGE_COLLECTION, 100);
+            const users: any[] = [];
+            for (const obj of list.objects || []) {
+                const v = obj.value as any;
+                users.push({
+                    userId: obj.userId,
+                    level: v.level || 1,
+                    gold: v.gold || 0,
+                    xp: v.xp || 0,
+                });
+            }
+            // Подтянем username через usersGetId
+            if (users.length > 0) {
+                const ids = users.map(u => u.userId);
+                const profiles = nk.usersGetId(ids);
+                const idToName: { [id: string]: string } = {};
+                for (const u of profiles) idToName[u.userId] = u.username;
+                for (const u of users) u.name = idToName[u.userId] || "?";
+            }
+            return JSON.stringify({ ok: true, users });
+        } catch (e: any) {
+            return JSON.stringify({ ok: false, error: String(e) });
+        }
+    }
+
+    // Try online first via matchSignal
     const matches = nk.matchList(1, true, MATCH_LABEL);
-    if (matches.length === 0) return JSON.stringify({ ok: false, error: "no match" });
-    const result = nk.matchSignal(matches[0].matchId, "admin:" + payload);
-    return result || JSON.stringify({ ok: false, error: "no signal response" });
+    let onlineResult: any = null;
+    if (matches.length > 0) {
+        const sig = nk.matchSignal(matches[0].matchId, "admin:" + payload);
+        if (sig) {
+            try { onlineResult = JSON.parse(sig); } catch (_e) { onlineResult = null; }
+            if (onlineResult && onlineResult.ok) return JSON.stringify(onlineResult);
+        }
+    }
+
+    // Offline fallback for give_gold / give_item — изменить Storage напрямую.
+    if ((op === "give_gold" || op === "give_item") && body.target) {
+        try {
+            const profiles = nk.usersGetUsername([String(body.target)]);
+            if (profiles.length === 0) return JSON.stringify({ ok: false, error: "no user " + body.target });
+            const targetId = profiles[0].userId;
+            const objs = nk.storageRead([{ collection: STORAGE_COLLECTION, key: STORAGE_KEY, userId: targetId }]);
+            const v: any = (objs.length > 0 ? objs[0].value : { level: 1, xp: 0, gold: 0, inventory: [], equipment: {} });
+            if (op === "give_gold") {
+                v.gold = (Number(v.gold) || 0) + (Number(body.amount) || 0);
+            } else {
+                const itemId = String(body.itemId || "");
+                const qty = Number(body.qty) || 1;
+                if (!ITEMS[itemId]) return JSON.stringify({ ok: false, error: "no item " + itemId });
+                const inv: any[] = v.inventory || [];
+                let added = qty;
+                if (itemId.indexOf("potion") >= 0 || itemId.indexOf("jelly") >= 0) {
+                    for (const e of inv) {
+                        if (e.itemId === itemId && e.qty < STACK_MAX) {
+                            const space = STACK_MAX - e.qty;
+                            const take = Math.min(space, added);
+                            e.qty += take; added -= take;
+                            if (added <= 0) break;
+                        }
+                    }
+                }
+                while (added > 0 && inv.length < INVENTORY_SLOTS) {
+                    const take = Math.min(STACK_MAX, added);
+                    inv.push({ itemId, qty: take });
+                    added -= take;
+                }
+                v.inventory = inv;
+            }
+            nk.storageWrite([{
+                collection: STORAGE_COLLECTION, key: STORAGE_KEY, userId: targetId,
+                value: v, permissionRead: 1, permissionWrite: 0,
+            }]);
+            return JSON.stringify({ ok: true, info: `offline ${op} → ${body.target}: gold=${v.gold}, inv=${v.inventory.length}` });
+        } catch (e: any) {
+            return JSON.stringify({ ok: false, error: String(e) });
+        }
+    }
+
+    if (onlineResult) return JSON.stringify(onlineResult);
+    return JSON.stringify({ ok: false, error: "no match and op not offline-capable" });
 }
 
 function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkruntime.Nakama, initializer: nkruntime.Initializer): void {

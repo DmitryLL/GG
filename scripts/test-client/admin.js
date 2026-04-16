@@ -81,6 +81,19 @@ async function admin(token, op, fields) {
             console.log(JSON.stringify(snap, null, 2));
             break;
         }
+        case 'list':
+        case 'users': {
+            const r = await admin(token, 'list_users', {});
+            if (r && r.users) {
+                console.log(`${r.users.length} users:`);
+                for (const u of r.users) {
+                    console.log(`  ${u.name.padEnd(20)} lv${u.level}  gold=${u.gold}  xp=${u.xp}`);
+                }
+            } else {
+                console.log(r);
+            }
+            break;
+        }
         case 'give': {
             if (args.gold) {
                 console.log(await admin(token, 'give_gold', { target: args.to, amount: Number(args.gold) }));
@@ -135,7 +148,8 @@ function printHelp() {
     console.log(`Использование: node admin.js <команда> [args] [--as=Username]
 
 Команды:
-  state                                    — снимок матча
+  state                                    — снимок матча (онлайн)
+  list                                     — все юзеры из Storage (онлайн+оффлайн)
   give gold=N to=NAME                      — выдать золото
   give item=ITEM_ID to=NAME [qty=N]        — выдать предмет
   setlevel N to=NAME                       — установить уровень
