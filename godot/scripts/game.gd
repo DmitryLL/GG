@@ -611,12 +611,40 @@ func _apply_npcs(body: Dictionary) -> void:
 func _on_presence(ev: NakamaRTAPI.MatchPresenceEvent) -> void:
 	for p in ev.leaves:
 		var sid: String = p.session_id
+		# Если меня кикнуло (заход с другого устройства) — показать сообщение
+		if sid == my_session_id:
+			_handle_kicked()
+			return
 		var r: Player = remotes.get(sid)
 		if r:
 			r.queue_free()
 			remotes.erase(sid)
 	if status_label:
 		status_label.text = "В мире · игроков: %d" % (remotes.size() + 1)
+
+func _handle_kicked() -> void:
+	if status_label:
+		status_label.text = "Заход с другого устройства — соединение разорвано"
+	# Прячем игровой UI и блокируем дальнейший ввод
+	if hud: hud.visible = false
+	if skillbar: skillbar.visible = false
+	if minimap: minimap.visible = false
+	# Показать оверлей
+	var overlay := ColorRect.new()
+	overlay.color = Color(0, 0, 0, 0.85)
+	overlay.anchor_right = 1.0
+	overlay.anchor_bottom = 1.0
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(overlay)
+	var lbl := Label.new()
+	lbl.text = "Зашёл с другого устройства\n\nЭта сессия отключена.\nОбнови страницу чтобы перезайти."
+	lbl.add_theme_font_size_override("font_size", 22)
+	lbl.add_theme_color_override("font_color", Color(1, 0.85, 0.85))
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.anchor_right = 1.0
+	lbl.anchor_bottom = 1.0
+	overlay.add_child(lbl)
 
 func _player_at(world_pos: Vector2) -> String:
 	var best_sid := ""

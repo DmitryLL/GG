@@ -393,6 +393,16 @@ function matchJoinAttempt(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _n
 function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
     for (let i = 0; i < presences.length; i++) {
         const p = presences[i];
+        // Single session: если этот userId уже играет с другой сессии — кикнуть старую.
+        for (const oldSid of Object.keys(state.players)) {
+            const old = state.players[oldSid];
+            if (old.userId === p.userId && old.sessionId !== p.sessionId) {
+                // Сохранить прогресс старой сессии перед kick
+                saveProgress(nk, old);
+                dispatcher.matchKick([old.presence]);
+                delete state.players[oldSid];
+            }
+        }
         const saved = loadProgress(nk, p.userId);
         const equipment: { [slot: string]: string } = {};
         for (const s of EQUIP_SLOTS) equipment[s] = "";
