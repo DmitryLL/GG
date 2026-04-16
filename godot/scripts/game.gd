@@ -188,9 +188,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if bool(sk["targets_mob"]):
 				var mob_hit := _mob_at(world_pos)
 				if mob_hit != null and mob_hit.alive:
-					_send_skill(idx, {"skill": idx, "mobId": mob_hit.mob_id})
+					_send_skill(idx, {"skill": idx + 1, "mobId": mob_hit.mob_id})
 			else:
-				_send_skill(idx, {"skill": idx, "x": world_pos.x, "y": world_pos.y})
+				_send_skill(idx, {"skill": idx + 1, "x": world_pos.x, "y": world_pos.y})
 			return
 		# NPC takes priority over mobs/move.
 		var npc := _npc_at(world_pos)
@@ -728,8 +728,7 @@ func _on_skill_activated(index: int) -> void:
 		targeting_skill = index
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
 		return
-	# self / non-targeted — e.g. dodge
-	var payload := {"skill": index}
+	var payload := {"skill": index + 1}
 	if attack_target and is_instance_valid(attack_target):
 		payload["mobId"] = attack_target.mob_id
 	_send_skill(index, payload)
