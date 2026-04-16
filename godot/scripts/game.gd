@@ -802,6 +802,10 @@ func _on_skill_activated(index: int) -> void:
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
 		return
 	var payload := {"skill": index + 1}
+	# Self-cast: передаём направление взгляда (для отскока)
+	var fdir: Vector2 = me.facing_vector()
+	payload["dx"] = fdir.x
+	payload["dy"] = fdir.y
 	if attack_target and is_instance_valid(attack_target):
 		payload["mobId"] = attack_target.mob_id
 	_send_skill(index, payload)

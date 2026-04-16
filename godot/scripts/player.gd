@@ -191,6 +191,14 @@ func show_bubble(text: String) -> void:
 func face_toward(target: Vector2) -> void:
 	_set_facing_from(target - position)
 
+func facing_vector() -> Vector2:
+	match facing:
+		Dir.DOWN: return Vector2(0, 1)
+		Dir.UP: return Vector2(0, -1)
+		Dir.LEFT: return Vector2(-1, 0)
+		Dir.RIGHT: return Vector2(1, 0)
+	return Vector2(0, 1)
+
 func remote_update(new_pos: Vector2) -> void:
 	# Если позиция далеко (>120px) — телепорт. Иначе плавное движение.
 	if position.distance_to(new_pos) > 120.0:

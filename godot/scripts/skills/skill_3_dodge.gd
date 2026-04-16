@@ -24,7 +24,7 @@ func on_fx(game, body: Dictionary) -> bool:
 	if p == null:
 		return true
 	var dodge_target := Vector2(px, py)
-	var tw := game.create_tween()
+	var tw: Tween = game.create_tween()
 	tw.tween_property(p, "position", dodge_target, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	p.flash()
 	for i in range(3):
@@ -39,7 +39,7 @@ func on_fx(game, body: Dictionary) -> bool:
 		ghost.position = p.position
 		ghost.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		game.world.add_child(ghost)
-		var gt := game.create_tween()
+		var gt: Tween = game.create_tween()
 		gt.tween_property(ghost, "modulate:a", 0.0, 0.4 + i * 0.1)
 		gt.finished.connect(ghost.queue_free)
 	return true

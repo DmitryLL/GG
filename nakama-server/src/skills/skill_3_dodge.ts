@@ -3,15 +3,13 @@ registerSkill(3, {
     requiresBow: false,
     cooldownMs: 8000,
     handler: function (ctx: SkillContext): void {
-        const { player, body, t, state, dispatcher } = ctx;
-        const target = body.mobId ? state.mobs[String(body.mobId)] : null;
-        let dx = 0, dy = 1;
-        if (target) {
-            const vx = player.pos.x - target.pos.x;
-            const vy = player.pos.y - target.pos.y;
-            const len = Math.sqrt(vx * vx + vy * vy) || 1;
-            dx = vx / len; dy = vy / len;
-        }
+        const { player, body, t, dispatcher } = ctx;
+        // Направление: сначала dx/dy от клиента (взгляд), иначе вниз
+        let dx = Number(body.dx) || 0;
+        let dy = Number(body.dy) || 0;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len < 0.01) { dx = 0; dy = 1; }
+        else { dx /= len; dy /= len; }
         player.pos.x = Math.max(TILE_SIZE, Math.min(MAP_WIDTH - TILE_SIZE, player.pos.x + dx * 80));
         player.pos.y = Math.max(TILE_SIZE, Math.min(MAP_HEIGHT - TILE_SIZE, player.pos.y + dy * 80));
         player.dirtyPos = true;
