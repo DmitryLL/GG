@@ -74,6 +74,7 @@ var pvp_target: Player = null
 var pvp_target_sid: String = ""
 var attack_cooldown := 0.0
 var queued_skill: int = -1  # скилл ожидающий подхода к цели
+var queued_ground_pos: Vector2 = Vector2.ZERO  # точка каста для ground-скилла
 var _click_marker: Sprite2D
 var _click_marker_t := 0.0
 var _prev_highlight: Mob = null
@@ -195,10 +196,13 @@ func _unhandled_input(event: InputEvent) -> void:
 					queued_skill = idx
 					attack_cooldown = 0.0
 			else:
-				# Ground skill: проверка дальности каста
-				if me.position.distance_to(world_pos) > PLAYER_ATTACK_RANGE:
-					return
-				_send_skill(idx, {"skill": idx + 1, "x": world_pos.x, "y": world_pos.y})
+				# Ground skill: если далеко — встаём в очередь, идём к точке
+				attack_target = null
+				pvp_target = null
+				_set_mob_highlight(null)
+				queued_skill = idx
+				queued_ground_pos = world_pos
+				attack_cooldown = 0.0
 			return
 		# NPC takes priority over mobs/move.
 		var npc := _npc_at(world_pos)
@@ -266,6 +270,30 @@ func _process(delta: float) -> void:
 						me.play_punch()
 			else:
 				me.request_move_to(pvp_target.position)
+
+	# Queued ground skill (например Ливень) — идём к точке и кастуем
+	if queued_skill >= 0 and attack_target == null and pvp_target == null:
+		var sk: Dictionary = skillbar.SKILLS[queued_skill]
+		if bool(sk["targets_ground"]):
+			if skillbar.cooldowns[queued_skill] > 0.0:
+				queued_skill = -1
+			else:
+				var d_g: float = me.position.distance_to(queued_ground_pos)
+				var max_cast: float = PLAYER_ATTACK_RANGE - 20.0
+				if d_g > max_cast:
+					# Идём в направлении точки до ближайшей точки в зоне досягаемости
+					var dir: Vector2 = (queued_ground_pos - me.position).normalized()
+					me.request_move_to(queued_ground_pos - dir * max_cast)
+					return
+				# В дальности — отправляем
+				me.has_target = false
+				me.face_toward(queued_ground_pos)
+				Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": me.position.x, "y": me.position.y}))
+				last_sent_pos = me.position
+				_send_skill(queued_skill, {"skill": queued_skill + 1, "x": queued_ground_pos.x, "y": queued_ground_pos.y})
+				attack_cooldown = PLAYER_ATTACK_COOLDOWN
+				queued_skill = -1
+				return
 
 	# Auto-pursuit: keep walking toward the locked target and shoot/punch when in range.
 	if attack_target != null:
@@ -638,32 +666,33 @@ func _handle_skill_fx(body: Dictionary) -> void:
 			return
 
 func _spawn_rain_zone(pos: Vector2, half: float, duration_ms: int) -> void:
-	# half — половина стороны квадрата (бывший radius)
+	# half — половина стороны квадрата
 	var node := Node2D.new()
 	node.position = pos
 	node.z_index = 90
 	world.add_child(node)
 	var square := _make_zone_square(half * 2.0, Color(1.0, 0.6, 0.25, 0.85))
 	node.add_child(square)
-	var spawn_t := 0.0
-	var elapsed := 0.0
-	node.set_meta("tick", Callable(func(delta: float):
-		elapsed += delta
-		spawn_t -= delta
-		if spawn_t <= 0.0:
-			spawn_t = 0.05
-			_spawn_falling_arrow(pos + Vector2(randf_range(-half, half), randf_range(-half, half)))
-		if elapsed * 1000.0 >= duration_ms:
-			node.queue_free()))
-	var timer := Timer.new()
-	timer.wait_time = 0.03
-	timer.one_shot = false
-	timer.autostart = true
-	timer.timeout.connect(func():
-		if not is_instance_valid(node): return
-		var cb: Callable = node.get_meta("tick")
-		cb.call(0.03))
-	node.add_child(timer)
+
+	var spawn_timer := Timer.new()
+	spawn_timer.wait_time = 0.05
+	spawn_timer.one_shot = false
+	spawn_timer.autostart = true
+	spawn_timer.timeout.connect(func():
+		_spawn_falling_arrow(pos + Vector2(randf_range(-half, half), randf_range(-half, half))))
+	node.add_child(spawn_timer)
+
+	# Гарантированное удаление через duration
+	var kill_timer := Timer.new()
+	kill_timer.wait_time = float(duration_ms) / 1000.0
+	kill_timer.one_shot = true
+	kill_timer.autostart = true
+	kill_timer.timeout.connect(func():
+		# Плавное затухание квадрата перед уничтожением
+		var fade := create_tween()
+		fade.tween_property(square, "modulate:a", 0.0, 0.3)
+		fade.tween_callback(node.queue_free))
+	node.add_child(kill_timer)
 
 func _spawn_falling_arrow(target: Vector2) -> void:
 	var arrow := Line2D.new()
