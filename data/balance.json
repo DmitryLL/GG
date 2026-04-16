@@ -17,7 +17,7 @@
   "drops": {
     "_comment": "pickupRange — на каком расстоянии можно открыть/собрать труп",
     "pickupRange": 60,
-    "lifetimeMs": 60000
+    "lifetimeMs": 10000
   },
   "inventory": {
     "slots": 25,

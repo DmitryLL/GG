@@ -100,13 +100,13 @@ func _ready() -> void:
 	xp_bar.add_theme_stylebox_override("background", xp_bg)
 	v.add_child(xp_bar)
 
-	# --- Target panel (right side, mirror of player panel) ---
+	# --- Target panel (right next to player panel) ---
 	target_panel = PanelContainer.new()
-	target_panel.anchor_left = 1.0
+	target_panel.anchor_left = 0.0
 	target_panel.anchor_top = 0.0
-	target_panel.offset_left = -248
+	target_panel.offset_left = 256
 	target_panel.offset_top = 8
-	target_panel.offset_right = -8
+	target_panel.offset_right = 496
 	target_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	target_panel.visible = false
 	var tsb := StyleBoxFlat.new()

@@ -68,6 +68,9 @@ var send_accum := 0.0
 var last_sent_pos: Vector2 = Vector2.INF
 var attack_target: Mob = null
 var attack_cooldown := 0.0
+var _click_marker: Sprite2D
+var _click_marker_t := 0.0
+var _prev_highlight: Mob = null
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -114,6 +117,13 @@ func _ready() -> void:
 	)
 	add_child(minimap)
 
+	_click_marker = Sprite2D.new()
+	_click_marker.texture = _make_marker_texture()
+	_click_marker.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_click_marker.visible = false
+	_click_marker.z_index = 100
+	world.add_child(_click_marker)
+
 	nameplate = NAMEPLATE_SCRIPT.new()
 	add_child(nameplate)
 	nameplate.set_player_name(display)
@@ -159,17 +169,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mob_hit != null:
 			if mob_hit.alive:
 				attack_target = mob_hit
+				_set_mob_highlight(mob_hit)
+				_hide_marker()
 				return
-			# Труп — открыть лут если близко, иначе подойти.
 			attack_target = null
+			_set_mob_highlight(null)
 			var d_corpse: float = me.position.distance_to(mob_hit.position)
 			if d_corpse <= 60.0:
 				loot_win.open(mob_hit.mob_id, mob_hit.kind, mob_hit.loot)
 			else:
 				me.request_move_to(mob_hit.position)
 			return
-		# Bare-ground click → just move, drop any current target.
 		attack_target = null
+		_set_mob_highlight(null)
+		_show_marker(world_pos)
 		me.request_move_to(world_pos)
 
 func _process(delta: float) -> void:
@@ -194,6 +207,14 @@ func _process(delta: float) -> void:
 
 	if nameplate:
 		nameplate.update_target(attack_target)
+
+	if _click_marker and _click_marker.visible:
+		_click_marker_t -= delta
+		if _click_marker_t <= 0.0:
+			_click_marker.visible = false
+		else:
+			_click_marker.modulate.a = clamp(_click_marker_t / 0.3, 0.0, 1.0)
+			_click_marker.scale = Vector2(1.0, 1.0) * (0.8 + 0.2 * _click_marker_t)
 
 	send_accum += delta
 	if send_accum < 1.0 / MOVE_SEND_HZ:
@@ -456,3 +477,35 @@ func _mm_npcs() -> Array:
 
 func _short_id(uid: String) -> String:
 	return uid.substr(0, 8)
+
+func _show_marker(pos: Vector2) -> void:
+	if _click_marker:
+		_click_marker.position = pos
+		_click_marker.visible = true
+		_click_marker.modulate.a = 1.0
+		_click_marker.scale = Vector2.ONE
+		_click_marker_t = 0.8
+
+func _hide_marker() -> void:
+	if _click_marker:
+		_click_marker.visible = false
+
+func _set_mob_highlight(mob: Mob) -> void:
+	if _prev_highlight and is_instance_valid(_prev_highlight):
+		_prev_highlight.set_highlight(false)
+	_prev_highlight = mob
+	if mob and is_instance_valid(mob):
+		mob.set_highlight(true)
+
+func _make_marker_texture() -> ImageTexture:
+	var s := 16
+	var img := Image.create(s, s, false, Image.FORMAT_RGBA8)
+	var c := Vector2(s * 0.5, s * 0.5)
+	for y in range(s):
+		for x in range(s):
+			var d: float = Vector2(x, y).distance_to(c)
+			if d >= 4.0 and d <= 6.5:
+				img.set_pixel(x, y, Color(1.0, 1.0, 0.7, 0.9))
+			elif d < 2.5:
+				img.set_pixel(x, y, Color(1.0, 1.0, 0.8, 0.7))
+	return ImageTexture.create_from_image(img)

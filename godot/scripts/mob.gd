@@ -20,6 +20,8 @@ var glow: Sprite2D
 var _anim_t := 0.0
 var _flash_t := 0.0
 var _glow_t := 0.0
+var _highlight := false
+var _highlight_ring: Sprite2D
 
 func setup(id: String, p_kind: String) -> void:
 	mob_id = id
@@ -65,6 +67,15 @@ func _ready() -> void:
 	hp_fill.position = Vector2(-14, -22)
 	add_child(hp_fill)
 
+	_highlight_ring = Sprite2D.new()
+	_highlight_ring.texture = _make_ring_texture()
+	_highlight_ring.scale = Vector2(1.4, 0.7)
+	_highlight_ring.position.y = 6
+	_highlight_ring.modulate = Color(1.0, 0.35, 0.25, 0.7)
+	_highlight_ring.visible = false
+	_highlight_ring.z_index = -1
+	add_child(_highlight_ring)
+
 func set_alive(v: bool) -> void:
 	alive = v
 	visible = true
@@ -86,20 +97,45 @@ func set_loot(items: Array) -> void:
 func _update_glow() -> void:
 	if glow == null:
 		return
-	# Светится только труп с лутом. Живой моб — никогда.
 	glow.visible = (not alive) and loot.size() > 0
 
 func _make_glow_texture() -> ImageTexture:
-	var size := 64
+	var size := 48
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	var c := Vector2(size * 0.5, size * 0.5)
-	var r := float(size) * 0.5
+	var r := float(size) * 0.45
 	for y in range(size):
 		for x in range(size):
 			var d: float = Vector2(x, y).distance_to(c) / r
-			var a: float = clamp(1.0 - d, 0.0, 1.0)
-			a = a * a  # мягкое затухание к краям
-			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+			var a := 0.0
+			if d < 1.0:
+				a = (1.0 - d) * (1.0 - d) * 0.35
+			# pixel sparkle dots
+			if (x + y) % 7 == 0 and d < 0.85:
+				a = clamp(a + 0.5, 0.0, 1.0)
+			if (x * 3 + y * 5) % 11 == 0 and d < 0.7:
+				a = clamp(a + 0.7, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1.0, 0.95, 0.6, a))
+	return ImageTexture.create_from_image(img)
+
+func set_highlight(on: bool) -> void:
+	_highlight = on
+	if _highlight_ring:
+		_highlight_ring.visible = on and alive
+
+func _make_ring_texture() -> ImageTexture:
+	var size := 32
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var c := Vector2(size * 0.5, size * 0.5)
+	for y in range(size):
+		for x in range(size):
+			var d: float = Vector2(x, y).distance_to(c)
+			var r_out := size * 0.48
+			var r_in := size * 0.34
+			if d >= r_in and d <= r_out:
+				var edge := min(d - r_in, r_out - d) / 2.0
+				var a := clamp(edge, 0.0, 1.0)
+				img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
 	return ImageTexture.create_from_image(img)
 
 func set_hp(v: float, vmax: float) -> void:
@@ -115,8 +151,11 @@ func flash() -> void:
 func _process(delta: float) -> void:
 	if glow and glow.visible:
 		_glow_t += delta
-		var pulse: float = 0.28 + 0.12 * sin(_glow_t * 2.4)
+		var pulse: float = 0.5 + 0.4 * sin(_glow_t * 3.0)
 		glow.modulate.a = pulse
+		glow.rotation = _glow_t * 0.5
+	if _highlight_ring and _highlight_ring.visible:
+		_highlight_ring.modulate.a = 0.5 + 0.2 * sin(_glow_t * 4.0)
 	if not alive:
 		return
 	_anim_t += delta
