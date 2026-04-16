@@ -219,9 +219,6 @@ interface WorldState {
     tick: number;
 }
 
-// Снимок состояния матча для debug_state RPC. Обновляется ~5 раз/сек.
-let LAST_SNAPSHOT: any = { ts: 0, players: [], mobs: [], zones: [] };
-
 function now(): number { return Date.now(); }
 function dist(a: Vec2, b: Vec2): number { const dx = a.x - b.x; const dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
 function clamp(v: number, lo: number, hi: number): number { return v < lo ? lo : v > hi ? hi : v; }
@@ -879,9 +876,20 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: mUpdates, full: false }));
     }
 
-    // Snapshot для debug_state RPC: ~5 раз/сек (tick rate 20 → каждый 4-й)
-    if (tick % 4 === 0) {
+    return { state: state };
+}
+
+function matchTerminate(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, _graceSeconds: number): { state: WorldState } | null {
+    // Persist all players before shutting down.
+    const keys = Object.keys(state.players);
+    for (let i = 0; i < keys.length; i++) saveProgress(nk, state.players[keys[i]]);
+    return { state: state };
+}
+
+function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, tick: number, state: WorldState, data: string): { state: WorldState; data?: string } | null {
+    if (data === "snapshot") {
         const snapPlayers: any[] = [];
+        const tNow = Date.now();
         for (const sk of Object.keys(state.players)) {
             const p = state.players[sk];
             snapPlayers.push({
@@ -904,22 +912,11 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 respawnAt: m.respawnAt, debuff: m.debuff || null,
             });
         }
-        LAST_SNAPSHOT = {
-            ts: t, tick: tick,
-            players: snapPlayers, mobs: snapMobs, zones: state.zones,
+        return {
+            state: state,
+            data: JSON.stringify({ ts: tNow, tick: tick, players: snapPlayers, mobs: snapMobs, zones: state.zones }),
         };
     }
-    return { state: state };
-}
-
-function matchTerminate(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, _graceSeconds: number): { state: WorldState } | null {
-    // Persist all players before shutting down.
-    const keys = Object.keys(state.players);
-    for (let i = 0; i < keys.length; i++) saveProgress(nk, state.players[keys[i]]);
-    return { state: state };
-}
-
-function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, _data: string): { state: WorldState; data?: string } | null {
     return { state: state };
 }
 
@@ -930,16 +927,22 @@ function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk
     return JSON.stringify({ match_id: matchId });
 }
 
-// Debug RPC — возвращает снимок состояния матча (обновляется ~5 раз/сек).
-// Поля: players, mobs, zones, ts, tick. Параметр payload может содержать
-// {"filter": "mob"|"player"|"zone"} для уменьшения объёма.
-function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, payload: string): string {
+// Debug RPC — снимок состояния матча через matchSignal.
+// Параметр payload может содержать {"filter": "mob"|"player"|"zone"}.
+function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
     let filter = "";
     try { filter = String((JSON.parse(payload || "{}") as any).filter || ""); } catch (_e) {}
-    if (filter === "player") return JSON.stringify({ ts: LAST_SNAPSHOT.ts, players: LAST_SNAPSHOT.players });
-    if (filter === "mob") return JSON.stringify({ ts: LAST_SNAPSHOT.ts, mobs: LAST_SNAPSHOT.mobs });
-    if (filter === "zone") return JSON.stringify({ ts: LAST_SNAPSHOT.ts, zones: LAST_SNAPSHOT.zones });
-    return JSON.stringify(LAST_SNAPSHOT);
+    const matches = nk.matchList(1, true, MATCH_LABEL);
+    if (matches.length === 0) return JSON.stringify({ error: "no active match" });
+    const matchId = matches[0].matchId;
+    const result = nk.matchSignal(matchId, "snapshot");
+    if (!result) return JSON.stringify({ error: "no signal data" });
+    let snap: any;
+    try { snap = JSON.parse(result); } catch { return JSON.stringify({ error: "parse fail", raw: result }); }
+    if (filter === "player") return JSON.stringify({ ts: snap.ts, players: snap.players });
+    if (filter === "mob") return JSON.stringify({ ts: snap.ts, mobs: snap.mobs });
+    if (filter === "zone") return JSON.stringify({ ts: snap.ts, zones: snap.zones });
+    return JSON.stringify(snap);
 }
 
 function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkruntime.Nakama, initializer: nkruntime.Initializer): void {
