@@ -3,7 +3,8 @@
 class_name Mob
 extends Node2D
 
-const ANIM_FPS := 3.0
+var _anim_fps := 4.0
+var _anim_frames := 4
 
 var mob_id: String = ""
 var kind: String = "slime"
@@ -26,8 +27,8 @@ func setup(id: String, p_kind: String) -> void:
 
 func _ready() -> void:
 	var def := {
-		"slime":  { "tex": "res://assets/sprites/slime.png",  "scale": 1.3 },
-		"goblin": { "tex": "res://assets/sprites/goblin.png", "scale": 1.25 },
+		"slime":  { "tex": "res://assets/sprites/slime.png",  "scale": 1.3, "frames": 8, "fps": 6.0 },
+		"goblin": { "tex": "res://assets/sprites/goblin.png", "scale": 1.25, "frames": 4, "fps": 4.0 },
 	}
 	var info: Dictionary = def.get(kind, def["slime"])
 
@@ -43,11 +44,13 @@ func _ready() -> void:
 
 	sprite = Sprite2D.new()
 	sprite.texture = load(info["tex"])
-	sprite.hframes = 2
+	sprite.hframes = int(info["frames"])
 	sprite.vframes = 1
 	sprite.frame = 0
 	sprite.scale = Vector2(info["scale"], info["scale"])
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_anim_fps = float(info["fps"])
+	_anim_frames = int(info["frames"])
 	add_child(sprite)
 
 	hp_bg = ColorRect.new()
@@ -117,8 +120,7 @@ func _process(delta: float) -> void:
 	if not alive:
 		return
 	_anim_t += delta
-	var cycle := int(_anim_t * ANIM_FPS) % 4
-	sprite.frame = 1 if cycle == 3 else 0
+	sprite.frame = int(_anim_t * _anim_fps) % _anim_frames
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		if _flash_t <= 0.0:
