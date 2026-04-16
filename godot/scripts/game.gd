@@ -817,16 +817,16 @@ func _spawn_damage_label(pos: Vector2, dmg: int, is_crit: bool = false, is_poiso
 	var lbl := Label.new()
 	var size := 18
 	var color := Color(1.0, 0.85, 0.2)
-	var prefix := "-"
+	var suffix := ""
 	if is_crit:
-		size = 26
+		size = 24
 		color = Color(1.0, 0.35, 0.25)
-		prefix = "КРИТ! -"
+		suffix = "!"
 	elif is_poison:
 		color = Color(0.55, 0.95, 0.35)
 	elif is_ghost:
 		color = Color(0.72, 0.82, 1.0)
-	lbl.text = "%s%d" % [prefix, dmg]
+	lbl.text = "-%d%s" % [dmg, suffix]
 	lbl.add_theme_font_size_override("font_size", size)
 	lbl.add_theme_color_override("font_color", color)
 	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
