@@ -89,8 +89,8 @@ func _read_storage() -> String:
 	var v = JavaScriptBridge.eval("window.localStorage.getItem('%s') || ''" % STORAGE_KEY, true)
 	return String(v) if v != null else ""
 
-func _write_storage(name: String) -> void:
+func _write_storage(nick: String) -> void:
 	if not OS.has_feature("web"):
 		return
-	var safe := name.replace("'", "\\'")
+	var safe := nick.replace("'", "\\'")
 	JavaScriptBridge.eval("window.localStorage.setItem('%s', '%s')" % [STORAGE_KEY, safe], true)

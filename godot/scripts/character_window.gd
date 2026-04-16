@@ -484,7 +484,7 @@ func _make_picker_row(item_id: String, qty: int, hint_text: String, on_take: Cal
 	return btn
 
 # ---------- lifecycle ----------
-func set_name(nick: String) -> void:
+func set_nickname(nick: String) -> void:
 	if title_name:
 		title_name.text = nick
 

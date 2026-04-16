@@ -146,7 +146,7 @@ func _ready() -> void:
 	character_win = CHARACTER_SCRIPT.new()
 	add_child(character_win)
 	character_win.set_doll(PLAYER_SCRIPT.variant_from(Session.auth.user_id))
-	character_win.set_name(display)
+	character_win.set_nickname(display)
 	character_win.unequip_requested.connect(_on_unequip)
 	character_win.equip_requested.connect(_on_equip_to_slot)
 	hud.character_button_pressed.connect(_on_character_button)
