@@ -66,6 +66,11 @@ func _ready() -> void:
 	hp_fill.position = Vector2(-14, -42)
 	add_child(hp_fill)
 
+	if local:
+		label.visible = false
+		hp_bg.visible = false
+		hp_fill.visible = false
+
 func _process(delta: float) -> void:
 	if _flash_t > 0.0:
 		_flash_t -= delta
