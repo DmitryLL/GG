@@ -72,6 +72,7 @@ func _make_icon_button(icon_tex: Texture2D, fallback_text: String, tint: Color, 
 	sb_n.border_color = Color(0.45, 0.35, 0.20, 1.0)
 	sb_n.set_border_width_all(2)
 	sb_n.set_corner_radius_all(6)
+	sb_n.set_content_margin_all(0)
 	var sb_h := sb_n.duplicate() as StyleBoxFlat
 	sb_h.bg_color = Color(0.22, 0.16, 0.10, 1.0)
 	sb_h.border_color = Color(0.95, 0.75, 0.35, 1.0)
@@ -83,17 +84,18 @@ func _make_icon_button(icon_tex: Texture2D, fallback_text: String, tint: Color, 
 	b.add_theme_stylebox_override("focus", sb_n)
 
 	if icon_tex:
-		# Фиксированный квадрат 40×40 точно в центре кнопки (через anchor 0.5).
+		# CenterContainer растягивается на всю кнопку, ребёнок центрируется.
+		var cc := CenterContainer.new()
+		cc.anchor_right = 1.0; cc.anchor_bottom = 1.0
+		cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(cc)
 		var r := TextureRect.new()
 		r.texture = icon_tex
+		r.custom_minimum_size = Vector2(40, 40)
 		r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		r.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		r.anchor_left = 0.5; r.anchor_top = 0.5
-		r.anchor_right = 0.5; r.anchor_bottom = 0.5
-		r.offset_left = -20; r.offset_top = -20
-		r.offset_right = 20; r.offset_bottom = 20
 		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		b.add_child(r)
+		cc.add_child(r)
 	else:
 		b.text = fallback_text
 		b.add_theme_font_size_override("font_size", 24)
