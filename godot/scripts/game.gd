@@ -42,6 +42,7 @@ const OP_LOOT_TAKE := 18
 const OP_LOOT_TAKE_ALL := 19
 const OP_SKILL        := 20
 const OP_SKILL_FX     := 21
+const OP_SKILL_REJECT := 22
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -473,6 +474,11 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_MOBS:       _apply_mobs(body)
 		OP_SKILL_FX:
 			_handle_skill_fx(body)
+		OP_SKILL_REJECT:
+			# Сервер отверг скилл — сбрасываем локальный кулдаун
+			var rej_skill := int(body.get("skill", 0)) - 1
+			if rej_skill >= 0 and rej_skill < skillbar.cooldowns.size():
+				skillbar.cooldowns[rej_skill] = 0.0
 		OP_HIT_FLASH:
 			var mid: String = String(body.get("mobId", ""))
 			var m: Mob = mobs.get(mid)

@@ -130,6 +130,7 @@ const OP_LOOT_TAKE    = 18; // client → server { mobId, index } — забра
 const OP_LOOT_TAKE_ALL = 19; // client → server { mobId } — забрать всё что влезет
 const OP_SKILL        = 20; // client → server { skill, mobId?, x?, y? }
 const OP_SKILL_FX     = 21; // server → clients, visual effect for skill
+const OP_SKILL_REJECT = 22; // server → caster, скилл отвергнут (сбросить локальный cd)
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -726,13 +727,28 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     const body = JSON.parse(nk.binaryToString(msg.data)) as { skill?: number; mobId?: string; x?: number; y?: number };
                     const skill = Number(body.skill);
                     const spec = SKILLS[skill];
-                    if (!spec) break;
+                    if (!spec) {
+                        dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill }), [player.presence]);
+                        break;
+                    }
                     const cdEnd = player.skillCd[skill] || 0;
-                    if (t < cdEnd) break;
+                    if (t < cdEnd) {
+                        dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill, reason: "cooldown" }), [player.presence]);
+                        break;
+                    }
                     const hasBow = (player.equipment.weapon || "").includes("bow");
-                    if (spec.requiresBow && !hasBow) break;
+                    if (spec.requiresBow && !hasBow) {
+                        dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill, reason: "no_bow" }), [player.presence]);
+                        break;
+                    }
                     const baseDmg = computeDamage(player);
+                    const cdBefore = player.skillCd[skill] || 0;
                     spec.handler({ player, body, t, state, dispatcher, baseDmg });
+                    // Если handler не поставил cooldown — значит скилл не сработал
+                    // (например, цель не в зоне, мобид невалидный)
+                    if ((player.skillCd[skill] || 0) === cdBefore) {
+                        dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill, reason: "out_of_range" }), [player.presence]);
+                    }
                 } catch (_e) {}
                 break;
             }
