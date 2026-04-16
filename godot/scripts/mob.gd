@@ -70,9 +70,9 @@ func _ready() -> void:
 
 	_highlight_ring = Sprite2D.new()
 	_highlight_ring.texture = _make_ring_texture()
-	_highlight_ring.scale = Vector2(1.4, 0.7)
-	_highlight_ring.position.y = 6
-	_highlight_ring.modulate = Color(1.0, 0.35, 0.25, 0.7)
+	_highlight_ring.scale = Vector2(1.8, 0.9)
+	_highlight_ring.position.y = 20
+	_highlight_ring.modulate = Color(1.0, 0.4, 0.3, 0.95)
 	_highlight_ring.visible = false
 	_highlight_ring.z_index = -1
 	add_child(_highlight_ring)
@@ -125,18 +125,21 @@ func set_highlight(on: bool) -> void:
 		_highlight_ring.visible = on and alive
 
 func _make_ring_texture() -> ImageTexture:
-	var size := 32
+	var size := 40
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	var c := Vector2(size * 0.5, size * 0.5)
+	var r_out: float = size * 0.48
+	var r_in: float = size * 0.30
 	for y in range(size):
 		for x in range(size):
 			var d: float = Vector2(x, y).distance_to(c)
-			var r_out := size * 0.48
-			var r_in := size * 0.34
 			if d >= r_in and d <= r_out:
-				var edge: float = minf(d - r_in, r_out - d) / 2.0
+				var edge: float = minf(d - r_in, r_out - d) / 3.0
 				var a: float = clampf(edge, 0.0, 1.0)
 				img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+			elif d < r_in:
+				var a_inner: float = (r_in - d) / r_in * 0.15
+				img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a_inner))
 	return ImageTexture.create_from_image(img)
 
 func set_hp(v: float, vmax: float) -> void:
@@ -150,13 +153,15 @@ func flash() -> void:
 	sprite.modulate = Color(1.5, 1.5, 1.5, 1.0)
 
 func _process(delta: float) -> void:
+	_glow_t += delta
 	if glow and glow.visible:
-		_glow_t += delta
-		var pulse: float = 0.5 + 0.4 * sin(_glow_t * 3.0)
-		glow.modulate.a = pulse
+		var g_pulse: float = 0.5 + 0.4 * sin(_glow_t * 3.0)
+		glow.modulate.a = g_pulse
 		glow.rotation = _glow_t * 0.5
 	if _highlight_ring and _highlight_ring.visible:
-		_highlight_ring.modulate.a = 0.5 + 0.2 * sin(_glow_t * 4.0)
+		_highlight_ring.modulate.a = 0.75 + 0.25 * sin(_glow_t * 4.5)
+		var h_pulse: float = 1.0 + 0.1 * sin(_glow_t * 4.5)
+		_highlight_ring.scale = Vector2(1.8 * h_pulse, 0.9 * h_pulse)
 	if not alive:
 		return
 	_anim_t += delta
