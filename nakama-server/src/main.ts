@@ -128,6 +128,8 @@ const OP_CHAT_SEND    = 16; // client → server, chat line
 const OP_CHAT_RELAY   = 17; // server → clients, broadcast chat line
 const OP_LOOT_TAKE    = 18; // client → server { mobId, index } — забрать конкретный предмет с трупа
 const OP_LOOT_TAKE_ALL = 19; // client → server { mobId } — забрать всё что влезет
+const OP_SKILL        = 20; // client → server { skill, mobId?, x?, y? }
+const OP_SKILL_FX     = 21; // server → clients, visual effect for skill
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -159,6 +161,26 @@ interface MatchPlayer {
     dirtyMe: boolean;
     lastAttackAt: number;
     lastTouchedByMob: { [mobId: string]: number };
+    skillCd: { [skill: number]: number };  // ms timestamp when cooldown ends
+    invulnUntil: number;
+    atkSpeedBoostUntil: number;
+    preciseShotReady: boolean;
+}
+
+interface ActiveZone {
+    id: string;
+    kind: "arrow_rain";
+    x: number; y: number; radius: number;
+    nextTickAt: number;
+    endAt: number;
+    ownerSid: string;
+}
+
+interface MobDebuff {
+    poisonStacks: number;
+    poisonEndAt: number;
+    slowEndAt: number;
+    nextPoisonTickAt: number;
 }
 
 const EQUIP_SLOTS = ["head", "body", "weapon", "boots", "belt", "ring1", "ring2", "cloak", "amulet"];
@@ -187,11 +209,13 @@ interface MatchMob {
     target: Vec2 | null;
     loot: InvEntry[];
     dirty: boolean;
+    debuff?: MobDebuff;
 }
 
 interface WorldState {
     players: { [sessionId: string]: MatchPlayer };
     mobs: { [mobId: string]: MatchMob };
+    zones: ActiveZone[];
     tick: number;
 }
 
@@ -246,6 +270,16 @@ function addToInventory(p: MatchPlayer, itemId: string, qty: number): boolean {
     }
     markMe(p);
     return qty === 0;
+}
+
+function killMob(mob: MatchMob, player: MatchPlayer, t: number): void {
+    mob.hp = 0; mob.state = "dead";
+    mob.respawnAt = t + MOB_TYPES[mob.type].respawnMs;
+    mob.debuff = undefined;
+    const def = MOB_TYPES[mob.type];
+    grantXp(player, def.xp);
+    player.gold += def.gold;
+    markMe(player);
 }
 
 function spawnMob(id: string, spec: MobSpawn): MatchMob {
@@ -347,7 +381,7 @@ function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkru
         const mobId = "m" + i;
         mobs[mobId] = spawnMob(mobId, WORLD.mobSpawns[i]);
     }
-    const state: WorldState = { players: {}, mobs: mobs, tick: 0 };
+    const state: WorldState = { players: {}, mobs: mobs, zones: [], tick: 0 };
     return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL };
 }
 
@@ -383,6 +417,10 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             dirtyPos: true, dirtyMe: true,
             lastAttackAt: 0,
             lastTouchedByMob: {},
+            skillCd: {},
+            invulnUntil: 0,
+            atkSpeedBoostUntil: 0,
+            preciseShotReady: false,
         };
         player.hpMax = computeHpMax(player);
         player.hp = player.hpMax;
@@ -497,7 +535,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     const mobId = String(body.mobId || "");
                     const mob = state.mobs[mobId];
                     if (!mob || mob.state !== "alive") break;
-                    if (t - player.lastAttackAt < PLAYER_ATTACK_COOLDOWN_MS) break;
+                    const atkCd = t < player.atkSpeedBoostUntil ? PLAYER_ATTACK_COOLDOWN_MS * 0.5 : PLAYER_ATTACK_COOLDOWN_MS;
+                    if (t - player.lastAttackAt < atkCd) break;
                     const hasBow = (player.equipment.weapon || "").includes("bow");
                     const atkRange = hasBow ? PLAYER_ATTACK_RANGE : 50;
                     if (dist(mob.pos, player.pos) > atkRange) break;
@@ -651,6 +690,136 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 } catch (_e) {}
                 break;
             }
+            case OP_SKILL: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { skill?: number; mobId?: string; x?: number; y?: number };
+                    const skill = Number(body.skill);
+                    const cdEnd = player.skillCd[skill] || 0;
+                    if (t < cdEnd) break;
+                    const hasBow = (player.equipment.weapon || "").includes("bow");
+                    if (!hasBow && (skill === 1 || skill === 2 || skill === 4 || skill === 5)) break;
+                    const baseDmg = computeDamage(player);
+                    switch (skill) {
+                        case 1: {  // Меткий выстрел — x2 damage single shot
+                            const mob = state.mobs[String(body.mobId || "")];
+                            if (!mob || mob.state !== "alive") break;
+                            if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE) break;
+                            const dmg = baseDmg * 2;
+                            mob.hp -= dmg;
+                            mob.dirty = true;
+                            dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
+                                fx: player.pos.x, fy: player.pos.y,
+                                tx: mob.pos.x, ty: mob.pos.y,
+                                crit: true,
+                            }));
+                            dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mob.id, dmg: dmg, crit: true }));
+                            if (mob.hp <= 0) killMob(mob, player, t);
+                            player.skillCd[skill] = t + 5000;
+                            break;
+                        }
+                        case 2: {  // Ливень стрел — AoE zone 3.5s
+                            const zx = Number(body.x); const zy = Number(body.y);
+                            if (!isFinite(zx) || !isFinite(zy)) break;
+                            state.zones.push({
+                                id: "z" + t + Math.random().toString(36).slice(2,6),
+                                kind: "arrow_rain",
+                                x: zx, y: zy, radius: 80,
+                                nextTickAt: t + 400,
+                                endAt: t + 3500,
+                                ownerSid: player.sessionId,
+                            });
+                            dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
+                                kind: "rain_start", x: zx, y: zy, r: 80,
+                                fx: player.pos.x, fy: player.pos.y,
+                                duration: 3500,
+                            }));
+                            player.skillCd[skill] = t + 12000;
+                            break;
+                        }
+                        case 3: {  // Отскок — teleport back + 0.5s invuln + 3s atkspeed
+                            const target = body.mobId ? state.mobs[body.mobId] : null;
+                            let dx = 0, dy = 1;
+                            if (target) {
+                                const vx = player.pos.x - target.pos.x;
+                                const vy = player.pos.y - target.pos.y;
+                                const len = Math.sqrt(vx*vx + vy*vy) || 1;
+                                dx = vx / len; dy = vy / len;
+                            }
+                            player.pos.x = Math.max(TILE_SIZE, Math.min(MAP_WIDTH - TILE_SIZE, player.pos.x + dx * 80));
+                            player.pos.y = Math.max(TILE_SIZE, Math.min(MAP_HEIGHT - TILE_SIZE, player.pos.y + dy * 80));
+                            player.dirtyPos = true;
+                            player.invulnUntil = t + 500;
+                            player.atkSpeedBoostUntil = t + 3000;
+                            dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
+                                kind: "dodge", sid: player.sessionId,
+                                fx: player.pos.x, fy: player.pos.y,
+                            }));
+                            player.skillCd[skill] = t + 8000;
+                            break;
+                        }
+                        case 4: {  // Отравленная стрела — DoT + slow, stacks 3
+                            const mob = state.mobs[String(body.mobId || "")];
+                            if (!mob || mob.state !== "alive") break;
+                            if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE) break;
+                            mob.hp -= baseDmg;
+                            mob.dirty = true;
+                            if (!mob.debuff) mob.debuff = { poisonStacks: 0, poisonEndAt: 0, slowEndAt: 0, nextPoisonTickAt: 0 };
+                            mob.debuff.poisonStacks = Math.min(3, mob.debuff.poisonStacks + 1);
+                            mob.debuff.poisonEndAt = t + 7000;
+                            mob.debuff.slowEndAt = t + 7000;
+                            mob.debuff.nextPoisonTickAt = t + 1000;
+                            dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
+                                fx: player.pos.x, fy: player.pos.y,
+                                tx: mob.pos.x, ty: mob.pos.y,
+                                poison: true,
+                            }));
+                            dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mob.id, dmg: baseDmg, poison: true }));
+                            if (mob.hp <= 0) killMob(mob, player, t);
+                            player.skillCd[skill] = t + 6000;
+                            break;
+                        }
+                        case 5: {  // Призрачный залп — 5 arrows in cone
+                            const targetX = Number(body.x); const targetY = Number(body.y);
+                            const aimX = isFinite(targetX) ? targetX : player.pos.x + 100;
+                            const aimY = isFinite(targetY) ? targetY : player.pos.y;
+                            const baseAng = Math.atan2(aimY - player.pos.y, aimX - player.pos.x);
+                            const angles = [-0.35, -0.17, 0, 0.17, 0.35];
+                            const hit = new Set<string>();
+                            for (const da of angles) {
+                                const ang = baseAng + da;
+                                const tx = player.pos.x + Math.cos(ang) * PLAYER_ATTACK_RANGE;
+                                const ty = player.pos.y + Math.sin(ang) * PLAYER_ATTACK_RANGE;
+                                dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
+                                    fx: player.pos.x, fy: player.pos.y, tx: tx, ty: ty,
+                                    ghost: true,
+                                }));
+                                for (const mk of Object.keys(state.mobs)) {
+                                    const m = state.mobs[mk];
+                                    if (m.state !== "alive" || hit.has(m.id)) continue;
+                                    // point-to-line distance from mob to ray
+                                    const vx = tx - player.pos.x, vy = ty - player.pos.y;
+                                    const wx = m.pos.x - player.pos.x, wy = m.pos.y - player.pos.y;
+                                    const proj = (wx*vx + wy*vy) / (vx*vx + vy*vy);
+                                    if (proj < 0 || proj > 1) continue;
+                                    const px = player.pos.x + proj * vx, py = player.pos.y + proj * vy;
+                                    const dd = Math.sqrt((m.pos.x-px)**2 + (m.pos.y-py)**2);
+                                    if (dd < 24) {
+                                        const dmg = Math.floor(baseDmg * 0.8);
+                                        m.hp -= dmg;
+                                        m.dirty = true;
+                                        hit.add(m.id);
+                                        dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: m.id, dmg: dmg, ghost: true }));
+                                        if (m.hp <= 0) killMob(m, player, t);
+                                    }
+                                }
+                            }
+                            player.skillCd[skill] = t + 15000;
+                            break;
+                        }
+                    }
+                } catch (_e) {}
+                break;
+            }
             case OP_SELL: {
                 try {
                     const body = JSON.parse(nk.binaryToString(msg.data)) as { slot?: number };
@@ -674,6 +843,25 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         }
     }
 
+    // --- active zones (arrow rain) ---
+    for (let zi = state.zones.length - 1; zi >= 0; zi--) {
+        const z = state.zones[zi];
+        if (t >= z.endAt) { state.zones.splice(zi, 1); continue; }
+        if (t < z.nextTickAt) continue;
+        z.nextTickAt = t + 400;
+        const owner = state.players[z.ownerSid];
+        const ownerDmg = owner ? Math.floor(computeDamage(owner) * 0.45) : 3;
+        for (const mk of Object.keys(state.mobs)) {
+            const m = state.mobs[mk];
+            if (m.state !== "alive") continue;
+            if (dist(m.pos, { x: z.x, y: z.y }) > z.radius) continue;
+            m.hp -= ownerDmg;
+            m.dirty = true;
+            dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: m.id, dmg: ownerDmg }));
+            if (m.hp <= 0 && owner) killMob(m, owner, t);
+        }
+    }
+
     // --- mob AI + touch damage ---
     const mobKeys = Object.keys(state.mobs);
     for (let i = 0; i < mobKeys.length; i++) {
@@ -687,6 +875,24 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             continue;
         }
         const def = MOB_TYPES[mob.type];
+        // Poison DoT
+        if (mob.debuff && t < mob.debuff.poisonEndAt && t >= mob.debuff.nextPoisonTickAt) {
+            const dot = 3 * mob.debuff.poisonStacks;
+            mob.hp -= dot;
+            mob.dirty = true;
+            mob.debuff.nextPoisonTickAt = t + 1000;
+            dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mob.id, dmg: dot, poison: true }));
+            if (mob.hp <= 0) {
+                // Find any player to credit; fallback to first alive
+                const pKeys2 = Object.keys(state.players);
+                if (pKeys2.length > 0) killMob(mob, state.players[pKeys2[0]], t);
+                else { mob.hp = 0; mob.state = "dead"; mob.respawnAt = t + def.respawnMs; }
+                continue;
+            }
+        }
+        if (mob.debuff && t >= mob.debuff.poisonEndAt) mob.debuff = undefined;
+        const slowed = mob.debuff && t < mob.debuff.slowEndAt;
+        const speed = slowed ? def.speed * 0.7 : def.speed;
         if (!mob.target || dist(mob.pos, mob.target) < 4) {
             const angle = Math.random() * Math.PI * 2;
             const r = Math.random() * def.wanderRadius;
@@ -695,7 +901,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 y: clamp(mob.home.y + Math.sin(angle) * r, 0, MAP_HEIGHT - 1),
             };
         }
-        const step = Math.min(dist(mob.pos, mob.target), def.speed * TICK_DT);
+        const step = Math.min(dist(mob.pos, mob.target), speed * TICK_DT);
         if (step > 0.01) {
             const dx = mob.target.x - mob.pos.x; const dy = mob.target.y - mob.pos.y;
             const d = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -710,6 +916,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         for (let j = 0; j < playerKeys.length; j++) {
             const p = state.players[playerKeys[j]];
             if (p.hp <= 0) continue;
+            if (t < p.invulnUntil) continue;
             if (dist(p.pos, mob.pos) > def.touchRange) continue;
             const last = p.lastTouchedByMob[mob.id] || 0;
             if (t - last < def.touchCooldownMs) continue;

@@ -14,6 +14,7 @@ const NAMEPLATE_SCRIPT := preload("res://scripts/nameplate.gd")
 const CHARACTER_SCRIPT := preload("res://scripts/character_window.gd")
 const BAG_SCRIPT := preload("res://scripts/bag_window.gd")
 const LOOT_SCRIPT := preload("res://scripts/loot_window.gd")
+const SKILLBAR_SCRIPT := preload("res://scripts/skillbar.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -39,6 +40,8 @@ const OP_CHAT_SEND := 16
 const OP_CHAT_RELAY := 17
 const OP_LOOT_TAKE := 18
 const OP_LOOT_TAKE_ALL := 19
+const OP_SKILL        := 20
+const OP_SKILL_FX     := 21
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -71,6 +74,8 @@ var attack_cooldown := 0.0
 var _click_marker: Sprite2D
 var _click_marker_t := 0.0
 var _prev_highlight: Mob = null
+var skillbar: SkillBar
+var targeting_skill: int = -1  # -1 = нет таргетинга, иначе индекс скилла в SKILLS
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -142,6 +147,10 @@ func _ready() -> void:
 	bag_win.use_or_equip.connect(_on_inv_click)
 	hud.bag_button_pressed.connect(_on_bag_button)
 
+	skillbar = SKILLBAR_SCRIPT.new()
+	add_child(skillbar)
+	skillbar.skill_activated.connect(_on_skill_activated)
+
 	loot_win = LOOT_SCRIPT.new()
 	add_child(loot_win)
 	loot_win.take_requested.connect(func(mob_id, idx):
@@ -155,6 +164,11 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var world_pos := get_viewport().get_camera_2d().get_global_mouse_position()
+		if targeting_skill >= 0:
+			var idx := targeting_skill
+			targeting_skill = -1
+			_send_skill(idx, {"skill": idx, "x": world_pos.x, "y": world_pos.y})
+			return
 		# NPC takes priority over mobs/move.
 		var npc := _npc_at(world_pos)
 		if not npc.is_empty():
@@ -271,6 +285,8 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 	match state.op_code:
 		OP_POSITIONS:  _apply_positions(body)
 		OP_MOBS:       _apply_mobs(body)
+		OP_SKILL_FX:
+			_handle_skill_fx(body)
 		OP_HIT_FLASH:
 			var mid: String = String(body.get("mobId", ""))
 			var m: Mob = mobs.get(mid)
@@ -474,6 +490,109 @@ func _on_chat_send(text: String) -> void:
 	if match_id == "":
 		return
 	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text}))
+
+func _handle_skill_fx(body: Dictionary) -> void:
+	var kind := String(body.get("kind", ""))
+	if kind == "rain_start":
+		var pos := Vector2(float(body.get("x", 0)), float(body.get("y", 0)))
+		var r := float(body.get("r", 80))
+		var dur_ms := int(body.get("duration", 3500))
+		_spawn_rain_zone(pos, r, dur_ms)
+	elif kind == "dodge":
+		var sid := String(body.get("sid", ""))
+		var px := float(body.get("fx", 0)); var py := float(body.get("fy", 0))
+		var p: Player = me if sid == my_session_id else remotes.get(sid)
+		if p:
+			p.position = Vector2(px, py)
+			p.flash()
+
+func _spawn_rain_zone(pos: Vector2, radius: float, duration_ms: int) -> void:
+	var node := Node2D.new()
+	node.position = pos
+	node.z_index = 90
+	world.add_child(node)
+	var circle := _make_circle_sprite(radius, Color(1.0, 0.7, 0.3, 0.35))
+	circle.modulate = Color(1.0, 0.7, 0.3, 0.45)
+	node.add_child(circle)
+	var spawn_t := 0.0
+	var elapsed := 0.0
+	node.set_meta("tick", Callable(func(delta: float):
+		elapsed += delta
+		spawn_t -= delta
+		if spawn_t <= 0.0:
+			spawn_t = 0.05
+			_spawn_falling_arrow(pos + Vector2(randf_range(-radius, radius), randf_range(-radius, radius)))
+		if elapsed * 1000.0 >= duration_ms:
+			node.queue_free()))
+	var timer := Timer.new()
+	timer.wait_time = 0.03
+	timer.one_shot = false
+	timer.autostart = true
+	timer.timeout.connect(func():
+		if not is_instance_valid(node): return
+		var cb: Callable = node.get_meta("tick")
+		cb.call(0.03))
+	node.add_child(timer)
+
+func _spawn_falling_arrow(target: Vector2) -> void:
+	var arrow := Sprite2D.new()
+	arrow.texture = load("res://assets/sprites/class_archer.png")
+	arrow.scale = Vector2(0.4, 0.4)
+	arrow.rotation = deg_to_rad(90)
+	arrow.position = target + Vector2(0, -200)
+	arrow.z_index = 110
+	arrow.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	world.add_child(arrow)
+	var tw := create_tween()
+	tw.tween_property(arrow, "position", target, 0.25)
+	tw.tween_property(arrow, "modulate:a", 0.0, 0.15)
+	tw.finished.connect(arrow.queue_free)
+
+func _make_circle_sprite(radius: float, color: Color) -> Sprite2D:
+	var d := int(ceil(radius * 2))
+	var img := Image.create(d, d, false, Image.FORMAT_RGBA8)
+	var c := Vector2(d * 0.5, d * 0.5)
+	for y in range(d):
+		for x in range(d):
+			var dd: float = Vector2(x, y).distance_to(c)
+			if dd < radius and dd > radius - 2.0:
+				img.set_pixel(x, y, color)
+			elif dd < radius:
+				var a: float = (1.0 - dd / radius) * 0.2
+				img.set_pixel(x, y, Color(color.r, color.g, color.b, a))
+	var tex := ImageTexture.create_from_image(img)
+	var s := Sprite2D.new()
+	s.texture = tex
+	s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	return s
+
+func _on_skill_activated(index: int) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	var sk: Dictionary = skillbar.SKILLS[index]
+	if skillbar.cooldowns[index] > 0.0:
+		return
+	if bool(sk["targets_ground"]):
+		targeting_skill = index
+		return
+	if bool(sk["targets_mob"]):
+		if attack_target == null or not is_instance_valid(attack_target) or not attack_target.alive:
+			return
+		_send_skill(index, {"skill": index, "mobId": attack_target.mob_id})
+		return
+	# self / non-targeted — e.g. dodge
+	var payload := {"skill": index}
+	if attack_target and is_instance_valid(attack_target):
+		payload["mobId"] = attack_target.mob_id
+	_send_skill(index, payload)
+
+func _send_skill(index: int, payload: Dictionary) -> void:
+	Session.socket.send_match_state_async(match_id, OP_SKILL, JSON.stringify(payload))
+	skillbar.trigger_cooldown(index)
+	if index == 0 or index == 3:  # bow shot skills
+		me.play_bow_shot()
+	elif index == 4:
+		me.play_bow_shot()
 
 func _spawn_damage_label(pos: Vector2, dmg: int) -> void:
 	var lbl := Label.new()

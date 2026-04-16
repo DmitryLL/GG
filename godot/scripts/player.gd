@@ -161,19 +161,23 @@ func _update_bow_position() -> void:
 		return
 	match facing:
 		Dir.DOWN:
-			bow_sprite.position = Vector2(8, -14)
+			bow_sprite.position = Vector2(6, -16)
+			bow_sprite.rotation = 0
 			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
 		Dir.UP:
-			bow_sprite.position = Vector2(-8, -16)
+			bow_sprite.position = Vector2(-6, -18)
+			bow_sprite.rotation = 0
 			bow_sprite.flip_h = true
 			bow_sprite.z_index = -1
 		Dir.LEFT:
-			bow_sprite.position = Vector2(-10, -14)
-			bow_sprite.flip_h = true
+			bow_sprite.position = Vector2(-4, -20)
+			bow_sprite.rotation = deg_to_rad(-90)
+			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
 		Dir.RIGHT:
-			bow_sprite.position = Vector2(10, -14)
+			bow_sprite.position = Vector2(4, -20)
+			bow_sprite.rotation = deg_to_rad(90)
 			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
 
