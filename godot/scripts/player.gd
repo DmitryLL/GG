@@ -47,7 +47,7 @@ func _ready() -> void:
 	sprite.hframes = 3
 	sprite.vframes = 4
 	sprite.frame = Dir.DOWN * 3
-	sprite.scale = Vector2(1.5, 1.5)
+	sprite.scale = Vector2(1.0, 1.0)
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sprite.offset = Vector2(0, -16)
 	add_child(sprite)

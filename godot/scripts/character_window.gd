@@ -149,7 +149,7 @@ func _build_doll(parent: Container) -> void:
 
 	doll_sprite = Sprite2D.new()
 	doll_sprite.position = Vector2(140, 175)
-	doll_sprite.scale = Vector2(2.7, 2.7)
+	doll_sprite.scale = Vector2(1.8, 1.8)
 	doll_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	doll_root.add_child(doll_sprite)
 
