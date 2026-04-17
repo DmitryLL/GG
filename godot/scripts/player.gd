@@ -251,15 +251,18 @@ func _update_bow_position() -> void:
 			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
 
-var _punch_t := 0.0
-var _bow_shot_t := 0.0
-var _roll_t := 0.0
+# Все анимационные таймеры — абсолютный server-time (мс), чтобы при
+# сворачивании вкладки клиентский process не тормозил длительность.
+# Проверка: if Session.server_now_ms() < _xxx_end_ms: играем.
+var _punch_end_ms: int = 0
+var _bow_shot_end_ms: int = 0
+var _roll_end_ms: int = 0
 const BOW_SHOT_DURATION := 0.55
 const ROLL_DURATION := 0.4
 const ROLL_FRAMES := 6
 
 func play_punch() -> void:
-	_punch_t = PUNCH_DURATION
+	_punch_end_ms = Session.server_now_ms() + int(PUNCH_DURATION * 1000.0)
 	sprite.texture = load("res://assets/sprites/char_base_punch.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
@@ -271,7 +274,7 @@ func play_bow_shot() -> void:
 	# 4 кадра × 4 направления. Направление «вверх» пока использует south
 	# до генерации специфического ракурса.
 	if not _has_bow: return
-	_bow_shot_t = SHOOT_DURATION
+	_bow_shot_end_ms = Session.server_now_ms() + int(SHOOT_DURATION * 1000.0)
 	sprite.texture = load("res://assets/sprites/char_base_shoot.png")
 	sprite.hframes = SHOOT_HFRAMES
 	sprite.vframes = 4
@@ -279,7 +282,7 @@ func play_bow_shot() -> void:
 
 func play_roll() -> void:
 	# Временно: перекат = короткий punch-sprite (пока нет отдельного rig).
-	_roll_t = ROLL_DURATION
+	_roll_end_ms = Session.server_now_ms() + int(ROLL_DURATION * 1000.0)
 	sprite.texture = load("res://assets/sprites/char_base_punch.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
@@ -383,41 +386,45 @@ func _set_facing_from(delta: Vector2) -> void:
 		facing = Dir.DOWN if delta.y > 0 else Dir.UP
 	_update_bow_position()
 
-func _animate(delta: float) -> void:
+func _animate(_delta: float) -> void:
 	var base := facing * WALK_HFRAMES
+	var now_s: int = Session.server_now_ms()
 	# Roll (отскок)
-	if _roll_t > 0.0:
-		_roll_t -= delta
-		var rprog: float = 1.0 - (_roll_t / ROLL_DURATION)
+	if now_s < _roll_end_ms:
+		var remain: int = _roll_end_ms - now_s
+		var rprog: float = 1.0 - float(remain) / (ROLL_DURATION * 1000.0)
 		var rframe: int = clampi(int(rprog * PUNCH_HFRAMES), 0, PUNCH_HFRAMES - 1)
 		sprite.frame = facing * PUNCH_HFRAMES + rframe
 		sprite.offset = Vector2(0, -24)
 		_sync_layers()
-		if _roll_t <= 0.0:
-			_restore_walk_sprite()
 		return
+	elif _roll_end_ms > 0:
+		_roll_end_ms = 0
+		_restore_walk_sprite()
 	# Bow shot: archer-rig 4 frames, overlay лука рисуется сам отдельно.
-	if _bow_shot_t > 0.0:
-		_bow_shot_t -= delta
-		var progress: float = 1.0 - (_bow_shot_t / SHOOT_DURATION)
+	if now_s < _bow_shot_end_ms:
+		var remain2: int = _bow_shot_end_ms - now_s
+		var progress: float = 1.0 - float(remain2) / (SHOOT_DURATION * 1000.0)
 		var frame_in_row: int = clampi(int(progress * SHOOT_HFRAMES), 0, SHOOT_HFRAMES - 1)
 		sprite.frame = facing * SHOOT_HFRAMES + frame_in_row
 		sprite.offset = Vector2(0, -24)
 		_sync_layers()
-		if _bow_shot_t <= 0.0:
-			_restore_walk_sprite()
 		return
+	elif _bow_shot_end_ms > 0:
+		_bow_shot_end_ms = 0
+		_restore_walk_sprite()
 	# Punch: полная 6-кадровая анимация из char_base_punch.png.
-	if _punch_t > 0.0:
-		_punch_t -= delta
-		var pprog: float = 1.0 - (_punch_t / PUNCH_DURATION)
+	if now_s < _punch_end_ms:
+		var remain3: int = _punch_end_ms - now_s
+		var pprog: float = 1.0 - float(remain3) / (PUNCH_DURATION * 1000.0)
 		var pframe: int = clampi(int(pprog * PUNCH_HFRAMES), 0, PUNCH_HFRAMES - 1)
 		sprite.frame = facing * PUNCH_HFRAMES + pframe
 		sprite.offset = Vector2(0, -24)
 		_sync_layers()
-		if _punch_t <= 0.0:
-			_restore_walk_sprite()
 		return
+	elif _punch_end_ms > 0:
+		_punch_end_ms = 0
+		_restore_walk_sprite()
 	sprite.offset = Vector2(0, -24)
 	if bow_sprite and bow_sprite.visible:
 		bow_sprite.scale = Vector2(0.6, 0.6)

@@ -74,7 +74,15 @@ var last_sent_pos: Vector2 = Vector2.INF
 var attack_target: Mob = null
 var pvp_target: Player = null
 var pvp_target_sid: String = ""
-var attack_cooldown := 0.0
+# attack_ready_at_ms — абсолютное server-time (мс), когда следующий
+# авто-удар станет разрешён. Заменяет старый client-side counter.
+var attack_ready_at_ms: int = 0
+
+func _attack_ready() -> bool:
+	return Session.server_now_ms() >= attack_ready_at_ms
+
+func _set_attack_cooldown(seconds: float) -> void:
+	attack_ready_at_ms = Session.server_now_ms() + int(seconds * 1000.0)
 var queued_skill: int = -1  # скилл ожидающий подхода к цели
 var queued_ground_pos: Vector2 = Vector2.ZERO  # точка каста для ground-скилла
 var queued_approach_pos: Vector2 = Vector2.ZERO  # куда идти чтобы попасть в зону каста
@@ -268,16 +276,16 @@ func _process(delta: float) -> void:
 				me.face_toward(pvp_target.position)
 				if skillbar.cooldowns[queued_skill] <= 0.0:
 					_send_skill(queued_skill, {"skill": queued_skill + 1, "sid": pvp_target_sid})
-					attack_cooldown = PLAYER_ATTACK_COOLDOWN
+					_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 					queued_skill = -1
 				return
 
 			if d_pvp <= atk_range_pvp:
 				me.has_target = false
 				me.face_toward(pvp_target.position)
-				if attack_cooldown <= 0.0:
+				if _attack_ready():
 					Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"sid": pvp_target_sid}))
-					attack_cooldown = PLAYER_ATTACK_COOLDOWN
+					_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 					if has_bow_pvp:
 						me.play_bow_shot()
 					else:
@@ -299,7 +307,7 @@ func _process(delta: float) -> void:
 					me.has_target = false
 					me.face_toward(queued_ground_pos)
 					_send_skill(queued_skill, {"skill": queued_skill + 1, "x": queued_ground_pos.x, "y": queued_ground_pos.y})
-					attack_cooldown = PLAYER_ATTACK_COOLDOWN
+					_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 					queued_skill = -1
 					return
 				# Иначе идём к approach (точка зафиксирована в момент queue, не дёргается)
@@ -326,7 +334,7 @@ func _process(delta: float) -> void:
 				me.face_toward(attack_target.position)
 				if skillbar.cooldowns[queued_skill] <= 0.0:
 					_send_skill(queued_skill, {"skill": queued_skill + 1, "mobId": attack_target.mob_id})
-					attack_cooldown = PLAYER_ATTACK_COOLDOWN
+					_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 					queued_skill = -1
 				return
 			if has_bow:
@@ -334,9 +342,9 @@ func _process(delta: float) -> void:
 				if d_bow <= PLAYER_ATTACK_RANGE:
 					me.has_target = false
 					me.face_toward(attack_target.position)
-					if attack_cooldown <= 0.0:
+					if _attack_ready():
 						Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": attack_target.mob_id}))
-						attack_cooldown = PLAYER_ATTACK_COOLDOWN
+						_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 						me.play_bow_shot()
 				else:
 					_send_move_intent(attack_target.position)
@@ -360,14 +368,14 @@ func _process(delta: float) -> void:
 					me.has_target = false
 					me.position = cardinal_spot
 					me.face_toward(attack_target.position)
-					if attack_cooldown <= 0.0:
+					if _attack_ready():
 						Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": attack_target.mob_id}))
-						attack_cooldown = PLAYER_ATTACK_COOLDOWN
+						_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 						me.play_punch()
 				else:
 					_send_move_intent(cardinal_spot)
-	if attack_cooldown > 0.0:
-		attack_cooldown -= delta
+	# attack cooldown теперь на server-time (_attack_ready / attack_ready_at_ms),
+	# client-side декремента больше нет.
 
 	if nameplate:
 		if attack_target != null:
@@ -496,10 +504,9 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_CHAT_RELAY: _apply_chat(body)
 
 var _last_intent_ms: int = 0
-var _server_offset_ms: int = 0  # server_now = local + offset (из OP_ME.t)
 
 func server_now_ms() -> int:
-	return Time.get_ticks_msec() + _server_offset_ms
+	return Session.server_now_ms()
 
 func _send_move_intent(target: Vector2) -> void:
 	# Server-authoritative: клиент сообщает цель, сервер сам шагает.
@@ -570,7 +577,7 @@ func _apply_mobs(body: Dictionary) -> void:
 func _apply_me(body: Dictionary) -> void:
 	last_me = body
 	if body.has("t"):
-		_server_offset_ms = int(body["t"]) - Time.get_ticks_msec()
+		Session.server_offset_ms = int(body["t"]) - Time.get_ticks_msec()
 	hud.update_me(body)
 	if nameplate:
 		nameplate.update_me(body)
@@ -957,7 +964,7 @@ func _on_skill_activated(index: int) -> void:
 			if _has_valid_target():
 				# Цель уже выбрана — встаём в очередь без выбора
 				queued_skill = index
-				attack_cooldown = 0.0
+				attack_ready_at_ms = 0
 			else:
 				# Нет цели — ждём клика по мобу/игроку
 				targeting_skill = index
@@ -982,7 +989,7 @@ func _resolve_targeting_click(index: int, world_pos: Vector2) -> void:
 				pvp_target = null
 				_set_mob_highlight(mob_hit)
 				queued_skill = index
-				attack_cooldown = 0.0
+				attack_ready_at_ms = 0
 				targeting_skill = -1
 				Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 				return
@@ -993,7 +1000,7 @@ func _resolve_targeting_click(index: int, world_pos: Vector2) -> void:
 				attack_target = null
 				_set_mob_highlight(null)
 				queued_skill = index
-				attack_cooldown = 0.0
+				attack_ready_at_ms = 0
 				targeting_skill = -1
 				Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 				return
@@ -1015,7 +1022,7 @@ func _resolve_targeting_click(index: int, world_pos: Vector2) -> void:
 			else:
 				var dir0: Vector2 = (world_pos - me.position).normalized()
 				queued_approach_pos = world_pos - dir0 * max_cast_init
-			attack_cooldown = 0.0
+			attack_ready_at_ms = 0
 			targeting_skill = -1
 			Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 		_:
