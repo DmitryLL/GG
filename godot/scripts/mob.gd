@@ -3,8 +3,6 @@
 class_name Mob
 extends Node2D
 
-const POISON_ICON := preload("res://assets/sprites/skill_4.png")
-
 var _anim_fps := 4.0
 var _anim_frames := 4
 
@@ -19,7 +17,7 @@ var sprite: Sprite2D
 var hp_bg: ColorRect
 var hp_fill: ColorRect
 var glow: Sprite2D
-var debuff_icon: Sprite2D
+var effect_bar: EffectBar
 var _poison_end_ms: int = 0
 var _server_offset_ms: int = 0
 var _anim_t := 0.0
@@ -73,14 +71,9 @@ func _ready() -> void:
 	hp_fill.position = Vector2(-14, -22)
 	add_child(hp_fill)
 
-	debuff_icon = Sprite2D.new()
-	debuff_icon.texture = POISON_ICON
-	debuff_icon.position = Vector2(0, -40)
-	debuff_icon.scale = Vector2(0.4, 0.4)
-	debuff_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	debuff_icon.visible = false
-	debuff_icon.z_index = 10
-	add_child(debuff_icon)
+	effect_bar = EffectBar.new()
+	effect_bar.position = Vector2(-14, -17)
+	add_child(effect_bar)
 
 	_highlight_ring = Sprite2D.new()
 	_highlight_ring.texture = _make_ring_texture()
@@ -165,12 +158,12 @@ func set_hp(v: float, vmax: float) -> void:
 func set_debuff(d, server_now_ms: int) -> void:
 	if d == null or typeof(d) != TYPE_DICTIONARY:
 		_poison_end_ms = 0
-		if debuff_icon: debuff_icon.visible = false
-		return
-	_poison_end_ms = int(d.get("poisonEndAt", 0))
+	else:
+		_poison_end_ms = int(d.get("poisonEndAt", 0))
 	if server_now_ms > 0:
 		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
-	_update_debuff_visible()
+	if effect_bar:
+		effect_bar.set_effects(EffectBar.effects_from_mob_debuff(d), server_now_ms)
 
 func poison_active() -> bool:
 	if _poison_end_ms <= 0:
@@ -185,13 +178,9 @@ func poison_remaining_ms() -> int:
 	return max(0, _poison_end_ms - server_now)
 
 func _update_debuff_visible() -> void:
-	if debuff_icon == null:
+	if effect_bar == null:
 		return
-	if not alive or _poison_end_ms <= 0:
-		debuff_icon.visible = false
-		return
-	var server_now: int = Time.get_ticks_msec() + _server_offset_ms
-	debuff_icon.visible = _poison_end_ms > server_now
+	effect_bar.visible = alive
 
 func flash() -> void:
 	_flash_t = 0.1
@@ -200,8 +189,6 @@ func flash() -> void:
 func _process(delta: float) -> void:
 	_glow_t += delta
 	_update_debuff_visible()
-	if debuff_icon and debuff_icon.visible:
-		debuff_icon.modulate.a = 0.85 + 0.15 * sin(_glow_t * 5.0)
 	if glow and glow.visible:
 		var g_pulse: float = 0.5 + 0.4 * sin(_glow_t * 3.0)
 		glow.modulate.a = g_pulse

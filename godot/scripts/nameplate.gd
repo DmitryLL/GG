@@ -118,8 +118,8 @@ func _ready() -> void:
 	v.add_child(xp_bar)
 
 	effects_row = HBoxContainer.new()
-	effects_row.add_theme_constant_override("separation", 4)
-	effects_row.custom_minimum_size = Vector2(0, 44)
+	effects_row.add_theme_constant_override("separation", 2)
+	effects_row.custom_minimum_size = Vector2(0, 26)
 	effects_row.mouse_filter = Control.MOUSE_FILTER_PASS
 	v.add_child(effects_row)
 
@@ -182,8 +182,8 @@ func _ready() -> void:
 	target_hp_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	target_effects = HBoxContainer.new()
-	target_effects.add_theme_constant_override("separation", 4)
-	target_effects.custom_minimum_size = Vector2(0, 40)
+	target_effects.add_theme_constant_override("separation", 2)
+	target_effects.custom_minimum_size = Vector2(0, 26)
 	tv.add_child(target_effects)
 
 const MOB_NAMES := { "slime": "Слайм", "goblin": "Гоблин", "dummy": "Манекен" }
@@ -221,31 +221,31 @@ func _clear_target_effects() -> void:
 func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
 	var col := Color(0.95, 0.30, 0.28, 1.0)  # debuff red
 	var wrap := Panel.new()
-	wrap.custom_minimum_size = Vector2(32, 40)
+	wrap.custom_minimum_size = Vector2(20, 26)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.08, 0.06, 0.04, 0.92)
 	sb.border_color = col
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(4)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(3)
 	wrap.add_theme_stylebox_override("panel", sb)
 	var icon := TextureRect.new()
 	icon.texture = POISON_ICON if eff_type == "poison" else null
-	icon.custom_minimum_size = Vector2(24, 24)
-	icon.position = Vector2(4, 3)
-	icon.size = Vector2(24, 24)
+	icon.custom_minimum_size = Vector2(16, 16)
+	icon.position = Vector2(2, 1)
+	icon.size = Vector2(16, 16)
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wrap.add_child(icon)
 	var timer_lbl := Label.new()
 	timer_lbl.text = ("%.1fс" % (remain_ms / 1000.0)) if remain_ms < 10000 else ("%dс" % int(remain_ms / 1000))
-	timer_lbl.add_theme_font_size_override("font_size", 9)
+	timer_lbl.add_theme_font_size_override("font_size", 7)
 	timer_lbl.add_theme_color_override("font_color", col)
 	timer_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	timer_lbl.add_theme_constant_override("outline_size", 3)
+	timer_lbl.add_theme_constant_override("outline_size", 2)
 	timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	timer_lbl.position = Vector2(0, 26)
-	timer_lbl.size = Vector2(32, 12)
+	timer_lbl.position = Vector2(0, 17)
+	timer_lbl.size = Vector2(20, 9)
 	timer_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wrap.add_child(timer_lbl)
 	return wrap
@@ -287,14 +287,12 @@ func _make_effect_icon(eff: Dictionary) -> Control:
 	var col: Color = Color(0.30, 0.85, 0.35, 1.0) if is_buff else Color(0.95, 0.30, 0.28, 1.0)
 
 	var wrap := Panel.new()
-	wrap.custom_minimum_size = Vector2(34, 44)
+	wrap.custom_minimum_size = Vector2(20, 26)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.08, 0.06, 0.04, 0.92)
 	sb.border_color = col
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(4)
-	sb.shadow_color = Color(col.r, col.g, col.b, 0.45)
-	sb.shadow_size = 6
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(3)
 	wrap.add_theme_stylebox_override("panel", sb)
 
 	var tex_path := "res://assets/sprites/ui/effect_%s.png" % eff_type
@@ -305,9 +303,9 @@ func _make_effect_icon(eff: Dictionary) -> Control:
 	var icon := TextureRect.new()
 	if tex:
 		icon.texture = tex
-	icon.custom_minimum_size = Vector2(26, 26)
-	icon.position = Vector2(4, 3)
-	icon.size = Vector2(26, 26)
+	icon.custom_minimum_size = Vector2(16, 16)
+	icon.position = Vector2(2, 1)
+	icon.size = Vector2(16, 16)
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -316,13 +314,13 @@ func _make_effect_icon(eff: Dictionary) -> Control:
 	var timer_lbl := Label.new()
 	timer_lbl.name = "Timer"
 	timer_lbl.text = ""
-	timer_lbl.add_theme_font_size_override("font_size", 9)
+	timer_lbl.add_theme_font_size_override("font_size", 7)
 	timer_lbl.add_theme_color_override("font_color", col)
 	timer_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	timer_lbl.add_theme_constant_override("outline_size", 3)
+	timer_lbl.add_theme_constant_override("outline_size", 2)
 	timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	timer_lbl.position = Vector2(0, 30)
-	timer_lbl.size = Vector2(34, 12)
+	timer_lbl.position = Vector2(0, 17)
+	timer_lbl.size = Vector2(20, 9)
 	timer_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wrap.add_child(timer_lbl)
 
@@ -330,11 +328,11 @@ func _make_effect_icon(eff: Dictionary) -> Control:
 	if stacks > 1:
 		var stack_lbl := Label.new()
 		stack_lbl.text = "×%d" % stacks
-		stack_lbl.add_theme_font_size_override("font_size", 9)
+		stack_lbl.add_theme_font_size_override("font_size", 7)
 		stack_lbl.add_theme_color_override("font_color", Color(1, 1, 1))
 		stack_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-		stack_lbl.add_theme_constant_override("outline_size", 3)
-		stack_lbl.position = Vector2(18, 0)
+		stack_lbl.add_theme_constant_override("outline_size", 2)
+		stack_lbl.position = Vector2(11, -1)
 		stack_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		wrap.add_child(stack_lbl)
 
