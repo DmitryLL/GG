@@ -23,6 +23,15 @@ registerSkill(4, {
             dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({
                 sessionId: foe.sessionId, by: player.sessionId, dmg: baseDmg, poison: true,
             }));
+            applyPlayerEffect(foe, {
+                id: "poison",
+                kind: "debuff",
+                type: "poison",
+                endAt: t + 7000,
+                nextTickAt: t + 1000,
+                stacks: 1,
+                damage: 3,
+            });
             if (foe.hp <= 0) {
                 foe.pos.x = WORLD.playerSpawn.x; foe.pos.y = WORLD.playerSpawn.y;
                 foe.hp = foe.hpMax; foe.lastTouchedByMob = {};

@@ -15,6 +15,10 @@ var target_name: Label
 var target_hp_bar: ProgressBar
 var target_hp_text: Label
 
+var effects_row: HBoxContainer
+var server_time_offset_ms: int = 0
+var current_effects: Array = []
+
 func _ready() -> void:
 	var root := Control.new()
 	root.anchor_right = 1.0
@@ -110,6 +114,12 @@ func _ready() -> void:
 	xp_bar.add_theme_stylebox_override("background", xp_bg)
 	v.add_child(xp_bar)
 
+	effects_row = HBoxContainer.new()
+	effects_row.add_theme_constant_override("separation", 4)
+	effects_row.custom_minimum_size = Vector2(0, 44)
+	effects_row.mouse_filter = Control.MOUSE_FILTER_PASS
+	v.add_child(effects_row)
+
 	# --- Target panel (right next to player panel) ---
 	target_panel = PanelContainer.new()
 	target_panel.anchor_left = 0.0
@@ -203,3 +213,108 @@ func update_me(me: Dictionary) -> void:
 	hp_text.text = "%d / %d" % [hp, hp_max]
 	xp_bar.max_value = float(me.get("xpNeed", 50))
 	xp_bar.value = float(me.get("xp", 0))
+	if me.has("t"):
+		server_time_offset_ms = int(me["t"]) - Time.get_ticks_msec()
+	current_effects = me.get("effects", [])
+	_rebuild_effects()
+
+const _EFFECT_META := {
+	"poison": { "name": "Яд", "desc": "Урон со временем" },
+	"heal":   { "name": "Лечение", "desc": "Восстановление здоровья" },
+}
+
+func _rebuild_effects() -> void:
+	if effects_row == null:
+		return
+	for c in effects_row.get_children():
+		c.queue_free()
+	for eff in current_effects:
+		effects_row.add_child(_make_effect_icon(eff))
+
+func _make_effect_icon(eff: Dictionary) -> Control:
+	var kind := String(eff.get("kind", "buff"))
+	var eff_type := String(eff.get("type", ""))
+	var is_buff := kind == "buff"
+	var col: Color = Color(0.30, 0.85, 0.35, 1.0) if is_buff else Color(0.95, 0.30, 0.28, 1.0)
+
+	var wrap := Panel.new()
+	wrap.custom_minimum_size = Vector2(34, 44)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.06, 0.04, 0.92)
+	sb.border_color = col
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(4)
+	sb.shadow_color = Color(col.r, col.g, col.b, 0.45)
+	sb.shadow_size = 6
+	wrap.add_theme_stylebox_override("panel", sb)
+
+	var tex_path := "res://assets/sprites/ui/effect_%s.png" % eff_type
+	var tex: Texture2D = null
+	if ResourceLoader.exists(tex_path):
+		tex = load(tex_path)
+
+	var icon := TextureRect.new()
+	if tex:
+		icon.texture = tex
+	icon.custom_minimum_size = Vector2(26, 26)
+	icon.position = Vector2(4, 3)
+	icon.size = Vector2(26, 26)
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wrap.add_child(icon)
+
+	var timer_lbl := Label.new()
+	timer_lbl.name = "Timer"
+	timer_lbl.text = ""
+	timer_lbl.add_theme_font_size_override("font_size", 9)
+	timer_lbl.add_theme_color_override("font_color", col)
+	timer_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	timer_lbl.add_theme_constant_override("outline_size", 3)
+	timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	timer_lbl.position = Vector2(0, 30)
+	timer_lbl.size = Vector2(34, 12)
+	timer_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wrap.add_child(timer_lbl)
+
+	var stacks := int(eff.get("stacks", 0))
+	if stacks > 1:
+		var stack_lbl := Label.new()
+		stack_lbl.text = "×%d" % stacks
+		stack_lbl.add_theme_font_size_override("font_size", 9)
+		stack_lbl.add_theme_color_override("font_color", Color(1, 1, 1))
+		stack_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+		stack_lbl.add_theme_constant_override("outline_size", 3)
+		stack_lbl.position = Vector2(18, 0)
+		stack_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		wrap.add_child(stack_lbl)
+
+	wrap.set_meta("end_at", int(eff.get("endAt", 0)))
+	var meta: Dictionary = _EFFECT_META.get(eff_type, {"name": eff_type, "desc": ""})
+	wrap.tooltip_text = "%s — %s" % [meta.get("name", eff_type), meta.get("desc", "")]
+	return wrap
+
+func _process(_delta: float) -> void:
+	if effects_row == null:
+		return
+	var server_now: int = Time.get_ticks_msec() + server_time_offset_ms
+	var need_rebuild := false
+	for child in effects_row.get_children():
+		if not (child is Panel):
+			continue
+		var end_at: int = int(child.get_meta("end_at", 0))
+		var remain_ms: int = end_at - server_now
+		if remain_ms <= 0:
+			need_rebuild = true
+			continue
+		var timer_lbl: Label = child.get_node_or_null("Timer")
+		if timer_lbl:
+			var secs: float = remain_ms / 1000.0
+			timer_lbl.text = ("%.1fс" % secs) if secs < 10.0 else ("%dс" % int(secs))
+	if need_rebuild:
+		var filtered: Array = []
+		for eff in current_effects:
+			if int(eff.get("endAt", 0)) > server_now:
+				filtered.append(eff)
+		current_effects = filtered
+		_rebuild_effects()

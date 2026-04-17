@@ -166,6 +166,7 @@ interface MatchPlayer {
     invulnUntil: number;
     atkSpeedBoostUntil: number;
     preciseShotReady: boolean;
+    effects: PlayerEffect[];
 }
 
 interface ActiveZone {
@@ -182,6 +183,16 @@ interface MobDebuff {
     poisonEndAt: number;
     slowEndAt: number;
     nextPoisonTickAt: number;
+}
+
+interface PlayerEffect {
+    id: string;
+    kind: "buff" | "debuff";
+    type: string;       // "heal" | "poison" | ...
+    endAt: number;
+    nextTickAt?: number;
+    stacks?: number;
+    damage?: number;    // per-tick damage (poison)
 }
 
 const EQUIP_SLOTS = ["head", "body", "weapon", "boots", "belt", "ring1", "ring2", "cloak", "amulet"];
@@ -432,6 +443,7 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             invulnUntil: 0,
             atkSpeedBoostUntil: 0,
             preciseShotReady: false,
+            effects: [],
         };
         player.hpMax = computeHpMax(player);
         player.hp = player.hpMax;
@@ -500,8 +512,55 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         damage: computeDamage(p),
         inv: p.inventory,
         eq: p.equipment,
+        effects: p.effects || [],
+        t: now(),
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
+}
+
+function applyPlayerEffect(p: MatchPlayer, eff: PlayerEffect): void {
+    if (!p.effects) p.effects = [];
+    let existing: PlayerEffect | null = null;
+    for (let i = 0; i < p.effects.length; i++) {
+        if (p.effects[i].type === eff.type) { existing = p.effects[i]; break; }
+    }
+    if (existing) {
+        existing.endAt = Math.max(existing.endAt, eff.endAt);
+        if (eff.stacks) existing.stacks = Math.min(3, (existing.stacks || 0) + eff.stacks);
+        if (eff.nextTickAt !== undefined) existing.nextTickAt = eff.nextTickAt;
+        if (eff.damage !== undefined) existing.damage = eff.damage;
+    } else {
+        p.effects.push({
+            id: eff.id,
+            kind: eff.kind,
+            type: eff.type,
+            endAt: eff.endAt,
+            nextTickAt: eff.nextTickAt,
+            stacks: eff.stacks,
+            damage: eff.damage,
+        });
+    }
+    markMe(p);
+}
+
+function tickPlayerEffects(p: MatchPlayer, t: number): void {
+    if (!p.effects || p.effects.length === 0) return;
+    let changed = false;
+    for (let i = p.effects.length - 1; i >= 0; i--) {
+        const eff = p.effects[i];
+        if (t >= eff.endAt) {
+            p.effects.splice(i, 1);
+            changed = true;
+            continue;
+        }
+        if (eff.type === "poison" && eff.nextTickAt !== undefined && t >= eff.nextTickAt) {
+            const dmg = (eff.damage || 3) * (eff.stacks || 1);
+            p.hp = Math.max(0, p.hp - dmg);
+            eff.nextTickAt = t + 1000;
+            changed = true;
+        }
+    }
+    if (changed) markMe(p);
 }
 
 const MAX_LEVEL = 20;
@@ -677,7 +736,15 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     const entry = player.inventory[idx];
                     const def = ITEMS[entry.itemId];
                     if (!def || def.kind !== "consumable") break;
-                    if (def.heal) player.hp = Math.min(player.hpMax, player.hp + def.heal);
+                    if (def.heal) {
+                        player.hp = Math.min(player.hpMax, player.hp + def.heal);
+                        applyPlayerEffect(player, {
+                            id: "heal_" + now(),
+                            kind: "buff",
+                            type: "heal",
+                            endAt: now() + 2500,
+                        });
+                    }
                     entry.qty -= 1;
                     if (entry.qty <= 0) player.inventory.splice(idx, 1);
                     markMe(player);
@@ -835,6 +902,19 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 tp.hp = tp.hpMax; tp.lastTouchedByMob = {};
                 tp.dirtyPos = true; markMe(tp);
             }
+        }
+    }
+
+    // --- player status effects (buffs/debuffs ticking) ---
+    for (const sk of Object.keys(state.players)) {
+        const pl = state.players[sk];
+        if (pl.hp <= 0) continue;
+        tickPlayerEffects(pl, t);
+        if (pl.hp <= 0) {
+            pl.pos.x = WORLD.playerSpawn.x; pl.pos.y = WORLD.playerSpawn.y;
+            pl.hp = pl.hpMax; pl.lastTouchedByMob = {};
+            pl.effects = [];
+            pl.dirtyPos = true; markMe(pl);
         }
     }
 
