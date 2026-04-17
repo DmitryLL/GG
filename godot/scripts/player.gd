@@ -4,7 +4,7 @@ extends Node2D
 
 signal moved(pos: Vector2)
 
-const SPEED := 200.0
+const SPEED := 100.0
 const SPRITE_VARIANTS := 6
 # Фундамент (pixellab walking-6-frames + cross-punch-6-frames):
 # walk-атлас: 6 walk frames × 4 directions (hframes=6, vframes=4)
@@ -20,6 +20,12 @@ const SHOOT_HFRAMES := 4
 const SHOOT_DURATION := 0.55
 enum Dir { DOWN = 0, LEFT = 1, RIGHT = 2, UP = 3 }
 
+# Paper-doll layers. Порядок = порядок отрисовки снизу вверх. На каждый
+# equipment-slot свой Sprite2D-ребёнок, который отслеживает frame базы.
+# Текстуры одежды должны иметь тот же hframes/vframes, что и база, для
+# соответствующего state (walk/punch/shoot). См. set_wear().
+const LAYER_SLOTS := ["pants", "boots", "body", "cloak", "gloves", "head", "weapon"]
+
 @export var display_name: String = ""
 @export var variant: int = 0
 @export var local: bool = true
@@ -32,6 +38,8 @@ var bow_arrow: Line2D
 var label: Label
 var hp_bg: ColorRect
 var hp_fill: ColorRect
+var layers: Dictionary = {}  # slot → Sprite2D (paper-doll overlay)
+var _current_anim_state: String = "walk"
 var hp: float = 100.0
 var hp_max: float = 100.0
 var move_target: Vector2 = Vector2.ZERO
@@ -61,6 +69,8 @@ func _ready() -> void:
 	sprite.offset = Vector2(0, -24)
 	add_child(sprite)
 	z_index = 50  # игрок всегда поверх мобов/деревьев
+
+	_setup_layers()
 
 	bow_sprite = Sprite2D.new()
 	bow_sprite.texture = load("res://assets/sprites/bow_hand.png")
@@ -284,6 +294,7 @@ func play_punch() -> void:
 	sprite.texture = load("res://assets/sprites/char_base_punch.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
+	_apply_layer_state("punch")
 
 func play_bow_shot() -> void:
 	# Archer-rig: custom pixellab анимация «натягивание и пуск стрелы»,
@@ -295,6 +306,7 @@ func play_bow_shot() -> void:
 	sprite.texture = load("res://assets/sprites/char_base_shoot.png")
 	sprite.hframes = SHOOT_HFRAMES
 	sprite.vframes = 4
+	_apply_layer_state("shoot")
 
 func play_roll() -> void:
 	# Временно: перекат = короткий punch-sprite (пока нет отдельного rig).
@@ -302,6 +314,7 @@ func play_roll() -> void:
 	sprite.texture = load("res://assets/sprites/char_base_punch.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
+	_apply_layer_state("punch")
 
 func play_bow_shot_upward() -> void:
 	if not _has_bow: return
@@ -313,6 +326,84 @@ func _restore_walk_sprite() -> void:
 	sprite.hframes = WALK_HFRAMES
 	sprite.vframes = 4
 	sprite.frame = facing * WALK_HFRAMES
+	_apply_layer_state("walk")
+
+# ═══════════════════════ Paper-doll layers ═══════════════════════
+# Слои наследуют state (walk/punch/shoot) от базового sprite и дублируют
+# его frame. Текстура слоя — отдельный атлас в res://assets/sprites/wear/
+# <slot>/<item_id>_<state>.png. Если файла для state нет, слой скрыт.
+
+func _setup_layers() -> void:
+	for slot in LAYER_SLOTS:
+		var s := Sprite2D.new()
+		s.hframes = WALK_HFRAMES
+		s.vframes = 4
+		s.scale = sprite.scale
+		s.offset = sprite.offset
+		s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		s.visible = false
+		add_child(s)
+		layers[slot] = s
+
+# Публичный API: game.gd вызывает при приходе OP_ME с новой eq.
+# item_id = "" → снять слой.
+func set_wear(slot: String, item_id: String) -> void:
+	var layer: Sprite2D = layers.get(slot)
+	if layer == null:
+		return
+	if item_id == "":
+		layer.visible = false
+		layer.set_meta("textures", {})
+		return
+	var textures := {}
+	for state in ["walk", "punch", "shoot"]:
+		var path := "res://assets/sprites/wear/%s/%s_%s.png" % [slot, item_id, state]
+		if ResourceLoader.exists(path):
+			textures[state] = load(path)
+	if textures.is_empty():
+		# Ни одного подходящего атласа — слой остаётся невидимым.
+		layer.visible = false
+		layer.set_meta("textures", {})
+		return
+	# Если нет атласа для state — fallback на walk.
+	var walk_tex = textures.get("walk", textures.values()[0])
+	if not textures.has("walk"): textures["walk"] = walk_tex
+	if not textures.has("punch"): textures["punch"] = walk_tex
+	if not textures.has("shoot"): textures["shoot"] = walk_tex
+	layer.set_meta("textures", textures)
+	layer.visible = true
+	_apply_layer_state_for(layer, _current_anim_state)
+
+func _apply_layer_state(state: String) -> void:
+	_current_anim_state = state
+	for slot in LAYER_SLOTS:
+		var l: Sprite2D = layers.get(slot)
+		if l != null and l.visible:
+			_apply_layer_state_for(l, state)
+
+func _apply_layer_state_for(layer: Sprite2D, state: String) -> void:
+	var texts: Dictionary = layer.get_meta("textures", {})
+	if texts.is_empty():
+		layer.visible = false
+		return
+	layer.texture = texts.get(state)
+	match state:
+		"walk":  layer.hframes = WALK_HFRAMES
+		"punch": layer.hframes = PUNCH_HFRAMES
+		"shoot": layer.hframes = SHOOT_HFRAMES
+	layer.vframes = 4
+	layer.frame = sprite.frame
+	layer.offset = sprite.offset
+	layer.scale = sprite.scale
+
+func _sync_layers() -> void:
+	for slot in LAYER_SLOTS:
+		var l: Sprite2D = layers.get(slot)
+		if l == null or not l.visible or l.texture == null:
+			continue
+		l.frame = sprite.frame
+		l.offset = sprite.offset
+		l.scale = sprite.scale
 
 func _set_facing_from(delta: Vector2) -> void:
 	if abs(delta.x) < 0.01 and abs(delta.y) < 0.01:
@@ -332,6 +423,7 @@ func _animate(delta: float) -> void:
 		var rframe: int = clampi(int(rprog * PUNCH_HFRAMES), 0, PUNCH_HFRAMES - 1)
 		sprite.frame = facing * PUNCH_HFRAMES + rframe
 		sprite.offset = Vector2(0, -24)
+		_sync_layers()
 		if _roll_t <= 0.0:
 			_restore_walk_sprite()
 		return
@@ -342,6 +434,7 @@ func _animate(delta: float) -> void:
 		var frame_in_row: int = clampi(int(progress * SHOOT_HFRAMES), 0, SHOOT_HFRAMES - 1)
 		sprite.frame = facing * SHOOT_HFRAMES + frame_in_row
 		sprite.offset = Vector2(0, -24)
+		_sync_layers()
 		if _bow_shot_t <= 0.0:
 			_restore_walk_sprite()
 		return
@@ -352,6 +445,7 @@ func _animate(delta: float) -> void:
 		var pframe: int = clampi(int(pprog * PUNCH_HFRAMES), 0, PUNCH_HFRAMES - 1)
 		sprite.frame = facing * PUNCH_HFRAMES + pframe
 		sprite.offset = Vector2(0, -24)
+		_sync_layers()
 		if _punch_t <= 0.0:
 			_restore_walk_sprite()
 		return
@@ -362,10 +456,12 @@ func _animate(delta: float) -> void:
 	if not moving:
 		sprite.frame = base
 		anim_t = 0.0
+		_sync_layers()
 		return
 	anim_t += delta
 	var cycle := int(anim_t * WALK_FPS) % WALK_HFRAMES
 	sprite.frame = base + cycle
+	_sync_layers()
 
 func request_move_to(world_pos: Vector2) -> void:
 	if world == null:

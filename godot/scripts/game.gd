@@ -553,7 +553,20 @@ func _apply_me(body: Dictionary) -> void:
 		minimap.set_gold(int(body.get("gold", 0)))
 	shop.refresh(body)
 	me.set_hp(float(body.get("hp", 0)), float(body.get("hpMax", 100)))
-	me.set_has_bow(String(body.get("eq", {}).get("weapon", "")).contains("bow"))
+	var eq_dict: Dictionary = body.get("eq", {})
+	me.set_has_bow(String(eq_dict.get("weapon", "")).contains("bow"))
+	# Paper-doll слои: каждый слот → wear-atlas (если существует в assets).
+	const WEAR_SLOT_MAP := {
+		"boots":  "boots",
+		"body":   "body",
+		"cloak":  "cloak",
+		"head":   "head",
+		"belt":   "pants",    # пояс = штаны/пояс-overlay
+		"weapon": "weapon",
+	}
+	for eq_slot in WEAR_SLOT_MAP.keys():
+		var layer_slot: String = WEAR_SLOT_MAP[eq_slot]
+		me.set_wear(layer_slot, String(eq_dict.get(eq_slot, "")))
 
 func _on_character_button() -> void:
 	character_win.open(last_me)
