@@ -172,13 +172,14 @@ func _do_login(nick: String, pwd: String, create: bool) -> void:
 		# что ник уже занят другим паролем: Nakama пытается залогинить и
 		# получает Invalid credentials. Показываем честное сообщение.
 		if create:
+			# При регистрации любая credentials-ошибка = ник занят.
 			if "exists" in lower or "invalid" in lower or "credentials" in lower or "password" in lower:
-				_show_error("Ник уже занят — выбери другой или нажми «Войти»")
+				_show_error("Ник занят")
 			else:
 				_show_error("Ошибка регистрации: " + err_msg)
 		else:
 			if "exists" in lower:
-				_show_error("Ник занят (другой пароль)")
+				_show_error("Ник занят")
 			elif "invalid" in lower or "credentials" in lower or "password" in lower:
 				_show_error("Неверный пароль")
 			elif "not found" in lower:
