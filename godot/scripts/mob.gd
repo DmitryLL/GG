@@ -73,13 +73,14 @@ func _ready() -> void:
 	hp_fill.position = Vector2(-14, -22)
 	add_child(hp_fill)
 
+	# Using TextureRect inside a Control for robust rendering above mob
 	debuff_icon = Sprite2D.new()
 	debuff_icon.texture = POISON_ICON
 	debuff_icon.position = Vector2(0, -40)
-	debuff_icon.scale = Vector2(0.5, 0.5)  # 64px → 32px
+	debuff_icon.scale = Vector2(5.0, 5.0)  # DEBUG: huge
 	debuff_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	debuff_icon.visible = false
-	debuff_icon.z_index = 10
+	debuff_icon.z_index = 100
 	add_child(debuff_icon)
 
 	_highlight_ring = Sprite2D.new()
