@@ -16,6 +16,8 @@ const WALK_HFRAMES := 6
 const WALK_FPS := 10.0
 const PUNCH_HFRAMES := 6
 const PUNCH_DURATION := 0.45
+const SHOOT_HFRAMES := 4
+const SHOOT_DURATION := 0.55
 enum Dir { DOWN = 0, LEFT = 1, RIGHT = 2, UP = 3 }
 
 @export var display_name: String = ""
@@ -284,13 +286,14 @@ func play_punch() -> void:
 	sprite.vframes = 4
 
 func play_bow_shot() -> void:
-	# Отдельный archer-rig — натяжка тетивы и выстрел (без визуального лука;
-	# лук накладывается через bow_sprite overlay). Собран из pixellab-
-	# fireball template, огненное ядро отфильтровано.
+	# Archer-rig: custom pixellab анимация «натягивание и пуск стрелы»,
+	# руки пустые (лук рисуется через bow_sprite overlay).
+	# 4 кадра × 4 направления. Направление «вверх» пока использует south
+	# до генерации специфического ракурса.
 	if not _has_bow: return
-	_bow_shot_t = BOW_SHOT_DURATION
+	_bow_shot_t = SHOOT_DURATION
 	sprite.texture = load("res://assets/sprites/char_base_shoot.png")
-	sprite.hframes = PUNCH_HFRAMES
+	sprite.hframes = SHOOT_HFRAMES
 	sprite.vframes = 4
 
 func play_roll() -> void:
@@ -332,12 +335,12 @@ func _animate(delta: float) -> void:
 		if _roll_t <= 0.0:
 			_restore_walk_sprite()
 		return
-	# Bow shot: проигрываем punch-анимацию (overlay лука играет сам отдельно).
+	# Bow shot: archer-rig 4 frames, overlay лука рисуется сам отдельно.
 	if _bow_shot_t > 0.0:
 		_bow_shot_t -= delta
-		var progress: float = 1.0 - (_bow_shot_t / BOW_SHOT_DURATION)
-		var frame_in_row: int = clampi(int(progress * PUNCH_HFRAMES), 0, PUNCH_HFRAMES - 1)
-		sprite.frame = facing * PUNCH_HFRAMES + frame_in_row
+		var progress: float = 1.0 - (_bow_shot_t / SHOOT_DURATION)
+		var frame_in_row: int = clampi(int(progress * SHOOT_HFRAMES), 0, SHOOT_HFRAMES - 1)
+		sprite.frame = facing * SHOOT_HFRAMES + frame_in_row
 		sprite.offset = Vector2(0, -24)
 		if _bow_shot_t <= 0.0:
 			_restore_walk_sprite()
