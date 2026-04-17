@@ -73,10 +73,11 @@ func _ready() -> void:
 
 	debuff_icon = Sprite2D.new()
 	debuff_icon.texture = load("res://assets/sprites/ui/effect_poison.png")
-	debuff_icon.position = Vector2(0, -32)
-	debuff_icon.scale = Vector2(0.55, 0.55)
+	debuff_icon.position = Vector2(0, -36)
+	debuff_icon.scale = Vector2(0.65, 0.65)
 	debuff_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	debuff_icon.visible = false
+	debuff_icon.visible = true  # DEBUG: всегда видна
+	debuff_icon.z_index = 10
 	add_child(debuff_icon)
 
 	_highlight_ring = Sprite2D.new()
