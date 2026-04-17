@@ -5,9 +5,9 @@ extends RefCounted
 
 const SKILLS: Array = [
 	preload("res://scripts/skills/skill_1_precise_shot.gd"),
-	preload("res://scripts/skills/skill_2_arrow_rain.gd"),
+	preload("res://scripts/skills/skill_2_poison_arrow.gd"),
 	preload("res://scripts/skills/skill_3_dodge.gd"),
-	preload("res://scripts/skills/skill_4_poison_arrow.gd"),
+	preload("res://scripts/skills/skill_4_arrow_rain.gd"),
 	preload("res://scripts/skills/skill_5_ghost_volley.gd"),
 ]
 

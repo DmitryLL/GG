@@ -1,4 +1,4 @@
-# Скилл 2: Ливень стрел — AoE-зона с падающими стрелами и пуфами.
+# Скилл 4: Ливень стрел — AoE-зона с падающими стрелами и пуфами.
 class_name SkillArrowRain
 extends SkillDef
 
@@ -6,7 +6,7 @@ func _init() -> void:
 	display_name = "Ливень стрел"
 	icon_path = "res://assets/sprites/skill_2.png"
 	cooldown = 12.0
-	server_id = 2
+	server_id = 4
 	requires_bow = true
 	targets_ground = true
 	arrow_style = ""

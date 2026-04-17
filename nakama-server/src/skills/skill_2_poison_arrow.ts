@@ -1,7 +1,7 @@
-// Скилл 4: Отравленная стрела.
+// Скилл 2: Отравленная стрела.
 // Удар = 80% от baseDmg, яд = 20% от baseDmg за каждый тик (7 тиков за 7с).
 // На мобе stacks до 3 (суммируются при повторном касте), длительность обновляется.
-registerSkill(4, {
+registerSkill(2, {
     requiresBow: true,
     cooldownMs: 6000,
     handler: function (ctx: SkillContext): void {
@@ -42,7 +42,7 @@ registerSkill(4, {
                 foe.hp = foe.hpMax; foe.lastTouchedByMob = {};
                 foe.dirtyPos = true; markMe(foe);
             }
-            player.skillCd[4] = t + 6000;
+            player.skillCd[2] = t + 6000;
             return;
         }
 
@@ -68,6 +68,6 @@ registerSkill(4, {
             mobId: mob.id, dmg: hitDmg, poison: true,
         }));
         if (mob.hp <= 0) killMob(mob, player, t);
-        player.skillCd[4] = t + 6000;
+        player.skillCd[2] = t + 6000;
     },
 });

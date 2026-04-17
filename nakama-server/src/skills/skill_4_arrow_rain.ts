@@ -1,5 +1,5 @@
-// Скилл 2: Ливень стрел — AoE-зона радиусом 80px на 3.5s.
-registerSkill(2, {
+// Скилл 4: Ливень стрел — AoE-зона радиусом 80px на 3.5s.
+registerSkill(4, {
     requiresBow: true,
     cooldownMs: 12000,
     handler: function (ctx: SkillContext): void {
@@ -22,6 +22,6 @@ registerSkill(2, {
             fx: player.pos.x, fy: player.pos.y,
             duration: 3500,
         }));
-        player.skillCd[2] = t + 12000;
+        player.skillCd[4] = t + 12000;
     },
 });
