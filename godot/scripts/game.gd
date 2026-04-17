@@ -201,43 +201,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var world_pos := get_viewport().get_camera_2d().get_global_mouse_position()
 		if targeting_skill >= 0:
-			var idx := targeting_skill
-			var sk: Dictionary = skillbar.SKILLS[idx]
-			targeting_skill = -1
-			Input.set_default_cursor_shape(Input.CURSOR_ARROW)
-			if bool(sk["targets_mob"]):
-				# Сначала пытаемся попасть в моба, потом в другого игрока
-				var mob_hit := _mob_at(world_pos)
-				if mob_hit != null and mob_hit.alive:
-					attack_target = mob_hit
-					pvp_target = null
-					_set_mob_highlight(mob_hit)
-					queued_skill = idx
-					attack_cooldown = 0.0
-				else:
-					var sid_skill: String = _player_at(world_pos)
-					if sid_skill != "":
-						pvp_target = remotes.get(sid_skill)
-						pvp_target_sid = sid_skill
-						attack_target = null
-						_set_mob_highlight(null)
-						queued_skill = idx
-						attack_cooldown = 0.0
-			else:
-				attack_target = null
-				pvp_target = null
-				_set_mob_highlight(null)
-				queued_skill = idx
-				queued_ground_pos = world_pos
-				# Вычисляем approach один раз: точка в зоне каста ближе к точке клика
-				var max_cast_init: float = PLAYER_ATTACK_RANGE - 20.0
-				var d0: float = me.position.distance_to(world_pos)
-				if d0 <= max_cast_init:
-					queued_approach_pos = me.position  # уже в зоне
-				else:
-					var dir0: Vector2 = (world_pos - me.position).normalized()
-					queued_approach_pos = world_pos - dir0 * max_cast_init
-				attack_cooldown = 0.0
+			_resolve_targeting_click(targeting_skill, world_pos)
 			return
 		# NPC takes priority over mobs/move.
 		var npc := _npc_at(world_pos)
@@ -936,30 +900,106 @@ func _on_admin_action(action: String, extra: Dictionary = {}) -> void:
 		_on_admin_action("list_users", {})
 
 func _on_skill_activated(index: int) -> void:
+	# Единая точка входа для всех скиллов. Диспетчеризует по SkillDef.kind():
+	#   INSTANT → срабатывает сразу (Отскок и т.п.)
+	#   TARGET  → если цель уже выбрана — сразу в очередь; иначе targeting_mode
+	#   GROUND  → всегда targeting_mode (нужна точка)
+	# Очередь (queued_skill + позиция) обрабатывается в _process.
 	if match_id == "" or Session.socket == null:
 		return
-	var sk: Dictionary = skillbar.SKILLS[index]
 	if skillbar.cooldowns[index] > 0.0:
 		return
-	# Если цель уже выбрана и скилл — таргет на моба/игрока, ставим в очередь
-	if bool(sk["targets_mob"]):
-		if attack_target != null and is_instance_valid(attack_target) and attack_target.alive:
-			queued_skill = index
-			attack_cooldown = 0.0
-			return
-		if pvp_target != null and is_instance_valid(pvp_target):
-			queued_skill = index
-			attack_cooldown = 0.0
-			return
-	if bool(sk["targets_ground"]) or bool(sk["targets_mob"]):
-		targeting_skill = index
-		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+	var def: SkillDef = SkillRegistry.by_index(index)
+	if def == null:
 		return
+	match def.kind():
+		SkillDef.Kind.INSTANT:
+			_cast_instant(index)
+		SkillDef.Kind.TARGET:
+			if _has_valid_target():
+				# Цель уже выбрана — встаём в очередь без выбора
+				queued_skill = index
+				attack_cooldown = 0.0
+			else:
+				# Нет цели — ждём клика по мобу/игроку
+				targeting_skill = index
+				Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+		SkillDef.Kind.GROUND:
+			targeting_skill = index
+			Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+
+func _resolve_targeting_click(index: int, world_pos: Vector2) -> void:
+	# Обработка клика в режиме targeting (после активации TARGET/GROUND скилла).
+	# Выход из режима происходит, только если клик попал в валидную сущность/точку.
+	var def: SkillDef = SkillRegistry.by_index(index)
+	if def == null:
+		targeting_skill = -1
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+		return
+	match def.kind():
+		SkillDef.Kind.TARGET:
+			var mob_hit := _mob_at(world_pos)
+			if mob_hit != null and mob_hit.alive:
+				attack_target = mob_hit
+				pvp_target = null
+				_set_mob_highlight(mob_hit)
+				queued_skill = index
+				attack_cooldown = 0.0
+				targeting_skill = -1
+				Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+				return
+			var sid_skill: String = _player_at(world_pos)
+			if sid_skill != "":
+				pvp_target = remotes.get(sid_skill)
+				pvp_target_sid = sid_skill
+				attack_target = null
+				_set_mob_highlight(null)
+				queued_skill = index
+				attack_cooldown = 0.0
+				targeting_skill = -1
+				Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+				return
+			# Клик мимо — отменяем targeting (чтобы не «липло» к курсору).
+			targeting_skill = -1
+			Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+		SkillDef.Kind.GROUND:
+			attack_target = null
+			pvp_target = null
+			_set_mob_highlight(null)
+			queued_skill = index
+			queued_ground_pos = world_pos
+			# Approach: если точка в радиусе — остаёмся на месте, иначе точка
+			# в радиусе каста, ближайшая к клику.
+			var max_cast_init: float = PLAYER_ATTACK_RANGE - 20.0
+			var d0: float = me.position.distance_to(world_pos)
+			if d0 <= max_cast_init:
+				queued_approach_pos = me.position
+			else:
+				var dir0: Vector2 = (world_pos - me.position).normalized()
+				queued_approach_pos = world_pos - dir0 * max_cast_init
+			attack_cooldown = 0.0
+			targeting_skill = -1
+			Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+		_:
+			# INSTANT не должен попадать в targeting_mode — на всякий случай
+			# сбрасываем режим.
+			targeting_skill = -1
+			Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+func _has_valid_target() -> bool:
+	if attack_target != null and is_instance_valid(attack_target) and attack_target.alive:
+		return true
+	if pvp_target != null and is_instance_valid(pvp_target):
+		return true
+	return false
+
+func _cast_instant(index: int) -> void:
 	var payload := {"skill": index + 1}
-	# Self-cast: передаём направление взгляда (для отскока)
 	var fdir: Vector2 = me.facing_vector()
 	payload["dx"] = fdir.x
 	payload["dy"] = fdir.y
+	# INSTANT может использовать текущий таргет для контекста (Отскок
+	# ориентируется на врага), но ждать/подходить не должен.
 	if attack_target and is_instance_valid(attack_target):
 		payload["mobId"] = attack_target.mob_id
 	_send_skill(index, payload)
