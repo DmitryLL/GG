@@ -473,12 +473,20 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_ARROW:      _spawn_arrow(body)
 		OP_CHAT_RELAY: _apply_chat(body)
 
+var _last_intent_ms: int = 0
+
 func _send_move_intent(target: Vector2) -> void:
 	# Server-authoritative: клиент сообщает цель, сервер сам шагает.
+	# Throttle: один и тот же target не пересылаем чаще 4 раз/сек;
+	# новую цель шлём только если отличается > 8px от предыдущей.
 	if match_id == "" or Session.socket == null:
+		return
+	var now_ms: int = Time.get_ticks_msec()
+	if last_sent_pos.distance_to(target) < 8.0 and now_ms - _last_intent_ms < 250:
 		return
 	Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": target.x, "y": target.y}))
 	last_sent_pos = target
+	_last_intent_ms = now_ms
 
 func _apply_positions(body: Dictionary) -> void:
 	for p in body.get("players", []):
@@ -546,6 +554,8 @@ func _apply_me(body: Dictionary) -> void:
 		minimap.set_gold(int(body.get("gold", 0)))
 	shop.refresh(body)
 	me.set_hp(float(body.get("hp", 0)), float(body.get("hpMax", 100)))
+	if skillbar:
+		skillbar.update_skill_cd(body.get("skillCd", {}), int(body.get("t", 0)))
 	var eq_dict: Dictionary = body.get("eq", {})
 	me.set_has_bow(String(eq_dict.get("weapon", "")).contains("bow"))
 	# Paper-doll слои: каждый слот → wear-atlas (если существует в assets).

@@ -166,16 +166,43 @@ func _make_slot(i: int) -> Control:
 
 	return btn
 
+# Server-authoritative cooldowns. Клиент хранит absolute endAt (серверное
+# ms timestamp) и пересчитывает remaining от server_time = local_ticks +
+# server_offset_ms. При сворачивании вкладки tickи останавливаются, но
+# возврат в таб даёт актуальное remaining благодаря server-time формуле.
+var cd_ends_at: Array = []       # server-ms when each skill CD expires
+var server_offset_ms: int = 0    # server_now = Time.get_ticks_msec() + this
+
 func trigger_cooldown(index: int) -> void:
+	# Локальное предсказание (мгновенный визуальный отклик до прихода OP_ME).
+	# Сервер пришлёт точный skillCd через update_skill_cd().
 	if index < 0 or index >= SKILLS.size(): return
+	if cd_ends_at.size() < SKILLS.size():
+		cd_ends_at.resize(SKILLS.size())
+	var server_now: int = Time.get_ticks_msec() + server_offset_ms
+	cd_ends_at[index] = server_now + int(float(SKILLS[index]["cd"]) * 1000.0)
 	cooldowns[index] = float(SKILLS[index]["cd"])
 
-func _process(delta: float) -> void:
+func update_skill_cd(skill_cd: Dictionary, server_t: int) -> void:
+	# Вызывается из game._apply_me при каждом OP_ME.
+	# skill_cd: {"1": server_ms_end, "2": ...} — server_id → absolute ms.
+	if cd_ends_at.size() < SKILLS.size():
+		cd_ends_at.resize(SKILLS.size())
+	if server_t > 0:
+		server_offset_ms = server_t - Time.get_ticks_msec()
+	for i in range(SKILLS.size()):
+		var sid: int = i + 1  # server_id = slot index + 1
+		var end_at: int = int(skill_cd.get(str(sid), skill_cd.get(sid, 0)))
+		cd_ends_at[i] = end_at
+
+func _process(_delta: float) -> void:
+	var server_now: int = Time.get_ticks_msec() + server_offset_ms
 	for i in range(cooldowns.size()):
-		if cooldowns[i] <= 0:
-			_set_slot_cd(i, 0.0)
-			continue
-		cooldowns[i] = max(0.0, cooldowns[i] - delta)
+		var end_at: int = 0
+		if i < cd_ends_at.size():
+			end_at = int(cd_ends_at[i])
+		var remain_ms: int = max(0, end_at - server_now)
+		cooldowns[i] = remain_ms / 1000.0
 		_set_slot_cd(i, cooldowns[i])
 
 func _set_slot_cd(i: int, remaining: float) -> void:

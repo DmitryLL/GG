@@ -520,6 +520,7 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         inv: p.inventory,
         eq: p.equipment,
         effects: p.effects || [],
+        skillCd: p.skillCd || {},
         t: now(),
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
