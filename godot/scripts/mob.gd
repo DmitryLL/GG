@@ -73,14 +73,13 @@ func _ready() -> void:
 	hp_fill.position = Vector2(-14, -22)
 	add_child(hp_fill)
 
-	# Using TextureRect inside a Control for robust rendering above mob
 	debuff_icon = Sprite2D.new()
 	debuff_icon.texture = POISON_ICON
 	debuff_icon.position = Vector2(0, -40)
-	debuff_icon.scale = Vector2(5.0, 5.0)  # DEBUG: huge
+	debuff_icon.scale = Vector2(0.4, 0.4)
 	debuff_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	debuff_icon.visible = false
-	debuff_icon.z_index = 100
+	debuff_icon.z_index = 10
 	add_child(debuff_icon)
 
 	_highlight_ring = Sprite2D.new()
@@ -171,14 +170,24 @@ func set_debuff(d, server_now_ms: int) -> void:
 	_poison_end_ms = int(d.get("poisonEndAt", 0))
 	if server_now_ms > 0:
 		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
-	if debuff_icon:
-		debuff_icon.visible = true
-		JavaScriptBridge.eval("console.log('[mob %s] icon.visible=true pos=%s tex=%s')" % [mob_id, str(debuff_icon.position), str(debuff_icon.texture != null)])
+	_update_debuff_visible()
+
+func poison_active() -> bool:
+	if _poison_end_ms <= 0:
+		return false
+	var server_now: int = Time.get_ticks_msec() + _server_offset_ms
+	return _poison_end_ms > server_now
+
+func poison_remaining_ms() -> int:
+	if _poison_end_ms <= 0:
+		return 0
+	var server_now: int = Time.get_ticks_msec() + _server_offset_ms
+	return max(0, _poison_end_ms - server_now)
 
 func _update_debuff_visible() -> void:
-	if debuff_icon == null or not alive:
+	if debuff_icon == null:
 		return
-	if _poison_end_ms <= 0:
+	if not alive or _poison_end_ms <= 0:
 		debuff_icon.visible = false
 		return
 	var server_now: int = Time.get_ticks_msec() + _server_offset_ms
@@ -190,7 +199,7 @@ func flash() -> void:
 
 func _process(delta: float) -> void:
 	_glow_t += delta
-	# skip _update_debuff_visible in debug
+	_update_debuff_visible()
 	if debuff_icon and debuff_icon.visible:
 		debuff_icon.modulate.a = 0.85 + 0.15 * sin(_glow_t * 5.0)
 	if glow and glow.visible:

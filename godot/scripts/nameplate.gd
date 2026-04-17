@@ -16,8 +16,11 @@ var target_hp_bar: ProgressBar
 var target_hp_text: Label
 
 var effects_row: HBoxContainer
+var target_effects: HBoxContainer
 var server_time_offset_ms: int = 0
 var current_effects: Array = []
+
+const POISON_ICON := preload("res://assets/sprites/skill_4.png")
 
 func _ready() -> void:
 	var root := Control.new()
@@ -178,6 +181,11 @@ func _ready() -> void:
 	target_hp_bar.add_child(target_hp_text)
 	target_hp_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
+	target_effects = HBoxContainer.new()
+	target_effects.add_theme_constant_override("separation", 4)
+	target_effects.custom_minimum_size = Vector2(0, 40)
+	tv.add_child(target_effects)
+
 const MOB_NAMES := { "slime": "Слайм", "goblin": "Гоблин", "dummy": "Манекен" }
 
 func update_target(target) -> void:
@@ -185,6 +193,7 @@ func update_target(target) -> void:
 		target_panel.visible = false
 		return
 	target_panel.visible = true
+	_clear_target_effects()
 	# Mob или Player — у обоих есть kind или display_name
 	if "kind" in target:
 		# Mob
@@ -193,6 +202,9 @@ func update_target(target) -> void:
 		target_hp_bar.max_value = target.hp_max
 		target_hp_bar.value = target.hp
 		target_hp_text.text = "%d / %d" % [int(target.hp), int(target.hp_max)]
+		if target.has_method("poison_active") and target.poison_active():
+			var remain_ms: int = target.poison_remaining_ms()
+			target_effects.add_child(_make_target_effect_icon("poison", remain_ms))
 	elif "display_name" in target:
 		# Player (PvP)
 		target_name.text = target.display_name
@@ -200,6 +212,43 @@ func update_target(target) -> void:
 		target_hp_bar.max_value = target.hp_max
 		target_hp_bar.value = target.hp
 		target_hp_text.text = "%d / %d" % [int(target.hp), int(target.hp_max)]
+
+func _clear_target_effects() -> void:
+	if target_effects == null: return
+	for c in target_effects.get_children():
+		c.queue_free()
+
+func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
+	var col := Color(0.95, 0.30, 0.28, 1.0)  # debuff red
+	var wrap := Panel.new()
+	wrap.custom_minimum_size = Vector2(32, 40)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.06, 0.04, 0.92)
+	sb.border_color = col
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(4)
+	wrap.add_theme_stylebox_override("panel", sb)
+	var icon := TextureRect.new()
+	icon.texture = POISON_ICON if eff_type == "poison" else null
+	icon.custom_minimum_size = Vector2(24, 24)
+	icon.position = Vector2(4, 3)
+	icon.size = Vector2(24, 24)
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wrap.add_child(icon)
+	var timer_lbl := Label.new()
+	timer_lbl.text = ("%.1fс" % (remain_ms / 1000.0)) if remain_ms < 10000 else ("%dс" % int(remain_ms / 1000))
+	timer_lbl.add_theme_font_size_override("font_size", 9)
+	timer_lbl.add_theme_color_override("font_color", col)
+	timer_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	timer_lbl.add_theme_constant_override("outline_size", 3)
+	timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	timer_lbl.position = Vector2(0, 26)
+	timer_lbl.size = Vector2(32, 12)
+	timer_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wrap.add_child(timer_lbl)
+	return wrap
 
 func set_player_name(n: String) -> void:
 	name_label.text = n
