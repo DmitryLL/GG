@@ -1,7 +1,8 @@
 # Маленькая горизонтальная полоса индикаторов эффектов.
-# Зелёная рамка = баф, красная = дебаф. Иконки 10×10, всё внутри Control.
+# Зелёная рамка = баф, красная = дебаф. Иконки 10×10.
+# extends Node2D — надёжнее как ребёнок игровых сущностей в мире.
 class_name EffectBar
-extends Control
+extends Node2D
 
 const POISON_ICON := preload("res://assets/sprites/skill_4.png")
 const HEAL_ICON_PATH := "res://assets/sprites/ui/effect_heal.png"
@@ -14,10 +15,6 @@ const SLOT_H := ICON_SIZE + BORDER * 2
 
 var _server_offset_ms: int = 0
 var _active: Array = []  # [{slot: Panel, end_at: int}]
-
-func _init() -> void:
-	custom_minimum_size = Vector2(0, SLOT_H)
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func set_effects(effects: Array, server_now_ms: int) -> void:
 	if server_now_ms > 0:
