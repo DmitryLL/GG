@@ -1040,6 +1040,7 @@ function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nk
                 skillCd: p.skillCd, invulnUntil: p.invulnUntil,
                 atkSpeedBoostUntil: p.atkSpeedBoostUntil,
                 lastAttackAt: p.lastAttackAt,
+                effects: p.effects || [],
             });
         }
         const snapMobs: any[] = [];

@@ -111,6 +111,7 @@ async function main() {
         const skillNum = Number(args.skill);
         const payload = { skill: skillNum };
         if (args.mob) payload.mobId = args.mob;
+        if (args.sid) payload.sid = args.sid;
         if (args.x !== undefined) payload.x = Number(args.x);
         if (args.y !== undefined) payload.y = Number(args.y);
         if (args.dx !== undefined) payload.dx = Number(args.dx);
