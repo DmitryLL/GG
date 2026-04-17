@@ -571,7 +571,10 @@ func _apply_mobs(body: Dictionary) -> void:
 		ms.set_hp(float(m.get("hp", 0)), float(m.get("hpMax", 30)))
 		ms.set_alive(String(m.get("st", "alive")) == "alive")
 		ms.set_loot(m.get("loot", []))
-		ms.set_debuff(m.get("debuff"), int(m.get("now", 0)))
+		var d = m.get("debuff", null)
+		if d != null:
+			JavaScriptBridge.eval("console.log('[mob %s] DEBUFF: %s now=%s')" % [mid, JSON.stringify(d), m.get("now", 0)])
+		ms.set_debuff(d, int(m.get("now", 0)))
 		# Если открыто окно лута именно этого моба — обновим список.
 		if loot_win and loot_win.is_open():
 			loot_win.update_loot(mid, ms.loot)
