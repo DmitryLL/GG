@@ -170,7 +170,9 @@ func set_debuff(d, server_now_ms: int) -> void:
 	_poison_end_ms = int(d.get("poisonEndAt", 0))
 	if server_now_ms > 0:
 		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
-	_update_debuff_visible()
+	if debuff_icon:
+		debuff_icon.visible = true
+		JavaScriptBridge.eval("console.log('[mob %s] icon.visible=true pos=%s tex=%s')" % [mob_id, str(debuff_icon.position), str(debuff_icon.texture != null)])
 
 func _update_debuff_visible() -> void:
 	if debuff_icon == null or not alive:
@@ -187,7 +189,7 @@ func flash() -> void:
 
 func _process(delta: float) -> void:
 	_glow_t += delta
-	_update_debuff_visible()
+	# skip _update_debuff_visible in debug
 	if debuff_icon and debuff_icon.visible:
 		debuff_icon.modulate.a = 0.85 + 0.15 * sin(_glow_t * 5.0)
 	if glow and glow.visible:
