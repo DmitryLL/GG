@@ -4,7 +4,7 @@ extends Node2D
 
 signal moved(pos: Vector2)
 
-const SPEED := 100.0
+const SPEED := 150.0
 const SPRITE_VARIANTS := 6
 # Фундамент (pixellab walking-6-frames + cross-punch-6-frames):
 # walk-атлас: 6 walk frames × 4 directions (hframes=6, vframes=4)
@@ -130,55 +130,24 @@ func _process(delta: float) -> void:
 		_flash_t -= delta
 		if _flash_t <= 0.0:
 			sprite.modulate = Color(1, 1, 1, 1)
-	if not local:
-		# Для remote игроков — плавная интерполяция к target и анимация
-		if _remote_has_target:
-			var to := _remote_target - position
-			var dist := to.length()
-			var s := SPEED * delta
-			if dist <= s:
-				position = _remote_target
-				_remote_has_target = false
-			else:
-				var step := to.normalized() * s
-				position += step
-				_set_facing_from(step)
-			moving = dist > 0.3
-		else:
-			moving = false
-		_animate(delta)
-		return
-
-	var step := Vector2.ZERO
-	var now_moving := false
-	if has_target:
-		var to := move_target - position
+	# Server-authoritative movement: и local, и remote одинаково интерполируют
+	# к _remote_target (сервер шлёт позицию через OP_POSITIONS → remote_update()).
+	if _remote_has_target:
+		var to := _remote_target - position
 		var dist := to.length()
 		var s := SPEED * delta
 		if dist <= s:
-			step = to
-			# Дошли до waypoint'а — переходим к следующему или останавливаемся
-			if _path.size() > 0 and _path_idx + 1 < _path.size():
-				_path_idx += 1
-				move_target = _path[_path_idx]
-			else:
-				has_target = false
-				_path = PackedVector2Array()
-				_path_idx = 0
+			position = _remote_target
+			_remote_has_target = false
 		else:
-			step = to.normalized() * s
-		now_moving = dist > 0.3
-
-	if now_moving:
-		var next := position + step
-		# Axis-separated collision against world tiles
-		if world.is_walkable(Vector2(next.x, position.y)):
-			position.x = next.x
-		if world.is_walkable(Vector2(position.x, next.y)):
-			position.y = next.y
-		_set_facing_from(step)
+			var step := to.normalized() * s
+			position += step
+			_set_facing_from(step)
+		moving = dist > 0.3
+	else:
+		moving = false
+	if local:
 		moved.emit(position)
-	moving = now_moving
 	_animate(delta)
 
 func set_hp(v: float, vmax: float) -> void:
@@ -463,22 +432,11 @@ func _animate(delta: float) -> void:
 	sprite.frame = base + cycle
 	_sync_layers()
 
-func request_move_to(world_pos: Vector2) -> void:
-	if world == null:
-		move_target = world_pos
-		has_target = true
-		return
-	# Строим путь A*. Если путь пуст или из 1 точки — идём напрямую.
-	var p := world.find_path(position, world_pos)
-	if p.size() <= 1:
-		move_target = world_pos
-		_path = PackedVector2Array()
-		_path_idx = 0
-	else:
-		_path = p
-		_path_idx = 1  # 0 — текущая клетка, начинаем со следующей
-		move_target = _path[_path_idx]
-	has_target = true
+func request_move_to(_world_pos: Vector2) -> void:
+	# Deprecated в server-authoritative модели. Game.gd использует
+	# _send_move_intent(target) и отправляет OP_MOVE_INTENT.
+	# Оставлено для совместимости — no-op.
+	pass
 
 static func variant_from(id: String) -> int:
 	var h := 0

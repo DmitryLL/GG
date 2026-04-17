@@ -211,7 +211,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if d_n <= 80.0:
 				shop.open(String(npc["id"]), npc.get("stock", []), last_me)
 				return
-			me.request_move_to(Vector2(float(npc["x"]), float(npc["y"])))
+			_send_move_intent(Vector2(float(npc["x"]), float(npc["y"])))
 			return
 		var mob_hit := _mob_at(world_pos)
 		if mob_hit != null:
@@ -228,7 +228,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if d_corpse <= 60.0:
 				loot_win.open(mob_hit.mob_id, mob_hit.kind, mob_hit.loot)
 			else:
-				me.request_move_to(mob_hit.position)
+				_send_move_intent(mob_hit.position)
 			return
 		# Check for remote player click (PvP)
 		var sid_hit: String = _player_at(world_pos)
@@ -243,7 +243,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		pvp_target = null
 		_set_mob_highlight(null)
 		_show_marker(world_pos)
-		me.request_move_to(world_pos)
+		_send_move_intent(world_pos)
 
 func _process(delta: float) -> void:
 	if match_id == "" or Session.socket == null:
@@ -262,13 +262,11 @@ func _process(delta: float) -> void:
 			# Queued skill в PvP — приоритет над авто-атакой
 			if queued_skill >= 0:
 				if d_pvp > atk_range_pvp:
-					me.request_move_to(pvp_target.position)
+					_send_move_intent(pvp_target.position)
 					return
 				me.has_target = false
 				me.face_toward(pvp_target.position)
 				if skillbar.cooldowns[queued_skill] <= 0.0:
-					Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": me.position.x, "y": me.position.y}))
-					last_sent_pos = me.position
 					_send_skill(queued_skill, {"skill": queued_skill + 1, "sid": pvp_target_sid})
 					attack_cooldown = PLAYER_ATTACK_COOLDOWN
 					queued_skill = -1
@@ -285,7 +283,7 @@ func _process(delta: float) -> void:
 					else:
 						me.play_punch()
 			else:
-				me.request_move_to(pvp_target.position)
+				_send_move_intent(pvp_target.position)
 
 	# Queued ground skill (Ливень/Залп) — идём к зафиксированному approach и кастуем
 	if queued_skill >= 0 and attack_target == null and pvp_target == null:
@@ -300,15 +298,13 @@ func _process(delta: float) -> void:
 				if d_now <= max_cast:
 					me.has_target = false
 					me.face_toward(queued_ground_pos)
-					Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": me.position.x, "y": me.position.y}))
-					last_sent_pos = me.position
 					_send_skill(queued_skill, {"skill": queued_skill + 1, "x": queued_ground_pos.x, "y": queued_ground_pos.y})
 					attack_cooldown = PLAYER_ATTACK_COOLDOWN
 					queued_skill = -1
 					return
 				# Иначе идём к approach (точка зафиксирована в момент queue, не дёргается)
 				if not me.has_target:
-					me.request_move_to(queued_approach_pos)
+					_send_move_intent(queued_approach_pos)
 				return
 
 	# Auto-pursuit: keep walking toward the locked target and shoot/punch when in range.
@@ -324,14 +320,11 @@ func _process(delta: float) -> void:
 				var q_range: float = (PLAYER_ATTACK_RANGE - 20.0) if has_bow else 30.0
 				var q_d: float = me.position.distance_to(attack_target.position)
 				if q_d > q_range:
-					me.request_move_to(attack_target.position)
+					_send_move_intent(attack_target.position)
 					return
 				me.has_target = false
 				me.face_toward(attack_target.position)
 				if skillbar.cooldowns[queued_skill] <= 0.0:
-					# Принудительно сообщаем серверу актуальную позицию ПЕРЕД скиллом
-					Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": me.position.x, "y": me.position.y}))
-					last_sent_pos = me.position
 					_send_skill(queued_skill, {"skill": queued_skill + 1, "mobId": attack_target.mob_id})
 					attack_cooldown = PLAYER_ATTACK_COOLDOWN
 					queued_skill = -1
@@ -346,7 +339,7 @@ func _process(delta: float) -> void:
 						attack_cooldown = PLAYER_ATTACK_COOLDOWN
 						me.play_bow_shot()
 				else:
-					me.request_move_to(attack_target.position)
+					_send_move_intent(attack_target.position)
 			else:
 				# Melee: Player.position = ноги, mob.position = центр (ноги моба на +20).
 				# Все дистанции < 36px, чтобы сервер принимал атаку.
@@ -372,7 +365,7 @@ func _process(delta: float) -> void:
 						attack_cooldown = PLAYER_ATTACK_COOLDOWN
 						me.play_punch()
 				else:
-					me.request_move_to(cardinal_spot)
+					_send_move_intent(cardinal_spot)
 	if attack_cooldown > 0.0:
 		attack_cooldown -= delta
 
@@ -404,14 +397,8 @@ func _process(delta: float) -> void:
 			_click_marker.modulate.a = clamp(_click_marker_t / 0.3, 0.0, 1.0)
 			_click_marker.scale = Vector2(1.0, 1.0) * (0.8 + 0.2 * _click_marker_t)
 
-	send_accum += delta
-	if send_accum < 1.0 / MOVE_SEND_HZ:
-		return
-	send_accum = 0.0
-	if last_sent_pos.distance_to(me.position) < 0.5:
-		return
-	last_sent_pos = me.position
-	Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": me.position.x, "y": me.position.y}))
+	# Периодический send me.position больше не нужен — сервер сам двигает
+	# персонажа к moveTarget, клиент только отправляет target при клике.
 
 func _on_logout() -> void:
 	Session.logout()
@@ -486,6 +473,13 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_ARROW:      _spawn_arrow(body)
 		OP_CHAT_RELAY: _apply_chat(body)
 
+func _send_move_intent(target: Vector2) -> void:
+	# Server-authoritative: клиент сообщает цель, сервер сам шагает.
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": target.x, "y": target.y}))
+	last_sent_pos = target
+
 func _apply_positions(body: Dictionary) -> void:
 	for p in body.get("players", []):
 		var sid: String = p.get("sid", "")
@@ -498,9 +492,8 @@ func _apply_positions(body: Dictionary) -> void:
 		if sid == my_session_id:
 			var max_hp: float = float(last_me.get("hpMax", 100))
 			me.set_hp(hp, max_hp)
-			if me.position.distance_to(Vector2(x, y)) > 64.0:
-				me.position = Vector2(x, y)
-				last_sent_pos = me.position
+			# Server-auth: всегда интерполируем локального игрока к server pos.
+			me.remote_update(Vector2(x, y))
 			continue
 		var display: String = String(p.get("n", sid.substr(0, 6)))
 		var uid: String = String(p.get("uid", sid))

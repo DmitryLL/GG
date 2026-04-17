@@ -151,6 +151,7 @@ interface MatchPlayer {
     username: string;
     presence: nkruntime.Presence;
     pos: Vec2;
+    moveTarget: Vec2 | null;  // server-authoritative движение
     hp: number;
     hpMax: number;
     level: number;
@@ -168,6 +169,8 @@ interface MatchPlayer {
     preciseShotReady: boolean;
     effects: PlayerEffect[];
 }
+
+const PLAYER_SPEED = 150; // px/sec — должна совпадать с Godot Player.SPEED
 
 interface ActiveZone {
     id: string;
@@ -445,6 +448,7 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             atkSpeedBoostUntil: 0,
             preciseShotReady: false,
             effects: [],
+            moveTarget: null,
         };
         player.hpMax = computeHpMax(player);
         player.hp = player.hpMax;
@@ -611,8 +615,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     const x = Number(body.x); const y = Number(body.y);
                     if (!isFinite(x) || !isFinite(y)) break;
                     if (x < 0 || x > MAP_WIDTH || y < 0 || y > MAP_HEIGHT) break;
-                    player.pos.x = x; player.pos.y = y;
-                    player.dirtyPos = true;
+                    // Target-based: клиент указывает КУДА идти, сервер сам шагает.
+                    player.moveTarget = { x, y };
                 } catch (_e) {}
                 break;
             }
@@ -917,7 +921,36 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             pl.pos.x = WORLD.playerSpawn.x; pl.pos.y = WORLD.playerSpawn.y;
             pl.hp = pl.hpMax; pl.lastTouchedByMob = {};
             pl.effects = [];
+            pl.moveTarget = null;
             pl.dirtyPos = true; markMe(pl);
+        }
+    }
+
+    // --- server-authoritative player movement ---
+    // Клиент шлёт moveTarget, сервер сам шагает к нему со PLAYER_SPEED.
+    // Axis-separated collision — чтобы не залипать в углах тайлов.
+    for (const sk of Object.keys(state.players)) {
+        const pl = state.players[sk];
+        if (pl.hp <= 0 || !pl.moveTarget) continue;
+        const dx = pl.moveTarget.x - pl.pos.x;
+        const dy = pl.moveTarget.y - pl.pos.y;
+        const distTarget = Math.sqrt(dx * dx + dy * dy);
+        const step = PLAYER_SPEED * TICK_DT;
+        if (distTarget <= step) {
+            if (isWalkableAt(WORLD.tiles, pl.moveTarget.x, pl.moveTarget.y)) {
+                pl.pos.x = pl.moveTarget.x;
+                pl.pos.y = pl.moveTarget.y;
+            }
+            pl.moveTarget = null;
+            pl.dirtyPos = true;
+        } else {
+            const dirX = dx / distTarget;
+            const dirY = dy / distTarget;
+            const nx = pl.pos.x + dirX * step;
+            if (isWalkableAt(WORLD.tiles, nx, pl.pos.y)) pl.pos.x = nx;
+            const ny = pl.pos.y + dirY * step;
+            if (isWalkableAt(WORLD.tiles, pl.pos.x, ny)) pl.pos.y = ny;
+            pl.dirtyPos = true;
         }
     }
 
