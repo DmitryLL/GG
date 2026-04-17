@@ -386,7 +386,7 @@ func _set_facing_from(delta: Vector2) -> void:
 		facing = Dir.DOWN if delta.y > 0 else Dir.UP
 	_update_bow_position()
 
-func _animate(_delta: float) -> void:
+func _animate(delta: float) -> void:
 	var base := facing * WALK_HFRAMES
 	var now_s: int = Session.server_now_ms()
 	# Roll (отскок)
