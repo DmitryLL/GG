@@ -149,7 +149,7 @@ func _build_doll(parent: Container) -> void:
 
 	doll_sprite = Sprite2D.new()
 	doll_sprite.position = Vector2(140, 175)
-	doll_sprite.scale = Vector2(1.8, 1.8)
+	doll_sprite.scale = Vector2(1.3, 1.3)
 	doll_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	doll_root.add_child(doll_sprite)
 
@@ -498,9 +498,9 @@ func set_doll(variant: int) -> void:
 	_update_doll_sprite(false)
 
 func _update_doll_sprite(has_bow: bool) -> void:
-	var path: String = "res://assets/sprites/char_archer_walk.png" if has_bow else "res://assets/sprites/char_%d.png" % _doll_variant
+	var path: String = "res://assets/sprites/char_%d.png" % _doll_variant
 	doll_sprite.texture = load(path)
-	doll_sprite.hframes = 3
+	doll_sprite.hframes = 6
 	doll_sprite.vframes = 4
 	doll_sprite.frame = 0  # facing-down idle
 

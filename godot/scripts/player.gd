@@ -5,10 +5,17 @@ extends Node2D
 signal moved(pos: Vector2)
 
 const SPEED := 200.0
-const ANIM_FPS := 8.0
 const SPRITE_VARIANTS := 6
-# Sprite layout: 3 walk frames × 4 directions. hframes=3, vframes=4.
-# Row 0 down, Row 1 left, Row 2 right, Row 3 up. Col 0 idle, 1/2 steps.
+# Фундамент (pixellab walking-6-frames + cross-punch-6-frames):
+# walk-атлас: 6 walk frames × 4 directions (hframes=6, vframes=4)
+# punch-атлас: 6 punch frames × 4 directions (hframes=6, vframes=4)
+# Row 0 DOWN (south), 1 LEFT (west), 2 RIGHT (east), 3 UP (north).
+# Все варианты char_0..5 и archer_walk — копии char_base_walk.png,
+# различия между персонажами только через overlay оружия/одежды.
+const WALK_HFRAMES := 6
+const WALK_FPS := 10.0
+const PUNCH_HFRAMES := 6
+const PUNCH_DURATION := 0.45
 enum Dir { DOWN = 0, LEFT = 1, RIGHT = 2, UP = 3 }
 
 @export var display_name: String = ""
@@ -44,12 +51,12 @@ func setup(p_world: World, p_name: String, p_variant: int) -> void:
 func _ready() -> void:
 	sprite = Sprite2D.new()
 	sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
-	sprite.hframes = 3
+	sprite.hframes = WALK_HFRAMES
 	sprite.vframes = 4
-	sprite.frame = Dir.DOWN * 3
+	sprite.frame = Dir.DOWN * WALK_HFRAMES
 	sprite.scale = Vector2(1.0, 1.0)
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	sprite.offset = Vector2(0, -16)
+	sprite.offset = Vector2(0, -24)
 	add_child(sprite)
 	z_index = 50  # игрок всегда поверх мобов/деревьев
 
@@ -225,15 +232,11 @@ func set_has_bow(on: bool) -> void:
 	_has_bow = on
 	if bow_string: bow_string.visible = false
 	if bow_arrow: bow_arrow.visible = false
-	# Лучник и безоружный используют один и тот же атлас базовой ходьбы —
-	# различие только в overlay-луке. Это закреплено в project_skills_architecture.
-	if on:
-		sprite.texture = load("res://assets/sprites/char_archer_walk.png")
-	else:
-		sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
-	sprite.hframes = 3
+	# Лучник и безоружный — один базовый rig; различие только в overlay-луке.
+	sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
+	sprite.hframes = WALK_HFRAMES
 	sprite.vframes = 4
-	sprite.frame = facing * 3
+	sprite.frame = facing * WALK_HFRAMES
 	if bow_sprite:
 		bow_sprite.visible = on
 		if on:
@@ -271,33 +274,41 @@ var _punch_t := 0.0
 var _bow_shot_t := 0.0
 var _roll_t := 0.0
 const BOW_SHOT_DURATION := 0.55
-const BOW_SHOT_FRAMES := 6
 const ROLL_DURATION := 0.4
 const ROLL_FRAMES := 6
 
 func play_punch() -> void:
-	_punch_t = 0.25
+	_punch_t = PUNCH_DURATION
+	sprite.texture = load("res://assets/sprites/char_base_punch.png")
+	sprite.hframes = PUNCH_HFRAMES
+	sprite.vframes = 4
 
 func play_bow_shot() -> void:
+	# Пока используем punch-анимацию и для выстрела (bow overlay включён).
+	# Отдельный bow-shot rig добавим в следующей итерации, если понадобится.
 	if not _has_bow: return
 	_bow_shot_t = BOW_SHOT_DURATION
-	sprite.texture = load("res://assets/sprites/char_archer_shoot.png")
-	sprite.hframes = BOW_SHOT_FRAMES
+	sprite.texture = load("res://assets/sprites/char_base_punch.png")
+	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
 
 func play_roll() -> void:
+	# Временно: перекат = короткий punch-sprite (пока нет отдельного rig).
 	_roll_t = ROLL_DURATION
-	var path: String = "res://assets/sprites/char_archer_roll.png" if _has_bow else "res://assets/sprites/char_base_roll.png"
-	sprite.texture = load(path)
-	sprite.hframes = ROLL_FRAMES
+	sprite.texture = load("res://assets/sprites/char_base_punch.png")
+	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
 
 func play_bow_shot_upward() -> void:
-	# Принудительно поворачиваем персонажа лицом «вверх» и проигрываем выстрел.
-	# Используется для скиллов с выстрелом в небо (Ливень стрел).
 	if not _has_bow: return
 	facing = Dir.UP
 	play_bow_shot()
+
+func _restore_walk_sprite() -> void:
+	sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
+	sprite.hframes = WALK_HFRAMES
+	sprite.vframes = 4
+	sprite.frame = facing * WALK_HFRAMES
 
 func _set_facing_from(delta: Vector2) -> void:
 	if abs(delta.x) < 0.01 and abs(delta.y) < 0.01:
@@ -309,60 +320,48 @@ func _set_facing_from(delta: Vector2) -> void:
 	_update_bow_position()
 
 func _animate(delta: float) -> void:
-	var base := facing * 3
-	# Roll (отскок): приоритетная анимация front-flip
+	var base := facing * WALK_HFRAMES
+	# Roll (отскок)
 	if _roll_t > 0.0:
 		_roll_t -= delta
 		var rprog: float = 1.0 - (_roll_t / ROLL_DURATION)
-		var rframe: int = clampi(int(rprog * ROLL_FRAMES), 0, ROLL_FRAMES - 1)
-		sprite.frame = facing * ROLL_FRAMES + rframe
-		sprite.offset = Vector2(0, -16)
+		var rframe: int = clampi(int(rprog * PUNCH_HFRAMES), 0, PUNCH_HFRAMES - 1)
+		sprite.frame = facing * PUNCH_HFRAMES + rframe
+		sprite.offset = Vector2(0, -24)
 		if _roll_t <= 0.0:
-			var walk_path: String = "res://assets/sprites/char_archer_walk.png" if _has_bow else "res://assets/sprites/char_%d.png" % variant
-			sprite.texture = load(walk_path)
-			sprite.hframes = 3
-			sprite.vframes = 4
-			sprite.frame = facing * 3
+			_restore_walk_sprite()
 		return
-	# Bow shot: проигрываем 6-кадровую анимацию fireball
+	# Bow shot: проигрываем punch-анимацию (overlay лука играет сам отдельно).
 	if _bow_shot_t > 0.0:
 		_bow_shot_t -= delta
 		var progress: float = 1.0 - (_bow_shot_t / BOW_SHOT_DURATION)
-		var frame_in_row: int = clampi(int(progress * BOW_SHOT_FRAMES), 0, BOW_SHOT_FRAMES - 1)
-		sprite.frame = facing * BOW_SHOT_FRAMES + frame_in_row
-		sprite.offset = Vector2(0, -16)
+		var frame_in_row: int = clampi(int(progress * PUNCH_HFRAMES), 0, PUNCH_HFRAMES - 1)
+		sprite.frame = facing * PUNCH_HFRAMES + frame_in_row
+		sprite.offset = Vector2(0, -24)
 		if _bow_shot_t <= 0.0:
-			# Вернуться к walk-спрайту
-			sprite.texture = load("res://assets/sprites/char_archer_walk.png")
-			sprite.hframes = 3
-			sprite.vframes = 4
-			sprite.frame = facing * 3
+			_restore_walk_sprite()
 		return
-	# Punch visual: lunge sprite toward facing direction briefly.
+	# Punch: полная 6-кадровая анимация из char_base_punch.png.
 	if _punch_t > 0.0:
 		_punch_t -= delta
-		var lunge_dir := Vector2.ZERO
-		match facing:
-			Dir.DOWN: lunge_dir = Vector2(0, 6)
-			Dir.UP: lunge_dir = Vector2(0, -6)
-			Dir.LEFT: lunge_dir = Vector2(-6, 0)
-			Dir.RIGHT: lunge_dir = Vector2(6, 0)
-		sprite.offset = Vector2(0, -16) + lunge_dir
-		sprite.frame = base + 2
+		var pprog: float = 1.0 - (_punch_t / PUNCH_DURATION)
+		var pframe: int = clampi(int(pprog * PUNCH_HFRAMES), 0, PUNCH_HFRAMES - 1)
+		sprite.frame = facing * PUNCH_HFRAMES + pframe
+		sprite.offset = Vector2(0, -24)
+		if _punch_t <= 0.0:
+			_restore_walk_sprite()
 		return
-	else:
-		sprite.offset = Vector2(0, -16)
-		if bow_sprite and bow_sprite.visible:
-			bow_sprite.scale = Vector2(0.6, 0.6)
-			_update_bow_position()
+	sprite.offset = Vector2(0, -24)
+	if bow_sprite and bow_sprite.visible:
+		bow_sprite.scale = Vector2(0.6, 0.6)
+		_update_bow_position()
 	if not moving:
 		sprite.frame = base
 		anim_t = 0.0
 		return
 	anim_t += delta
-	var cycle := int(anim_t * ANIM_FPS) % 4
-	var offsets := [1, 0, 2, 0]
-	sprite.frame = base + offsets[cycle]
+	var cycle := int(anim_t * WALK_FPS) % WALK_HFRAMES
+	sprite.frame = base + cycle
 
 func request_move_to(world_pos: Vector2) -> void:
 	if world == null:
