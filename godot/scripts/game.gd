@@ -16,6 +16,7 @@ const BAG_SCRIPT := preload("res://scripts/bag_window.gd")
 const LOOT_SCRIPT := preload("res://scripts/loot_window.gd")
 const SKILLBAR_SCRIPT := preload("res://scripts/skillbar.gd")
 const ADMIN_SCRIPT := preload("res://scripts/admin_panel.gd")
+const BUTTERFLIES_SCRIPT := preload("res://scripts/butterflies.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -99,6 +100,11 @@ func _ready() -> void:
 
 	world = WORLD_SCRIPT.new()
 	world_root.add_child(world)
+
+	# Декоративные летающие бабочки/пчёлки над лугами.
+	var butterflies := BUTTERFLIES_SCRIPT.new()
+	butterflies.setup(world)
+	world.add_child(butterflies)
 
 	me = PLAYER_SCRIPT.new()
 	me.setup(world, display, PLAYER_SCRIPT.variant_from(Session.auth.user_id))
