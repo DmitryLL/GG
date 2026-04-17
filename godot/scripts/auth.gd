@@ -168,14 +168,23 @@ func _do_login(nick: String, pwd: String, create: bool) -> void:
 	if session.is_exception():
 		var err_msg: String = session.get_exception().message
 		var lower := err_msg.to_lower()
-		if "exists" in lower:
-			_show_error("Ник занят (другой пароль)")
-		elif "invalid" in lower or "credentials" in lower or "password" in lower:
-			_show_error("Неверный пароль")
-		elif "not found" in lower:
-			_show_error("Юзер не найден — нажми «Регистрация»")
+		# При нажатии «Регистрация» ошибка credentials почти всегда означает,
+		# что ник уже занят другим паролем: Nakama пытается залогинить и
+		# получает Invalid credentials. Показываем честное сообщение.
+		if create:
+			if "exists" in lower or "invalid" in lower or "credentials" in lower or "password" in lower:
+				_show_error("Ник уже занят — выбери другой или нажми «Войти»")
+			else:
+				_show_error("Ошибка регистрации: " + err_msg)
 		else:
-			_show_error("Ошибка: " + err_msg)
+			if "exists" in lower:
+				_show_error("Ник занят (другой пароль)")
+			elif "invalid" in lower or "credentials" in lower or "password" in lower:
+				_show_error("Неверный пароль")
+			elif "not found" in lower:
+				_show_error("Юзер не найден — нажми «Регистрация»")
+			else:
+				_show_error("Ошибка: " + err_msg)
 		return
 	_write_storage(nick)
 	if _mobile_form_active:
