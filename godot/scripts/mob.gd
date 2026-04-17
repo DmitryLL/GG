@@ -3,7 +3,7 @@
 class_name Mob
 extends Node2D
 
-const POISON_ICON := preload("res://assets/sprites/ui/effect_poison.png")
+const POISON_ICON := preload("res://assets/sprites/skill_4.png")
 
 var _anim_fps := 4.0
 var _anim_frames := 4
@@ -76,7 +76,7 @@ func _ready() -> void:
 	debuff_icon = Sprite2D.new()
 	debuff_icon.texture = POISON_ICON
 	debuff_icon.position = Vector2(0, -36)
-	debuff_icon.scale = Vector2(0.7, 0.7)
+	debuff_icon.scale = Vector2(0.35, 0.35)  # 64px → ~22px
 	debuff_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	debuff_icon.visible = false
 	debuff_icon.z_index = 10
