@@ -170,7 +170,7 @@ interface MatchPlayer {
     effects: PlayerEffect[];
 }
 
-const PLAYER_SPEED = 100; // px/sec — должна совпадать с Godot Player.SPEED
+const PLAYER_SPEED = 120; // px/sec — должна совпадать с Godot Player.SPEED
 
 interface ActiveZone {
     id: string;
