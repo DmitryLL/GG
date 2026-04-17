@@ -75,13 +75,18 @@ func _ready() -> void:
 	var tex: Texture2D = load("res://assets/sprites/ui/effect_poison.png")
 	debuff_icon.texture = tex
 	debuff_icon.position = Vector2(0, -36)
-	debuff_icon.scale = Vector2(2.0, 2.0)  # DEBUG: крупный
+	debuff_icon.scale = Vector2(1.2, 1.2)
 	debuff_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	debuff_icon.visible = true  # DEBUG: всегда видна
+	debuff_icon.visible = true
 	debuff_icon.z_index = 100
-	debuff_icon.modulate = Color(1, 1, 1, 1.0)
 	add_child(debuff_icon)
-	print("[mob ", mob_id, "] debuff_icon created tex=", tex, " null=", tex == null)
+
+	var debug_rect := ColorRect.new()
+	debug_rect.name = "DebugRect"
+	debug_rect.color = Color(1, 0, 1, 1)  # ярко-розовый
+	debug_rect.size = Vector2(16, 16)
+	debug_rect.position = Vector2(-8, -60)
+	add_child(debug_rect)
 
 	_highlight_ring = Sprite2D.new()
 	_highlight_ring.texture = _make_ring_texture()
