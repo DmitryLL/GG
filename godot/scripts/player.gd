@@ -223,11 +223,10 @@ var _has_bow := false
 func set_has_bow(on: bool) -> void:
 	if _has_bow == on: return
 	_has_bow = on
-	# Встроенный в спрайт лук — свой overlay прячем полностью
-	if bow_sprite:
-		bow_sprite.visible = false
 	if bow_string: bow_string.visible = false
 	if bow_arrow: bow_arrow.visible = false
+	# Лучник и безоружный используют один и тот же атлас базовой ходьбы —
+	# различие только в overlay-луке. Это закреплено в project_skills_architecture.
 	if on:
 		sprite.texture = load("res://assets/sprites/char_archer_walk.png")
 	else:
@@ -235,6 +234,10 @@ func set_has_bow(on: bool) -> void:
 	sprite.hframes = 3
 	sprite.vframes = 4
 	sprite.frame = facing * 3
+	if bow_sprite:
+		bow_sprite.visible = on
+		if on:
+			_update_bow_position()
 
 func _update_bow_position() -> void:
 	if bow_sprite == null or not bow_sprite.visible:
