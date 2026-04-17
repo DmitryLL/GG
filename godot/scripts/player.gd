@@ -284,11 +284,12 @@ func play_punch() -> void:
 	sprite.vframes = 4
 
 func play_bow_shot() -> void:
-	# Пока используем punch-анимацию и для выстрела (bow overlay включён).
-	# Отдельный bow-shot rig добавим в следующей итерации, если понадобится.
+	# Отдельный archer-rig — натяжка тетивы и выстрел (без визуального лука;
+	# лук накладывается через bow_sprite overlay). Собран из pixellab-
+	# fireball template, огненное ядро отфильтровано.
 	if not _has_bow: return
 	_bow_shot_t = BOW_SHOT_DURATION
-	sprite.texture = load("res://assets/sprites/char_base_punch.png")
+	sprite.texture = load("res://assets/sprites/char_base_shoot.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
 
