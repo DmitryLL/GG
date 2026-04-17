@@ -83,7 +83,7 @@ async function main() {
             const op = m.match_data.op_code;
             if (op === '8') {
                 const me = JSON.parse(Buffer.from(m.match_data.data, 'base64').toString());
-                console.log(`OP_ME hp=${me.hp}/${me.hpMax} lv=${me.level} eq=${JSON.stringify(me.eq)}`);
+                console.log(`OP_ME hp=${me.hp}/${me.hpMax} lv=${me.level} dmg=${me.damage} eq=${JSON.stringify(me.eq)}`);
             }
         }
         if (m.match_presence_event) {
