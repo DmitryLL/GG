@@ -186,8 +186,8 @@ func flash() -> void:
 
 func _process(delta: float) -> void:
 	_glow_t += delta
-	_update_debuff_visible()
-	if debuff_icon and debuff_icon.visible:
+	# DEBUG: skip _update_debuff_visible
+	if debuff_icon:
 		debuff_icon.modulate.a = 0.85 + 0.15 * sin(_glow_t * 5.0)
 	if glow and glow.visible:
 		var g_pulse: float = 0.5 + 0.4 * sin(_glow_t * 3.0)
