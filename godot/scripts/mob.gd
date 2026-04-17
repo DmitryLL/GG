@@ -75,8 +75,8 @@ func _ready() -> void:
 
 	debuff_icon = Sprite2D.new()
 	debuff_icon.texture = POISON_ICON
-	debuff_icon.position = Vector2(0, -36)
-	debuff_icon.scale = Vector2(0.35, 0.35)  # 64px → ~22px
+	debuff_icon.position = Vector2(0, -40)
+	debuff_icon.scale = Vector2(0.5, 0.5)  # 64px → 32px
 	debuff_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	debuff_icon.visible = false
 	debuff_icon.z_index = 10
