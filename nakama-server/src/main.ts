@@ -183,6 +183,7 @@ interface MobDebuff {
     poisonEndAt: number;
     slowEndAt: number;
     nextPoisonTickAt: number;
+    poisonDmg: number;  // per-stack per-tick урон яда (считается от baseDmg в момент касtа)
 }
 
 interface PlayerEffect {
@@ -935,7 +936,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         const def = MOB_TYPES[mob.type];
         // Poison DoT
         if (mob.debuff && t < mob.debuff.poisonEndAt && t >= mob.debuff.nextPoisonTickAt) {
-            const dot = 3 * mob.debuff.poisonStacks;
+            const perTick = mob.debuff.poisonDmg || 3;
+            const dot = Math.max(1, perTick * mob.debuff.poisonStacks);
             mob.hp -= dot;
             mob.dirty = true;
             mob.debuff.nextPoisonTickAt = t + 1000;
