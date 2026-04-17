@@ -17,7 +17,6 @@ var sprite: Sprite2D
 var hp_bg: ColorRect
 var hp_fill: ColorRect
 var glow: Sprite2D
-var effect_bar: EffectBar
 var _poison_end_ms: int = 0
 var _server_offset_ms: int = 0
 var _anim_t := 0.0
@@ -70,10 +69,6 @@ func _ready() -> void:
 	hp_fill.size = Vector2(28, 4)
 	hp_fill.position = Vector2(-14, -22)
 	add_child(hp_fill)
-
-	effect_bar = EffectBar.new()
-	effect_bar.position = Vector2(-14, -17)
-	add_child(effect_bar)
 
 	_highlight_ring = Sprite2D.new()
 	_highlight_ring.texture = _make_ring_texture()
@@ -162,8 +157,6 @@ func set_debuff(d, server_now_ms: int) -> void:
 		_poison_end_ms = int(d.get("poisonEndAt", 0))
 	if server_now_ms > 0:
 		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
-	if effect_bar:
-		effect_bar.set_effects(EffectBar.effects_from_mob_debuff(d), server_now_ms)
 
 func poison_active() -> bool:
 	if _poison_end_ms <= 0:
@@ -178,9 +171,7 @@ func poison_remaining_ms() -> int:
 	return max(0, _poison_end_ms - server_now)
 
 func _update_debuff_visible() -> void:
-	if effect_bar == null:
-		return
-	effect_bar.visible = alive
+	pass  # nameplate.target_effects отображает дебафы текущей цели
 
 func flash() -> void:
 	_flash_t = 0.1

@@ -554,7 +554,6 @@ func _apply_positions(body: Dictionary) -> void:
 		remote.set_has_bow(has_bow_remote)
 		var hp_max_remote: float = float(p.get("hpMax", 100))
 		remote.set_hp(hp, hp_max_remote)
-		remote.set_effects(p.get("effects", []), int(body.get("t", 0)))
 
 func _apply_mobs(body: Dictionary) -> void:
 	for m in body.get("mobs", []):
@@ -591,7 +590,6 @@ func _apply_me(body: Dictionary) -> void:
 	shop.refresh(body)
 	me.set_hp(float(body.get("hp", 0)), float(body.get("hpMax", 100)))
 	me.set_has_bow(String(body.get("eq", {}).get("weapon", "")).contains("bow"))
-	me.set_effects(body.get("effects", []), int(body.get("t", 0)))
 
 func _on_character_button() -> void:
 	character_win.open(last_me)

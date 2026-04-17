@@ -23,7 +23,6 @@ var bow_arrow: Line2D
 var label: Label
 var hp_bg: ColorRect
 var hp_fill: ColorRect
-var effect_bar: EffectBar
 var hp: float = 100.0
 var hp_max: float = 100.0
 var move_target: Vector2 = Vector2.ZERO
@@ -102,18 +101,10 @@ func _ready() -> void:
 	hp_fill.position = Vector2(-14, -42)
 	add_child(hp_fill)
 
-	effect_bar = EffectBar.new()
-	effect_bar.position = Vector2(-14, -36)
-	add_child(effect_bar)
-
 	if local:
 		label.visible = false
 		hp_bg.visible = false
 		hp_fill.visible = false
-
-func set_effects(effects: Array, server_now_ms: int) -> void:
-	if effect_bar:
-		effect_bar.set_effects(effects, server_now_ms)
 
 func _process(delta: float) -> void:
 	if _flash_t > 0.0:
