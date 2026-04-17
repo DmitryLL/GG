@@ -397,8 +397,30 @@ func _process(delta: float) -> void:
 			_click_marker.modulate.a = clamp(_click_marker_t / 0.3, 0.0, 1.0)
 			_click_marker.scale = Vector2(1.0, 1.0) * (0.8 + 0.2 * _click_marker_t)
 
-	# Периодический send me.position больше не нужен — сервер сам двигает
-	# персонажа к moveTarget, клиент только отправляет target при клике.
+	# Ливни стрел — привязка к server-time: зона исчезает по серверной
+	# длительности, падающие стрелы спавнятся каждые 50мс server-time.
+	_tick_rain_zones()
+
+func _tick_rain_zones() -> void:
+	if _rain_zones.is_empty():
+		return
+	var now_s: int = server_now_ms()
+	for i in range(_rain_zones.size() - 1, -1, -1):
+		var z: Dictionary = _rain_zones[i]
+		if now_s >= int(z["end_at"]):
+			var node: Node2D = z["node"]
+			var square: Sprite2D = z["square"]
+			if is_instance_valid(square) and is_instance_valid(node):
+				var fade := create_tween()
+				fade.tween_property(square, "modulate:a", 0.0, 0.3)
+				fade.tween_callback(node.queue_free)
+			_rain_zones.remove_at(i)
+			continue
+		if now_s >= int(z["next_arrow"]):
+			z["next_arrow"] = now_s + 50
+			var c: Vector2 = z["center"]
+			var h: float = z["half"]
+			_spawn_falling_arrow(c + Vector2(randf_range(-h, h), randf_range(-h, h)))
 
 func _on_logout() -> void:
 	Session.logout()
@@ -474,6 +496,10 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_CHAT_RELAY: _apply_chat(body)
 
 var _last_intent_ms: int = 0
+var _server_offset_ms: int = 0  # server_now = local + offset (из OP_ME.t)
+
+func server_now_ms() -> int:
+	return Time.get_ticks_msec() + _server_offset_ms
 
 func _send_move_intent(target: Vector2) -> void:
 	# Server-authoritative: клиент сообщает цель, сервер сам шагает.
@@ -543,6 +569,8 @@ func _apply_mobs(body: Dictionary) -> void:
 
 func _apply_me(body: Dictionary) -> void:
 	last_me = body
+	if body.has("t"):
+		_server_offset_ms = int(body["t"]) - Time.get_ticks_msec()
 	hud.update_me(body)
 	if nameplate:
 		nameplate.update_me(body)
@@ -740,34 +768,28 @@ func _handle_skill_fx(body: Dictionary) -> void:
 		if def.on_fx(self, body):
 			return
 
-func _spawn_rain_zone(pos: Vector2, half: float, duration_ms: int) -> void:
-	# half — половина стороны квадрата
+var _rain_zones: Array = []  # [{node, square, center, half, end_server_ms, next_arrow_ms}]
+
+func _spawn_rain_zone(pos: Vector2, half: float, duration_ms: int, start_server_t: int = 0) -> void:
+	# half — половина стороны квадрата.
+	# Длительность привязана к server-time: если вкладка неактивна, после
+	# возврата ливень уже исчезнет (а не будет доигрывать с клиентского таймера).
 	var node := Node2D.new()
 	node.position = pos
 	node.z_index = 90
 	world.add_child(node)
 	var square := _make_zone_square(half * 2.0, Color(1.0, 0.6, 0.25, 0.85))
 	node.add_child(square)
-
-	var spawn_timer := Timer.new()
-	spawn_timer.wait_time = 0.05
-	spawn_timer.one_shot = false
-	spawn_timer.autostart = true
-	spawn_timer.timeout.connect(func():
-		_spawn_falling_arrow(pos + Vector2(randf_range(-half, half), randf_range(-half, half))))
-	node.add_child(spawn_timer)
-
-	# Гарантированное удаление через duration
-	var kill_timer := Timer.new()
-	kill_timer.wait_time = float(duration_ms) / 1000.0
-	kill_timer.one_shot = true
-	kill_timer.autostart = true
-	kill_timer.timeout.connect(func():
-		# Плавное затухание квадрата перед уничтожением
-		var fade := create_tween()
-		fade.tween_property(square, "modulate:a", 0.0, 0.3)
-		fade.tween_callback(node.queue_free))
-	node.add_child(kill_timer)
+	var now_s: int = server_now_ms()
+	var start: int = start_server_t if start_server_t > 0 else now_s
+	_rain_zones.append({
+		"node": node,
+		"square": square,
+		"center": pos,
+		"half": half,
+		"end_at": start + duration_ms,
+		"next_arrow": now_s,
+	})
 
 func _spawn_falling_arrow(target: Vector2) -> void:
 	var arrow := Line2D.new()

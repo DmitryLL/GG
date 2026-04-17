@@ -22,5 +22,6 @@ func on_fx(game, body: Dictionary) -> bool:
 	var pos := Vector2(float(body.get("x", 0)), float(body.get("y", 0)))
 	var r := float(body.get("r", 80))
 	var dur_ms := int(body.get("duration", 3500))
-	game._spawn_rain_zone(pos, r, dur_ms)
+	var start_t := int(body.get("t", 0))
+	game._spawn_rain_zone(pos, r, dur_ms, start_t)
 	return true

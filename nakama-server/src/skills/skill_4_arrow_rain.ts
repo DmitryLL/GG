@@ -21,6 +21,7 @@ registerSkill(4, {
             kind: "rain_start", x: zx, y: zy, r: 80,
             fx: player.pos.x, fy: player.pos.y,
             duration: 3500,
+            t: t,  // server-time старта, чтобы клиент привязал длительность к серверу
         }));
         player.skillCd[4] = t + 12000;
     },
