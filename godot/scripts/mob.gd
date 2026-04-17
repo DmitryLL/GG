@@ -167,6 +167,7 @@ func set_debuff(d, server_now_ms: int) -> void:
 	_poison_end_ms = int(d.get("poisonEndAt", 0))
 	if server_now_ms > 0:
 		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
+	print("[mob ", mob_id, "] set_debuff poisonEndAt=", _poison_end_ms, " now=", server_now_ms, " offset=", _server_offset_ms)
 	_update_debuff_visible()
 
 func _update_debuff_visible() -> void:
