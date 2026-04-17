@@ -478,6 +478,8 @@ function mobSnap(m: MatchMob) {
         hp: m.hp, hpMax: m.hpMax,
         st: m.state,
         loot: m.loot,
+        debuff: m.debuff || null,
+        now: Date.now(),
     };
 }
 

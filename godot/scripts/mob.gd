@@ -17,6 +17,9 @@ var sprite: Sprite2D
 var hp_bg: ColorRect
 var hp_fill: ColorRect
 var glow: Sprite2D
+var debuff_icon: Sprite2D
+var _poison_end_ms: int = 0
+var _server_offset_ms: int = 0
 var _anim_t := 0.0
 var _flash_t := 0.0
 var _glow_t := 0.0
@@ -67,6 +70,14 @@ func _ready() -> void:
 	hp_fill.size = Vector2(28, 4)
 	hp_fill.position = Vector2(-14, -22)
 	add_child(hp_fill)
+
+	debuff_icon = Sprite2D.new()
+	debuff_icon.texture = load("res://assets/sprites/ui/effect_poison.png")
+	debuff_icon.position = Vector2(0, -32)
+	debuff_icon.scale = Vector2(0.55, 0.55)
+	debuff_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	debuff_icon.visible = false
+	add_child(debuff_icon)
 
 	_highlight_ring = Sprite2D.new()
 	_highlight_ring.texture = _make_ring_texture()
@@ -148,12 +159,34 @@ func set_hp(v: float, vmax: float) -> void:
 	var ratio: float = clamp(hp / hp_max, 0.0, 1.0)
 	hp_fill.size.x = 28.0 * ratio
 
+func set_debuff(d, server_now_ms: int) -> void:
+	if d == null or typeof(d) != TYPE_DICTIONARY:
+		_poison_end_ms = 0
+		if debuff_icon: debuff_icon.visible = false
+		return
+	_poison_end_ms = int(d.get("poisonEndAt", 0))
+	if server_now_ms > 0:
+		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
+	_update_debuff_visible()
+
+func _update_debuff_visible() -> void:
+	if debuff_icon == null or not alive:
+		return
+	if _poison_end_ms <= 0:
+		debuff_icon.visible = false
+		return
+	var server_now: int = Time.get_ticks_msec() + _server_offset_ms
+	debuff_icon.visible = _poison_end_ms > server_now
+
 func flash() -> void:
 	_flash_t = 0.1
 	sprite.modulate = Color(1.5, 1.5, 1.5, 1.0)
 
 func _process(delta: float) -> void:
 	_glow_t += delta
+	_update_debuff_visible()
+	if debuff_icon and debuff_icon.visible:
+		debuff_icon.modulate.a = 0.85 + 0.15 * sin(_glow_t * 5.0)
 	if glow and glow.visible:
 		var g_pulse: float = 0.5 + 0.4 * sin(_glow_t * 3.0)
 		glow.modulate.a = g_pulse
