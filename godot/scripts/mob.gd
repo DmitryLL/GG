@@ -3,6 +3,8 @@
 class_name Mob
 extends Node2D
 
+const POISON_ICON := preload("res://assets/sprites/ui/effect_poison.png")
+
 var _anim_fps := 4.0
 var _anim_frames := 4
 
@@ -72,21 +74,13 @@ func _ready() -> void:
 	add_child(hp_fill)
 
 	debuff_icon = Sprite2D.new()
-	var tex: Texture2D = load("res://assets/sprites/ui/effect_poison.png")
-	debuff_icon.texture = tex
+	debuff_icon.texture = POISON_ICON
 	debuff_icon.position = Vector2(0, -36)
-	debuff_icon.scale = Vector2(1.2, 1.2)
+	debuff_icon.scale = Vector2(0.7, 0.7)
 	debuff_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	debuff_icon.visible = true
-	debuff_icon.z_index = 100
+	debuff_icon.visible = false
+	debuff_icon.z_index = 10
 	add_child(debuff_icon)
-
-	var debug_rect := ColorRect.new()
-	debug_rect.name = "DebugRect"
-	debug_rect.color = Color(1, 0, 1, 1)  # ярко-розовый
-	debug_rect.size = Vector2(16, 16)
-	debug_rect.position = Vector2(-8, -60)
-	add_child(debug_rect)
 
 	_highlight_ring = Sprite2D.new()
 	_highlight_ring.texture = _make_ring_texture()
@@ -176,7 +170,6 @@ func set_debuff(d, server_now_ms: int) -> void:
 	_poison_end_ms = int(d.get("poisonEndAt", 0))
 	if server_now_ms > 0:
 		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
-	print("[mob ", mob_id, "] set_debuff poisonEndAt=", _poison_end_ms, " now=", server_now_ms, " offset=", _server_offset_ms)
 	_update_debuff_visible()
 
 func _update_debuff_visible() -> void:
@@ -194,8 +187,8 @@ func flash() -> void:
 
 func _process(delta: float) -> void:
 	_glow_t += delta
-	# DEBUG: skip _update_debuff_visible
-	if debuff_icon:
+	_update_debuff_visible()
+	if debuff_icon and debuff_icon.visible:
 		debuff_icon.modulate.a = 0.85 + 0.15 * sin(_glow_t * 5.0)
 	if glow and glow.visible:
 		var g_pulse: float = 0.5 + 0.4 * sin(_glow_t * 3.0)
