@@ -102,7 +102,7 @@ func _ready() -> void:
 	panel.add_child(outer)
 
 	var title := Label.new()
-	title.text = "АДМИНКА (F12)"
+	title.text = "АДМИНКА (` или F12)"
 	title.add_theme_font_size_override("font_size", 14)
 	title.add_theme_color_override("font_color", Color(1, 0.7, 0.7))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -319,13 +319,15 @@ func _emit_simple(action: String) -> void:
 	action_requested.emit(action, {})
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F12:
-		if not is_admin():
-			return
-		visible_now = not visible_now
-		panel.visible = visible_now
-		if visible_now and users_list.get_child_count() == 0:
-			_refresh_users()
+	# В браузере F12 перехватывается DevTools, поэтому параллельный хоткей — backtick (`).
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_F12 or event.keycode == KEY_QUOTELEFT:
+			if not is_admin():
+				return
+			visible_now = not visible_now
+			panel.visible = visible_now
+			if visible_now and users_list.get_child_count() == 0:
+				_refresh_users()
 
 func is_admin() -> bool:
 	var name: String = String(Session.auth.username if Session.auth else "").to_lower()
