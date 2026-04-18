@@ -6,6 +6,7 @@ extends CanvasLayer
 signal character_button_pressed
 signal bag_button_pressed
 signal logout_button_pressed
+signal admin_button_pressed
 
 const ICON_BAG := preload("res://assets/sprites/icon_bag.png")
 const ICON_CHAR := preload("res://assets/sprites/icon_character.png")
@@ -16,6 +17,7 @@ const BTN_GAP := 6
 var character_btn: Button
 var bag_btn: Button
 var logout_btn: Button
+var admin_btn: Button
 
 func _ready() -> void:
 	var root := Control.new()
@@ -60,6 +62,24 @@ func _ready() -> void:
 	bag_btn.offset_bottom = y_bottom
 	bag_btn.pressed.connect(func(): bag_button_pressed.emit())
 	root.add_child(bag_btn)
+
+	# Админская кнопка — над × (видна только админам).
+	admin_btn = _make_icon_button(null, "🔧", Color(0.70, 0.85, 1.00), "Админка (`)")
+	admin_btn.anchor_left = 1.0; admin_btn.anchor_right = 1.0
+	admin_btn.anchor_top = 1.0; admin_btn.anchor_bottom = 1.0
+	var admin_y_top: int = y_top - BTN_SIZE - BTN_GAP
+	var admin_y_bottom: int = y_bottom - BTN_SIZE - BTN_GAP
+	admin_btn.offset_right = x_right
+	admin_btn.offset_left = x_right - BTN_SIZE
+	admin_btn.offset_top = admin_y_top
+	admin_btn.offset_bottom = admin_y_bottom
+	admin_btn.pressed.connect(func(): admin_button_pressed.emit())
+	admin_btn.visible = false  # покажется если Session.is_admin(), вызывает game.gd
+	root.add_child(admin_btn)
+
+func set_admin_visible(on: bool) -> void:
+	if admin_btn:
+		admin_btn.visible = on
 
 func _make_icon_button(icon_tex: Texture2D, fallback_text: String, tint: Color, tip: String) -> Button:
 	var b := Button.new()

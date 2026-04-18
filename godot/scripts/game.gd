@@ -60,6 +60,7 @@ const OP_OBJ_ADD      := 34
 const OP_OBJ_DEL      := 35
 const OP_OBJS         := 36
 const OP_OBJ_INTERACT := 37
+const OP_ZONE_SWITCH  := 38
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -197,6 +198,9 @@ func _ready() -> void:
 
 	admin_panel = ADMIN_SCRIPT.new()
 	add_child(admin_panel)
+	# Показать значок гаечного ключа в HUD, если текущий юзер — админ.
+	hud.set_admin_visible(admin_panel.is_admin())
+	hud.admin_button_pressed.connect(admin_panel.toggle)
 	admin_panel.action_requested.connect(_on_admin_action)
 	admin_panel.map_save_requested.connect(_on_map_save)
 	admin_panel.map_save_server_requested.connect(_save_map_on_server)
@@ -859,16 +863,21 @@ func _handle_mob_tool_click(world_pos: Vector2, tool_id: String) -> void:
 	# Объекты карты.
 	if tool_id == "portal_pair":
 		# Первый клик — источник, второй — назначение, шлём OP_OBJ_ADD portal.
+		# Если в admin_panel выбрана целевая зона — добавляем targetZone (межзонный портал).
 		if _portal_pair_source.is_empty():
 			_portal_pair_source = {"x": world_pos.x, "y": world_pos.y}
 			if admin_panel: admin_panel.log_result("Источник портала — клик назначения")
 		else:
 			var src: Dictionary = _portal_pair_source
+			var portal_data := {"tx": world_pos.x, "ty": world_pos.y}
+			if admin_panel and admin_panel.portal_target_zone != "":
+				portal_data["targetZone"] = admin_panel.portal_target_zone
 			Session.socket.send_match_state_async(match_id, OP_OBJ_ADD,
-				JSON.stringify({"kind": "portal", "x": src["x"], "y": src["y"],
-					"data": {"tx": world_pos.x, "ty": world_pos.y}}))
+				JSON.stringify({"kind": "portal", "x": src["x"], "y": src["y"], "data": portal_data}))
 			_portal_pair_source = {}
-			if admin_panel: admin_panel.log_result("Портал создан")
+			if admin_panel:
+				var where: String = admin_panel.portal_target_zone if admin_panel.portal_target_zone != "" else "локально"
+				admin_panel.log_result("Портал создан → " + where)
 		return
 	if tool_id == "chest":
 		# Стандартный сундук с рандомным набором материалов.
@@ -983,7 +992,8 @@ func _connect_and_join() -> void:
 	socket.received_match_state.connect(_on_match_state)
 	socket.received_match_presence.connect(_on_presence)
 
-	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "get_world_match", "")
+	var payload := JSON.stringify({"zone": Session.current_zone})
+	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "get_world_match", payload)
 	if rpc_res.is_exception():
 		status_label.text = "RPC ошибка: %s" % rpc_res.get_exception().message
 		return
@@ -999,7 +1009,44 @@ func _connect_and_join() -> void:
 		return
 	match_id = joined.match_id
 	my_session_id = joined.self_user.session_id
-	status_label.text = "В мире · игроков: %d" % (joined.presences.size() + 1)
+	status_label.text = "Зона: %s · игроков: %d" % [Session.current_zone, joined.presences.size() + 1]
+
+func _handle_zone_switch(body: Dictionary) -> void:
+	var new_zone: String = String(body.get("zone", ""))
+	var new_match_id: String = String(body.get("matchId", ""))
+	if new_zone == "" or new_match_id == "":
+		return
+	status_label.text = "Переход в зону: %s…" % new_zone
+	# Чистый уход из текущего матча + всех локальных объектов; затем join в новый.
+	if Session.socket and match_id != "":
+		await Session.socket.leave_match_async(match_id)
+	match_id = ""
+	Session.current_zone = new_zone
+	# Очистить визуальные сущности — их пришлют заново в OP_MOBS/OP_OBJS/OP_MAP_FULL.
+	for mid in mobs.keys():
+		var mn: Mob = mobs[mid]
+		if is_instance_valid(mn): mn.queue_free()
+	mobs.clear()
+	for oid in _map_objects.keys():
+		var on: Node2D = _map_objects[oid]
+		if is_instance_valid(on): on.queue_free()
+	_map_objects.clear()
+	for k in remotes.keys():
+		var rm: Node2D = remotes[k]
+		if is_instance_valid(rm): rm.queue_free()
+	remotes.clear()
+	for nn in npcs:
+		pass  # NPC нарисованы напрямую как Node2D — их обновим заново через OP_NPCS
+	# Перейти на новый матч.
+	var joined: NakamaRTAPI.Match = await Session.socket.join_match_async(new_match_id)
+	if joined.is_exception():
+		status_label.text = "Join zone ошибка: %s" % joined.get_exception().message
+		return
+	match_id = joined.match_id
+	my_session_id = joined.self_user.session_id
+	# Поставить игрока на позицию, присланную сервером (сервер тоже сам запомнил).
+	me.position = Vector2(float(body.get("x", 0)), float(body.get("y", 0)))
+	status_label.text = "Зона: %s" % new_zone
 
 func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 	var body = JSON.parse_string(state.data)
@@ -1065,6 +1112,8 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 			_update_editor_cursor(body)
 		OP_OBJS:
 			_apply_objects(body)
+		OP_ZONE_SWITCH:
+			_handle_zone_switch(body)
 
 var _last_intent_ms: int = 0
 
