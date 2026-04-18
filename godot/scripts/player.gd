@@ -4,7 +4,7 @@ extends Node2D
 
 signal moved(pos: Vector2)
 
-const SPEED := 120.0
+const SPEED := 105.0
 const SPRITE_VARIANTS := 6
 # Фундамент (pixellab walking-6-frames + cross-punch-6-frames):
 # walk-атлас: 6 walk frames × 4 directions (hframes=6, vframes=4)

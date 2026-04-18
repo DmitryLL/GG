@@ -61,6 +61,7 @@ const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 var world: World
 var me: Player
 var camera: Camera2D
+var editor_camera: Camera2D
 var hud: Hud
 var shop: Shop
 var chat_panel: ChatPanel
@@ -190,7 +191,15 @@ func _ready() -> void:
 	admin_panel.action_requested.connect(_on_admin_action)
 	admin_panel.map_save_requested.connect(_on_map_save)
 	admin_panel.map_save_server_requested.connect(_save_map_on_server)
-	admin_panel.map_edit_mode_changed.connect(func(on: bool): world.set_grid_visible(on))
+	admin_panel.map_edit_mode_changed.connect(_on_map_edit_mode_changed)
+
+	# Свободная камера для редактора — отдельная, живёт в world_root.
+	editor_camera = Camera2D.new()
+	editor_camera.limit_left = 0
+	editor_camera.limit_top = 0
+	editor_camera.limit_right = world.data.map_cols * WorldData.TILE_SIZE
+	editor_camera.limit_bottom = world.data.map_rows * WorldData.TILE_SIZE
+	world_root.add_child(editor_camera)
 
 	loot_win = LOOT_SCRIPT.new()
 	add_child(loot_win)
@@ -222,20 +231,48 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 		return
 	# In-game map editor — клик шлёт OP_TILE_UPDATE на сервер (live-sync).
-	# Undo/redo: Ctrl+Z / Ctrl+Shift+Z.
 	if admin_panel and admin_panel.map_edit_mode and event is InputEventKey and event.pressed and not event.echo:
+		# Esc — выйти из режима редактора.
+		if event.keycode == KEY_ESCAPE:
+			admin_panel.exit_edit_mode()
+			return
+		# Ctrl+Z / Ctrl+Shift+Z — undo / redo.
 		if event.keycode == KEY_Z and event.ctrl_pressed:
 			if event.shift_pressed: _map_redo()
 			else: _map_undo()
 			return
+		# Хоткеи кистей тайлов: 1–6.
+		var pk: int = event.physical_keycode
+		if pk >= KEY_1 and pk <= KEY_6:
+			admin_panel.select_brush_by_index(pk - KEY_1)
+			return
+		if pk == KEY_B:
+			admin_panel.toggle_bucket()
+			return
+		if pk == KEY_G:
+			world.set_grid_visible(not world.is_grid_visible())
+			return
 	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseButton and event.pressed:
 		var world_pos_e := get_viewport().get_camera_2d().get_global_mouse_position()
-		# Инструменты мобов перехватывают клик раньше рисования тайлов.
-		if admin_panel.mob_tool != "" and event.button_index == MOUSE_BUTTON_LEFT:
-			_handle_mob_tool_click(world_pos_e, admin_panel.mob_tool)
+		# Зум колёсиком.
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_editor_zoom(0.9, world_pos_e)
+			return
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_editor_zoom(1.1, world_pos_e)
 			return
 		var c: int = int(world_pos_e.x / WorldData.TILE_SIZE)
 		var r: int = int(world_pos_e.y / WorldData.TILE_SIZE)
+		# Alt+ЛКМ — пипетка (взять тайл в кисть).
+		if event.button_index == MOUSE_BUTTON_LEFT and event.alt_pressed:
+			if c >= 0 and r >= 0 and c < world.data.map_cols and r < world.data.map_rows:
+				var tid: int = int(world.data.tiles[r * world.data.map_cols + c])
+				admin_panel.select_brush_by_id(tid)
+			return
+		# Инструменты мобов перехватывают ЛКМ раньше рисования.
+		if admin_panel.mob_tool != "" and event.button_index == MOUSE_BUTTON_LEFT:
+			_handle_mob_tool_click(world_pos_e, admin_panel.mob_tool)
+			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if admin_panel.bucket_mode:
 				_map_bucket_fill(c, r, admin_panel.map_edit_brush)
@@ -296,6 +333,17 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if match_id == "" or Session.socket == null:
 		return
+
+	# Свободная камера в режиме редактора: WASD-пан, скорость учитывает zoom.
+	if admin_panel and admin_panel.map_edit_mode and editor_camera and editor_camera.is_current():
+		var dir := Vector2.ZERO
+		if Input.is_key_pressed(KEY_W): dir.y -= 1.0
+		if Input.is_key_pressed(KEY_S): dir.y += 1.0
+		if Input.is_key_pressed(KEY_A): dir.x -= 1.0
+		if Input.is_key_pressed(KEY_D): dir.x += 1.0
+		if dir != Vector2.ZERO:
+			var cam_speed: float = 600.0 * editor_camera.zoom.x
+			editor_camera.position += dir.normalized() * cam_speed * delta
 
 	# PvP auto-pursuit — атаковать другого игрока (включая queued skill)
 	if pvp_target != null:
@@ -559,6 +607,30 @@ func _save_map_on_server() -> void:
 	Session.socket.send_match_state_async(match_id, OP_MAP_SAVE, JSON.stringify({}))
 	if admin_panel:
 		admin_panel.log_result("Карта сохранена на сервере (тайлы + мобы)")
+
+func _on_map_edit_mode_changed(on: bool) -> void:
+	world.set_grid_visible(on)
+	if skillbar:
+		skillbar.hotkeys_enabled = not on
+	if on:
+		if editor_camera:
+			# Стартуем редактор-камеру с позиции игровой, чтобы не телепортировало.
+			editor_camera.position = camera.get_screen_center_position()
+			editor_camera.zoom = Vector2.ONE
+			editor_camera.make_current()
+	else:
+		if camera:
+			camera.make_current()
+
+func _editor_zoom(factor: float, focus_world: Vector2) -> void:
+	if editor_camera == null: return
+	var old_zoom: Vector2 = editor_camera.zoom
+	var new_zoom: Vector2 = (old_zoom * factor).clamp(Vector2(0.25, 0.25), Vector2(3.0, 3.0))
+	if new_zoom == old_zoom: return
+	# Сохраняем точку под курсором на месте: сдвигаем камеру так, чтобы focus_world остался там же на экране.
+	var delta_zoom: Vector2 = new_zoom - old_zoom
+	editor_camera.position += (focus_world - editor_camera.position) * (delta_zoom / new_zoom)
+	editor_camera.zoom = new_zoom
 
 # ══════════════════ Редактор мобов ══════════════════
 # "Выбран" моб для перемещения (второй клик задаёт новую позицию).

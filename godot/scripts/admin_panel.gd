@@ -66,6 +66,11 @@ var _bucket_btn: Button
 var mob_tool: String = ""
 var _mob_tool_btns: Array = []
 
+# Превью выбранной кисти — мини-тайл + имя.
+var _brush_preview: TextureRect
+var _brush_preview_name: Label
+var _brushes_def: Array = []
+
 signal map_save_requested              # старая: скачать world.tmj в браузер
 signal map_save_server_requested       # новая: записать в Nakama Storage
 signal map_edit_mode_changed(on: bool) # для сетки-оверлея
@@ -170,18 +175,34 @@ func _ready() -> void:
 	map_tab.add_child(_edit_toggle_btn)
 
 	var hint := Label.new()
-	hint.text = "ЛКМ — поставить выбранный тайл\nПКМ — заменить на траву"
+	hint.text = "ЛКМ — поставить выбранный тайл\nПКМ — заменить на траву\nAlt+ЛКМ — пипетка  /  WASD — двигать камеру  /  колесо — zoom\n1–6 — кисть  /  G — сетка  /  B — ведро  /  Esc — выйти"
 	hint.add_theme_font_size_override("font_size", 10)
 	hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
 	map_tab.add_child(hint)
+
+	var brush_row := HBoxContainer.new()
+	brush_row.add_theme_constant_override("separation", 6)
+	map_tab.add_child(brush_row)
 
 	var brush_label := Label.new()
 	brush_label.text = "Кисть:"
 	brush_label.add_theme_font_size_override("font_size", 11)
 	brush_label.add_theme_color_override("font_color", Color(1, 0.8, 0.5))
-	map_tab.add_child(brush_label)
+	brush_row.add_child(brush_label)
 
-	var brushes := [
+	# Превью выбранного тайла — кусок tiles.png размером 32×32.
+	_brush_preview = TextureRect.new()
+	_brush_preview.custom_minimum_size = Vector2(32, 32)
+	_brush_preview.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	_brush_preview.texture = _make_brush_preview_texture(map_edit_brush)
+	brush_row.add_child(_brush_preview)
+
+	_brush_preview_name = Label.new()
+	_brush_preview_name.add_theme_font_size_override("font_size", 11)
+	_brush_preview_name.add_theme_color_override("font_color", Color(1, 1, 0.85))
+	brush_row.add_child(_brush_preview_name)
+
+	_brushes_def = [
 		{"id": WorldData.Tile.GRASS,  "name": "Трава"},
 		{"id": WorldData.Tile.SAND,   "name": "Песок"},
 		{"id": WorldData.Tile.WATER,  "name": "Вода"},
@@ -194,9 +215,10 @@ func _ready() -> void:
 	grid.add_theme_constant_override("h_separation", 4)
 	grid.add_theme_constant_override("v_separation", 4)
 	map_tab.add_child(grid)
-	for b in brushes:
+	for i in range(_brushes_def.size()):
+		var b: Dictionary = _brushes_def[i]
 		var bt := Button.new()
-		bt.text = b["name"]
+		bt.text = "%d. %s" % [i + 1, String(b["name"])]
 		bt.toggle_mode = true
 		bt.custom_minimum_size = Vector2(140, 0)
 		var tid: int = b["id"]
@@ -205,6 +227,7 @@ func _ready() -> void:
 		_edit_brush_btns.append({"btn": bt, "id": tid})
 		if tid == map_edit_brush:
 			bt.button_pressed = true
+	_update_brush_preview()
 
 	var tools_label := Label.new()
 	tools_label.text = "Размер кисти / Ведро:"
@@ -411,6 +434,47 @@ func _select_brush(tile_id: int, btn: Button) -> void:
 	for entry in _edit_brush_btns:
 		var b: Button = entry["btn"]
 		b.button_pressed = (b == btn)
+	_update_brush_preview()
+
+func select_brush_by_index(idx: int) -> void:
+	if idx < 0 or idx >= _edit_brush_btns.size(): return
+	var entry: Dictionary = _edit_brush_btns[idx]
+	_select_brush(int(entry["id"]), entry["btn"])
+
+func select_brush_by_id(tile_id: int) -> void:
+	for entry in _edit_brush_btns:
+		if int(entry["id"]) == tile_id:
+			_select_brush(tile_id, entry["btn"])
+			return
+
+func toggle_bucket() -> void:
+	_bucket_btn.button_pressed = not _bucket_btn.button_pressed
+	_toggle_bucket()
+
+func exit_edit_mode() -> void:
+	if not map_edit_mode: return
+	_edit_toggle_btn.button_pressed = false
+	_toggle_map_edit()
+
+func _update_brush_preview() -> void:
+	if _brush_preview:
+		_brush_preview.texture = _make_brush_preview_texture(map_edit_brush)
+	if _brush_preview_name:
+		var nm := ""
+		for b in _brushes_def:
+			if int(b["id"]) == map_edit_brush:
+				nm = String(b["name"]); break
+		_brush_preview_name.text = nm
+
+func _make_brush_preview_texture(tile_id: int) -> AtlasTexture:
+	# Берём 32×32 регион из tiles.png — такой же как рисуется в мире.
+	var base_id: int = tile_id
+	if tile_id == WorldData.Tile.TREE:
+		base_id = WorldData.Tile.GRASS  # дерево поверх — но для превью хватит травы
+	var atlas := AtlasTexture.new()
+	atlas.atlas = preload("res://assets/sprites/tiles.png")
+	atlas.region = Rect2(base_id * WorldData.TILE_SIZE, 0, WorldData.TILE_SIZE, WorldData.TILE_SIZE)
+	return atlas
 
 func _select_size(size: int, btn: Button) -> void:
 	brush_size = size
