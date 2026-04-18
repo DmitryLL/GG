@@ -693,8 +693,8 @@ class _RectOverlay extends Node2D:
 		if game_ref == null: return
 		var s: Vector2i = game_ref._rect_drag_start
 		var e: Vector2i = game_ref._rect_drag_end
-		var c1 := min(s.x, e.x); var c2 := max(s.x, e.x)
-		var r1 := min(s.y, e.y); var r2 := max(s.y, e.y)
+		var c1: int = min(s.x, e.x); var c2: int = max(s.x, e.x)
+		var r1: int = min(s.y, e.y); var r2: int = max(s.y, e.y)
 		var ts: int = WorldData.TILE_SIZE
 		var rect := Rect2(c1 * ts, r1 * ts, (c2 - c1 + 1) * ts, (r2 - r1 + 1) * ts)
 		draw_rect(rect, Color(1.0, 0.85, 0.2, 0.25), true)
