@@ -105,7 +105,9 @@ const NPC_INTERACT_RANGE = BALANCE_DATA.npc.interactRange;
 // ================================================================== //
 
 const MATCH_MODULE = "world_match";
-const MATCH_LABEL = "world";
+const MATCH_LABEL_PREFIX = "world_";    // label = "world_<zoneId>"
+const DEFAULT_ZONE = "village";
+const KNOWN_ZONES = ["village", "forest", "dungeon"]; // можно расширять
 const TICK_RATE = 10;
 const TICK_DT = 1 / TICK_RATE;
 
@@ -131,6 +133,22 @@ const OP_LOOT_TAKE_ALL = 19; // client → server { mobId } — забрать �
 const OP_SKILL        = 20; // client → server { skill, mobId?, x?, y? }
 const OP_SKILL_FX     = 21; // server → clients, visual effect for skill
 const OP_SKILL_REJECT = 22; // server → caster, скилл отвергнут (сбросить локальный cd)
+const OP_TILE_UPDATE  = 23; // admin edit: client→server {c,r,id}; server→clients broadcast
+const OP_MAP_SAVE     = 24; // admin: client→server — запись tiles+mobs в Nakama Storage
+const OP_MAP_FULL     = 25; // server→client at join: весь массив tiles, если карта редактировалась
+const OP_MOB_ADD      = 26; // admin: client→server {type, x, y}
+const OP_MOB_MOVE     = 27; // admin: client→server {mobId, x, y}
+const OP_MOB_DEL      = 28; // admin: client→server {mobId}
+const OP_TILE_RECT    = 29; // admin: {c1,r1,c2,r2,id} — заливка прямоугольника
+const OP_MAP_HISTORY  = 30; // admin: client→server пусто; server→client {list:[{ts,size}]}
+const OP_MAP_SNAPSHOT = 31; // admin: client→server пусто → создать версию
+const OP_MAP_ROLLBACK = 32; // admin: client→server {ts} → восстановить
+const OP_EDITOR_CURSOR = 33; // admin: client→server {x,y}; server→others {sid,name,x,y}
+const OP_OBJ_ADD       = 34; // admin: client→server {kind, x, y, data}
+const OP_OBJ_DEL       = 35; // admin: client→server {id}
+const OP_OBJS          = 36; // server→client: {objects: MapObject[], full: bool} — snapshot/delta
+const OP_OBJ_INTERACT  = 37; // client→server {id} — игрок кликнул на объект (сундук etc.)
+const OP_ZONE_SWITCH   = 38; // server→client {zone, matchId, x, y} — клиент переподключается
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -151,7 +169,8 @@ interface MatchPlayer {
     username: string;
     presence: nkruntime.Presence;
     pos: Vec2;
-    moveTarget: Vec2 | null;  // server-authoritative движение
+    moveTarget: Vec2 | null;  // server-authoritative движение (текущий waypoint)
+    movePath: Vec2[];         // очередь waypoints (A* путь); шагает по одному
     hp: number;
     hpMax: number;
     level: number;
@@ -170,7 +189,7 @@ interface MatchPlayer {
     effects: PlayerEffect[];
 }
 
-const PLAYER_SPEED = 120; // px/sec — должна совпадать с Godot Player.SPEED
+const PLAYER_SPEED = 100; // px/sec — должна совпадать с Godot Player.SPEED
 
 interface ActiveZone {
     id: string;
@@ -228,11 +247,30 @@ interface MatchMob {
     debuff?: MobDebuff;
 }
 
+// Универсальная сущность карты: портал, сундук, спавн-зона, (позже NPC).
+interface MapObject {
+    id: string;
+    kind: string;       // "portal" | "chest" | "spawn"
+    x: number;
+    y: number;
+    data: any;          // portal: {tx, ty, label?}
+                        // chest: {loot: InvEntry[], respawnMs, nextRespawnAt?, opened?}
+                        // spawn: {mobType, radius, maxCount}
+}
+
 interface WorldState {
     players: { [sessionId: string]: MatchPlayer };
     mobs: { [mobId: string]: MatchMob };
     zones: ActiveZone[];
     tick: number;
+    tiles: number[];                                // runtime-изменяемая копия карты (редактор, live-sync)
+    objects: { [id: string]: MapObject };           // порталы, сундуки и т.п.
+    portalCooldowns: { [sessionId: string]: number }; // антидребезг телепорта (server-ms)
+    zoneId: string;                                 // "village" | "forest" | "dungeon"
+}
+
+function currentTiles(state: WorldState): number[] {
+    return state.tiles && state.tiles.length > 0 ? state.tiles : WORLD.tiles;
 }
 
 function now(): number { return Date.now(); }
@@ -391,14 +429,184 @@ function saveProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
 // Match handlers
 // ================================================================== //
 
-function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
-    const mobs: { [id: string]: MatchMob } = {};
-    for (let i = 0; i < WORLD.mobSpawns.length; i++) {
-        const mobId = "m" + i;
-        mobs[mobId] = spawnMob(mobId, WORLD.mobSpawns[i]);
+const MAP_STORAGE_COLLECTION = "gg_world";
+const MAP_STORAGE_USER = "00000000-0000-0000-0000-000000000000"; // global
+
+function zoneKey(zoneId: string): string {
+    // Для village оставлен старый ключ "tiles" (backward-compat со старыми сохранениями).
+    return zoneId === DEFAULT_ZONE ? "tiles" : ("tiles_" + zoneId);
+}
+
+function loadMapFromStorage(nk: nkruntime.Nakama, zoneId: string): number[] | null {
+    try {
+        const res = nk.storageRead([{
+            collection: MAP_STORAGE_COLLECTION,
+            key: zoneKey(zoneId),
+            userId: MAP_STORAGE_USER,
+        }]);
+        if (res && res.length > 0 && res[0].value && Array.isArray((res[0].value as any).tiles)) {
+            const arr = (res[0].value as any).tiles as number[];
+            if (arr.length === MAP_COLS * MAP_ROWS) return arr.slice();
+        }
+    } catch (_e) {}
+    return null;
+}
+
+function saveMapToStorage(nk: nkruntime.Nakama, zoneId: string, tiles: number[], mobs: { [id: string]: MatchMob }, objects: { [id: string]: MapObject }): void {
+    const mobSpawns: MobSpawn[] = [];
+    for (const k of Object.keys(mobs)) {
+        const m = mobs[k];
+        mobSpawns.push({ x: m.home.x, y: m.home.y, type: m.type });
     }
-    const state: WorldState = { players: {}, mobs: mobs, zones: [], tick: 0 };
-    return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL };
+    const objList: MapObject[] = [];
+    for (const k of Object.keys(objects)) objList.push(objects[k]);
+    nk.storageWrite([{
+        collection: MAP_STORAGE_COLLECTION,
+        key: zoneKey(zoneId),
+        userId: MAP_STORAGE_USER,
+        value: { tiles: tiles, mobs: mobSpawns, objects: objList, savedAt: Date.now() },
+        version: "",
+        permissionRead: 2,
+        permissionWrite: 1,
+    }]);
+}
+
+// История версий: отдельные storage-записи с ключами "snap_<timestamp>".
+// Ограничиваем число: после создания новой подрезаем до последних N.
+const MAP_SNAPSHOT_LIMIT = 20;
+const MAP_SNAPSHOT_PREFIX = "snap_";
+
+function snapKey(zoneId: string, ts: number): string { return MAP_SNAPSHOT_PREFIX + zoneId + "_" + ts; }
+function snapZonePrefix(zoneId: string): string { return MAP_SNAPSHOT_PREFIX + zoneId + "_"; }
+
+function createMapSnapshot(nk: nkruntime.Nakama, zoneId: string, tiles: number[], mobs: { [id: string]: MatchMob }, objects: { [id: string]: MapObject }): number {
+    const ts = Date.now();
+    const mobSpawns: MobSpawn[] = [];
+    for (const k of Object.keys(mobs)) {
+        const m = mobs[k];
+        mobSpawns.push({ x: m.home.x, y: m.home.y, type: m.type });
+    }
+    const objList: MapObject[] = [];
+    for (const k of Object.keys(objects)) objList.push(objects[k]);
+    nk.storageWrite([{
+        collection: MAP_STORAGE_COLLECTION,
+        key: snapKey(zoneId, ts),
+        userId: MAP_STORAGE_USER,
+        value: { tiles: tiles, mobs: mobSpawns, objects: objList, savedAt: ts, zone: zoneId },
+        version: "",
+        permissionRead: 2,
+        permissionWrite: 1,
+    }]);
+    // Подрезать старые снапшоты этой зоны.
+    try {
+        const list = nk.storageList(MAP_STORAGE_USER, MAP_STORAGE_COLLECTION, 200);
+        const prefix = snapZonePrefix(zoneId);
+        const snaps = (list.objects || []).filter(o => o.key.indexOf(prefix) === 0);
+        snaps.sort((a, b) => a.key < b.key ? 1 : -1); // новые первыми
+        if (snaps.length > MAP_SNAPSHOT_LIMIT) {
+            const toDel = snaps.slice(MAP_SNAPSHOT_LIMIT).map(o => ({
+                collection: MAP_STORAGE_COLLECTION,
+                key: o.key,
+                userId: MAP_STORAGE_USER,
+            }));
+            nk.storageDelete(toDel);
+        }
+    } catch (_e) {}
+    return ts;
+}
+
+function listMapSnapshots(nk: nkruntime.Nakama, zoneId: string): { ts: number; key: string }[] {
+    try {
+        const list = nk.storageList(MAP_STORAGE_USER, MAP_STORAGE_COLLECTION, 200);
+        const prefix = snapZonePrefix(zoneId);
+        const snaps = (list.objects || []).filter(o => o.key.indexOf(prefix) === 0);
+        const out: { ts: number; key: string }[] = [];
+        for (const o of snaps) {
+            const ts = parseInt(o.key.substring(prefix.length), 10);
+            if (isFinite(ts)) out.push({ ts: ts, key: o.key });
+        }
+        out.sort((a, b) => b.ts - a.ts);
+        return out;
+    } catch (_e) { return []; }
+}
+
+function loadMapSnapshot(nk: nkruntime.Nakama, zoneId: string, ts: number): { tiles: number[]; mobs: MobSpawn[]; objects: MapObject[] } | null {
+    try {
+        const res = nk.storageRead([{
+            collection: MAP_STORAGE_COLLECTION,
+            key: snapKey(zoneId, ts),
+            userId: MAP_STORAGE_USER,
+        }]);
+        if (res && res.length > 0 && res[0].value) {
+            const v = res[0].value as any;
+            const tiles = Array.isArray(v.tiles) ? v.tiles as number[] : null;
+            const mobs = Array.isArray(v.mobs) ? v.mobs as MobSpawn[] : [];
+            const objects = Array.isArray(v.objects) ? v.objects as MapObject[] : [];
+            if (tiles && tiles.length === MAP_COLS * MAP_ROWS) {
+                return { tiles: tiles, mobs: mobs, objects: objects };
+            }
+        }
+    } catch (_e) {}
+    return null;
+}
+
+function loadMobsFromStorage(nk: nkruntime.Nakama, zoneId: string): MobSpawn[] | null {
+    try {
+        const res = nk.storageRead([{
+            collection: MAP_STORAGE_COLLECTION,
+            key: zoneKey(zoneId),
+            userId: MAP_STORAGE_USER,
+        }]);
+        if (res && res.length > 0 && res[0].value && Array.isArray((res[0].value as any).mobs)) {
+            return (res[0].value as any).mobs as MobSpawn[];
+        }
+    } catch (_e) {}
+    return null;
+}
+
+function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
+    let zoneId = String((params && params.zone) || DEFAULT_ZONE);
+    if (KNOWN_ZONES.indexOf(zoneId) < 0) zoneId = DEFAULT_ZONE;
+    // Village = исходная карта (WORLD). Остальные зоны стартуют пустыми (чистая трава).
+    const isVillage = (zoneId === DEFAULT_ZONE);
+    const defaultTiles = isVillage ? WORLD.tiles.slice() : new Array(MAP_COLS * MAP_ROWS).fill(0) as number[];
+    const defaultMobs: MobSpawn[] = isVillage ? WORLD.mobSpawns : [];
+
+    const savedMobs = loadMobsFromStorage(nk, zoneId);
+    const mobSpawns = savedMobs ? savedMobs : defaultMobs;
+    const mobs: { [id: string]: MatchMob } = {};
+    for (let i = 0; i < mobSpawns.length; i++) {
+        const mobId = "m" + i;
+        mobs[mobId] = spawnMob(mobId, mobSpawns[i]);
+    }
+    const savedTiles = loadMapFromStorage(nk, zoneId);
+    const tiles = savedTiles ? savedTiles : defaultTiles;
+    const savedObjects = loadObjectsFromStorage(nk, zoneId);
+    const objects: { [id: string]: MapObject } = {};
+    if (savedObjects) {
+        for (let i = 0; i < savedObjects.length; i++) {
+            objects[savedObjects[i].id] = savedObjects[i];
+        }
+    }
+    const state: WorldState = {
+        players: {}, mobs: mobs, zones: [], tick: 0, tiles: tiles,
+        objects: objects, portalCooldowns: {}, zoneId: zoneId,
+    };
+    return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL_PREFIX + zoneId };
+}
+
+function loadObjectsFromStorage(nk: nkruntime.Nakama, zoneId: string): MapObject[] | null {
+    try {
+        const res = nk.storageRead([{
+            collection: MAP_STORAGE_COLLECTION,
+            key: zoneKey(zoneId),
+            userId: MAP_STORAGE_USER,
+        }]);
+        if (res && res.length > 0 && res[0].value && Array.isArray((res[0].value as any).objects)) {
+            return (res[0].value as any).objects as MapObject[];
+        }
+    } catch (_e) {}
+    return null;
 }
 
 function matchJoinAttempt(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, _presence: nkruntime.Presence, _metadata: { [key: string]: any }): { state: WorldState; accept: boolean; rejectMessage?: string } {
@@ -449,6 +657,7 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             preciseShotReady: false,
             effects: [],
             moveTarget: null,
+            movePath: [],
         };
         player.hpMax = computeHpMax(player);
         player.hp = player.hpMax;
@@ -463,6 +672,14 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         dispatcher.broadcastMessage(OP_NPCS, JSON.stringify({ npcs: NPCS, prices: prices }), [p]);
         const mobsAll = snapshotMobsAll(state);
         dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: mobsAll, full: true }), [p]);
+        // Если карта правилась в рантайме — сразу отдаём полный массив тайлов.
+        if (state.tiles) {
+            dispatcher.broadcastMessage(OP_MAP_FULL, JSON.stringify({ tiles: state.tiles }), [p]);
+        }
+        // Объекты карты (порталы, сундуки).
+        const objList: MapObject[] = [];
+        for (const ok of Object.keys(state.objects)) objList.push(state.objects[ok]);
+        dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: objList, full: true }), [p]);
     }
     return { state: state };
 }
@@ -612,12 +829,30 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             case OP_MOVE_INTENT: {
                 try {
                     if (player.hp <= 0) break;
-                    const body = JSON.parse(nk.binaryToString(msg.data)) as { x?: number; y?: number };
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { x?: number; y?: number; path?: { x: number; y: number }[] };
+                    // Вариант 1: клиент прислал полный путь A* как массив waypoints.
+                    if (Array.isArray(body.path) && body.path.length > 0) {
+                        const path: Vec2[] = [];
+                        // Защита от мусора: не более 200 точек, все в пределах карты.
+                        for (let i = 0; i < body.path.length && i < 200; i++) {
+                            const p = body.path[i];
+                            const px = Number(p.x), py = Number(p.y);
+                            if (!isFinite(px) || !isFinite(py)) continue;
+                            if (px < 0 || px > MAP_WIDTH || py < 0 || py > MAP_HEIGHT) continue;
+                            path.push({ x: px, y: py });
+                        }
+                        if (path.length > 0) {
+                            player.movePath = path;
+                            player.moveTarget = path.shift() || null;
+                        }
+                        break;
+                    }
+                    // Вариант 2: одиночная точка (совместимость).
                     const x = Number(body.x); const y = Number(body.y);
                     if (!isFinite(x) || !isFinite(y)) break;
                     if (x < 0 || x > MAP_WIDTH || y < 0 || y > MAP_HEIGHT) break;
-                    // Target-based: клиент указывает КУДА идти, сервер сам шагает.
                     player.moveTarget = { x, y };
+                    player.movePath = [];
                 } catch (_e) {}
                 break;
             }
@@ -872,6 +1107,212 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 } catch (_e) {}
                 break;
             }
+            case OP_TILE_UPDATE: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { c?: number; r?: number; id?: number };
+                    const c = Number(body.c), r = Number(body.r), id = Number(body.id);
+                    if (!isFinite(c) || !isFinite(r) || !isFinite(id)) break;
+                    if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) break;
+                    if (id < 0 || id > 5) break;
+                    state.tiles[r * MAP_COLS + c] = id;
+                    dispatcher.broadcastMessage(OP_TILE_UPDATE, JSON.stringify({ c, r, id }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_MAP_SAVE: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    saveMapToStorage(nk, state.zoneId, state.tiles, state.mobs, state.objects);
+                } catch (_e) {}
+                break;
+            }
+            case OP_MOB_ADD: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { type?: string; x?: number; y?: number };
+                    const type = String(body.type || "slime");
+                    if (!MOB_TYPES[type]) break;
+                    const x = Number(body.x), y = Number(body.y);
+                    if (!isFinite(x) || !isFinite(y)) break;
+                    if (x < 0 || y < 0 || x > MAP_COLS * TILE_SIZE || y > MAP_ROWS * TILE_SIZE) break;
+                    const newId = "m_" + state.tick + "_" + Math.floor(Math.random() * 1000);
+                    state.mobs[newId] = spawnMob(newId, { x: x, y: y, type: type });
+                    dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: [mobSnap(state.mobs[newId])], full: false }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_MOB_MOVE: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string; x?: number; y?: number };
+                    const mobId = String(body.mobId || "");
+                    const mob = state.mobs[mobId];
+                    if (!mob) break;
+                    const x = Number(body.x), y = Number(body.y);
+                    if (!isFinite(x) || !isFinite(y)) break;
+                    if (x < 0 || y < 0 || x > MAP_COLS * TILE_SIZE || y > MAP_ROWS * TILE_SIZE) break;
+                    mob.home.x = x; mob.home.y = y;
+                    mob.pos.x = x; mob.pos.y = y;
+                    mob.target = null;
+                    mob.dirty = true;
+                    dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: [mobSnap(mob)], full: false }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_MOB_DEL: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string };
+                    const mobId = String(body.mobId || "");
+                    if (!state.mobs[mobId]) break;
+                    delete state.mobs[mobId];
+                    dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: [{ id: mobId, removed: true }], full: false }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_TILE_RECT: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { c1?: number; r1?: number; c2?: number; r2?: number; id?: number };
+                    let c1 = Number(body.c1), r1 = Number(body.r1), c2 = Number(body.c2), r2 = Number(body.r2);
+                    const id = Number(body.id);
+                    if (!isFinite(c1) || !isFinite(r1) || !isFinite(c2) || !isFinite(r2) || !isFinite(id)) break;
+                    if (id < 0 || id > 5) break;
+                    if (c1 > c2) { const t = c1; c1 = c2; c2 = t; }
+                    if (r1 > r2) { const t = r1; r1 = r2; r2 = t; }
+                    c1 = Math.max(0, Math.min(MAP_COLS - 1, c1));
+                    c2 = Math.max(0, Math.min(MAP_COLS - 1, c2));
+                    r1 = Math.max(0, Math.min(MAP_ROWS - 1, r1));
+                    r2 = Math.max(0, Math.min(MAP_ROWS - 1, r2));
+                    // Защита от огромных заливок — максимум 5000 клеток за раз.
+                    const area = (c2 - c1 + 1) * (r2 - r1 + 1);
+                    if (area > 5000) break;
+                    for (let r = r1; r <= r2; r++) {
+                        for (let c = c1; c <= c2; c++) {
+                            state.tiles[r * MAP_COLS + c] = id;
+                        }
+                    }
+                    dispatcher.broadcastMessage(OP_TILE_RECT, JSON.stringify({ c1, r1, c2, r2, id }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_MAP_SNAPSHOT: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const ts = createMapSnapshot(nk, state.zoneId, state.tiles, state.mobs, state.objects);
+                    dispatcher.broadcastMessage(OP_MAP_SNAPSHOT, JSON.stringify({ ts: ts }), [player.presence]);
+                } catch (_e) {}
+                break;
+            }
+            case OP_MAP_HISTORY: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const snaps = listMapSnapshots(nk, state.zoneId);
+                    dispatcher.broadcastMessage(OP_MAP_HISTORY, JSON.stringify({ list: snaps }), [player.presence]);
+                } catch (_e) {}
+                break;
+            }
+            case OP_MAP_ROLLBACK: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { ts?: number };
+                    const ts = Number(body.ts);
+                    if (!isFinite(ts)) break;
+                    const snap = loadMapSnapshot(nk, state.zoneId, ts);
+                    if (!snap) break;
+                    // Применить тайлы.
+                    for (let i = 0; i < snap.tiles.length && i < state.tiles.length; i++) {
+                        state.tiles[i] = snap.tiles[i];
+                    }
+                    // Перезалить мобов: удаляем всех, заспавнить из snapshot.
+                    for (const mk of Object.keys(state.mobs)) delete state.mobs[mk];
+                    for (let i = 0; i < snap.mobs.length; i++) {
+                        const mid = "s_" + ts + "_" + i;
+                        state.mobs[mid] = spawnMob(mid, snap.mobs[i]);
+                    }
+                    // Перезалить объекты карты.
+                    for (const ok of Object.keys(state.objects)) delete state.objects[ok];
+                    for (const o of snap.objects) state.objects[o.id] = o;
+                    // Broadcast: полный набор тайлов + всех мобов + всех объектов.
+                    dispatcher.broadcastMessage(OP_MAP_FULL, JSON.stringify({ tiles: state.tiles }));
+                    dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: snapshotMobsAll(state), full: true }));
+                    dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: snap.objects, full: true }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_OBJ_ADD: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { kind?: string; x?: number; y?: number; data?: any };
+                    const kind = String(body.kind || "");
+                    if (kind !== "portal" && kind !== "chest" && kind !== "spawn") break;
+                    const x = Number(body.x), y = Number(body.y);
+                    if (!isFinite(x) || !isFinite(y)) break;
+                    if (x < 0 || y < 0 || x > MAP_COLS * TILE_SIZE || y > MAP_ROWS * TILE_SIZE) break;
+                    const objId = kind.substring(0, 3) + "_" + state.tick + "_" + Math.floor(Math.random() * 1000);
+                    const obj: MapObject = { id: objId, kind: kind, x: x, y: y, data: body.data || {} };
+                    state.objects[objId] = obj;
+                    dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: [obj], full: false }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_OBJ_DEL: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { id?: string };
+                    const id = String(body.id || "");
+                    if (!state.objects[id]) break;
+                    delete state.objects[id];
+                    dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: [{ id: id, removed: true }], full: false }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_OBJ_INTERACT: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { id?: string };
+                    const id = String(body.id || "");
+                    const obj = state.objects[id];
+                    if (!obj) break;
+                    // Игрок должен быть рядом.
+                    if (dist(player.pos, { x: obj.x, y: obj.y }) > 60) break;
+                    if (obj.kind === "chest") {
+                        const data = obj.data || {};
+                        if (data.opened && Number(data.nextRespawnAt || 0) > t) break;
+                        // Перекинуть loot в инвентарь игрока.
+                        const loot: InvEntry[] = Array.isArray(data.loot) ? data.loot as InvEntry[] : [];
+                        for (const e of loot) addToInventory(player, e.itemId, e.qty);
+                        data.opened = true;
+                        data.nextRespawnAt = t + (Number(data.respawnMs) || 60000);
+                        obj.data = data;
+                        markMe(player);
+                        dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: [obj], full: false }));
+                    }
+                } catch (_e) {}
+                break;
+            }
+            case OP_EDITOR_CURSOR: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { x?: number; y?: number };
+                    const x = Number(body.x), y = Number(body.y);
+                    if (!isFinite(x) || !isFinite(y)) break;
+                    // Шлём всем остальным админам. Находим их список.
+                    const targets: nkruntime.Presence[] = [];
+                    for (const sk of Object.keys(state.players)) {
+                        const sp = state.players[sk];
+                        if (sp.sessionId === player.sessionId) continue;
+                        if (!isAdminName(sp.username)) continue;
+                        targets.push(sp.presence);
+                    }
+                    if (targets.length > 0) {
+                        dispatcher.broadcastMessage(OP_EDITOR_CURSOR, JSON.stringify({
+                            sid: player.sessionId, name: player.username, x: x, y: y,
+                        }), targets);
+                    }
+                } catch (_e) {}
+                break;
+            }
         }
     }
 
@@ -922,36 +1363,94 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             pl.pos.x = WORLD.playerSpawn.x; pl.pos.y = WORLD.playerSpawn.y;
             pl.hp = pl.hpMax; pl.lastTouchedByMob = {};
             pl.effects = [];
-            pl.moveTarget = null;
+            pl.moveTarget = null; pl.movePath = [];
             pl.dirtyPos = true; markMe(pl);
         }
     }
 
     // --- server-authoritative player movement ---
-    // Клиент шлёт moveTarget, сервер сам шагает к нему со PLAYER_SPEED.
-    // Axis-separated collision — чтобы не залипать в углах тайлов.
+    // Клиент шлёт moveTarget или путь A* (movePath). Сервер шагает от waypoint
+    // к waypoint с PLAYER_SPEED. Axis-separated collision страхует от застревания.
     for (const sk of Object.keys(state.players)) {
         const pl = state.players[sk];
         if (pl.hp <= 0 || !pl.moveTarget) continue;
-        const dx = pl.moveTarget.x - pl.pos.x;
-        const dy = pl.moveTarget.y - pl.pos.y;
-        const distTarget = Math.sqrt(dx * dx + dy * dy);
-        const step = PLAYER_SPEED * TICK_DT;
-        if (distTarget <= step) {
-            if (isWalkableAt(WORLD.tiles, pl.moveTarget.x, pl.moveTarget.y)) {
-                pl.pos.x = pl.moveTarget.x;
-                pl.pos.y = pl.moveTarget.y;
+        let stepLeft = PLAYER_SPEED * TICK_DT;
+        // Крутим цикл пока не израсходуем все шаги или не кончится путь —
+        // чтобы на тике можно было перейти через несколько коротких waypoint-ов.
+        while (stepLeft > 0 && pl.moveTarget) {
+            const dx = pl.moveTarget.x - pl.pos.x;
+            const dy = pl.moveTarget.y - pl.pos.y;
+            const distTarget = Math.sqrt(dx * dx + dy * dy);
+            if (distTarget <= stepLeft) {
+                if (isWalkableAt(currentTiles(state), pl.moveTarget.x, pl.moveTarget.y)) {
+                    pl.pos.x = pl.moveTarget.x;
+                    pl.pos.y = pl.moveTarget.y;
+                }
+                stepLeft -= distTarget;
+                // Следующий waypoint или конец.
+                pl.moveTarget = pl.movePath.length > 0 ? (pl.movePath.shift() || null) : null;
+                pl.dirtyPos = true;
+            } else {
+                const dirX = dx / distTarget;
+                const dirY = dy / distTarget;
+                const nx = pl.pos.x + dirX * stepLeft;
+                if (isWalkableAt(currentTiles(state), nx, pl.pos.y)) pl.pos.x = nx;
+                const ny = pl.pos.y + dirY * stepLeft;
+                if (isWalkableAt(currentTiles(state), pl.pos.x, ny)) pl.pos.y = ny;
+                pl.dirtyPos = true;
+                stepLeft = 0;
             }
-            pl.moveTarget = null;
-            pl.dirtyPos = true;
-        } else {
-            const dirX = dx / distTarget;
-            const dirY = dy / distTarget;
-            const nx = pl.pos.x + dirX * step;
-            if (isWalkableAt(WORLD.tiles, nx, pl.pos.y)) pl.pos.x = nx;
-            const ny = pl.pos.y + dirY * step;
-            if (isWalkableAt(WORLD.tiles, pl.pos.x, ny)) pl.pos.y = ny;
-            pl.dirtyPos = true;
+        }
+    }
+
+    // --- portals: player в радиусе 24px → телепорт к target, с cooldown 2s ---
+    // Если portal.data.targetZone установлен — отправить игрока в другую зону (новый матч).
+    for (const ok of Object.keys(state.objects)) {
+        const obj = state.objects[ok];
+        if (obj.kind !== "portal") continue;
+        const data = obj.data || {};
+        const tx = Number(data.tx), ty = Number(data.ty);
+        if (!isFinite(tx) || !isFinite(ty)) continue;
+        const targetZone: string = String(data.targetZone || "").trim();
+        for (const sk of Object.keys(state.players)) {
+            const pl = state.players[sk];
+            if (pl.hp <= 0) continue;
+            if ((state.portalCooldowns[sk] || 0) > t) continue;
+            const dx = pl.pos.x - obj.x;
+            const dy = pl.pos.y - obj.y;
+            if (dx * dx + dy * dy > 24 * 24) continue;
+            state.portalCooldowns[sk] = t + 2000;
+            if (targetZone !== "" && targetZone !== state.zoneId && KNOWN_ZONES.indexOf(targetZone) >= 0) {
+                // Межзонный переход: сохраняем новую позицию и шлём клиенту инструкцию переподключиться.
+                pl.pos.x = tx; pl.pos.y = ty;
+                try { saveProgress(nk, pl); } catch (_e) {}
+                const targetLabel = MATCH_LABEL_PREFIX + targetZone;
+                const existing = nk.matchList(1, true, targetLabel);
+                const matchId = (existing.length > 0) ? existing[0].matchId : nk.matchCreate(MATCH_MODULE, { zone: targetZone });
+                dispatcher.broadcastMessage(OP_ZONE_SWITCH, JSON.stringify({
+                    zone: targetZone, matchId: matchId, x: tx, y: ty,
+                }), [pl.presence]);
+                // Отключение будет инициировано клиентом сразу после приёма сообщения.
+            } else {
+                // Обычный локальный телепорт внутри зоны.
+                pl.pos.x = tx; pl.pos.y = ty;
+                pl.moveTarget = null; pl.movePath = [];
+                pl.dirtyPos = true;
+                markMe(pl);
+            }
+        }
+    }
+
+    // --- chest respawn (opened → closed) ---
+    for (const ok of Object.keys(state.objects)) {
+        const obj = state.objects[ok];
+        if (obj.kind !== "chest") continue;
+        const data = obj.data || {};
+        if (data.opened && Number(data.nextRespawnAt || 0) <= t) {
+            data.opened = false;
+            data.nextRespawnAt = 0;
+            obj.data = data;
+            dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: [obj], full: false }));
         }
     }
 
@@ -1001,8 +1500,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             const d = Math.sqrt(dx * dx + dy * dy) || 1;
             const nx = mob.pos.x + (dx / d) * step;
             const ny = mob.pos.y + (dy / d) * step;
-            if (isWalkableAt(WORLD.tiles, nx, mob.pos.y)) mob.pos.x = nx; else mob.target = null;
-            if (isWalkableAt(WORLD.tiles, mob.pos.x, ny)) mob.pos.y = ny; else mob.target = null;
+            if (isWalkableAt(currentTiles(state), nx, mob.pos.y)) mob.pos.x = nx; else mob.target = null;
+            if (isWalkableAt(currentTiles(state), mob.pos.x, ny)) mob.pos.y = ny; else mob.target = null;
             mob.dirty = true;
         }
 
@@ -1202,11 +1701,19 @@ function adminApply(state: WorldState, payload: string): { ok: boolean; error?: 
     }
 }
 
-function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
-    const existing = nk.matchList(1, true, MATCH_LABEL);
-    if (existing.length > 0) return JSON.stringify({ match_id: existing[0].matchId });
-    const matchId = nk.matchCreate(MATCH_MODULE, {});
-    return JSON.stringify({ match_id: matchId });
+function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    let zoneId = DEFAULT_ZONE;
+    try {
+        const p = JSON.parse(payload || "{}");
+        if (p && typeof p.zone === "string" && KNOWN_ZONES.indexOf(p.zone) >= 0) {
+            zoneId = p.zone;
+        }
+    } catch (_e) {}
+    const label = MATCH_LABEL_PREFIX + zoneId;
+    const existing = nk.matchList(1, true, label);
+    if (existing.length > 0) return JSON.stringify({ match_id: existing[0].matchId, zone: zoneId });
+    const matchId = nk.matchCreate(MATCH_MODULE, { zone: zoneId });
+    return JSON.stringify({ match_id: matchId, zone: zoneId });
 }
 
 // Debug RPC — снимок состояния матча через matchSignal.
@@ -1214,7 +1721,7 @@ function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk
 function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
     let filter = "";
     try { filter = String((JSON.parse(payload || "{}") as any).filter || ""); } catch (_e) {}
-    const matches = nk.matchList(1, true, MATCH_LABEL);
+    const matches = nk.matchList(1, true, MATCH_LABEL_PREFIX + DEFAULT_ZONE);
     if (matches.length === 0) return JSON.stringify({ error: "no active match" });
     const matchId = matches[0].matchId;
     const result = nk.matchSignal(matchId, "snapshot");
@@ -1229,11 +1736,15 @@ function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
 
 // ===== ADMIN =====
 // Whitelist админ-имён (lowercase). Нельзя редактировать через API — только в коде.
-const ADMIN_USERNAMES = ["dmitryll", "admin"];
+const ADMIN_USERNAMES = ["dmitryll", "admin", "prod"];
 
 function isAdminCtx(ctx: nkruntime.Context): boolean {
     const name = String(ctx.username || "").toLowerCase();
     return ADMIN_USERNAMES.indexOf(name) >= 0;
+}
+
+function isAdminName(username: string): boolean {
+    return ADMIN_USERNAMES.indexOf(String(username || "").toLowerCase()) >= 0;
 }
 
 // rpcAdmin — единый endpoint для админ-команд. payload:
@@ -1317,7 +1828,7 @@ function rpcAdmin(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrunti
     }
 
     // Try online first via matchSignal
-    const matches = nk.matchList(1, true, MATCH_LABEL);
+    const matches = nk.matchList(1, true, MATCH_LABEL_PREFIX + DEFAULT_ZONE);
     let onlineResult: any = null;
     if (matches.length > 0) {
         const sig = nk.matchSignal(matches[0].matchId, "admin:" + payload);

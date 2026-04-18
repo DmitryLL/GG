@@ -1,6 +1,6 @@
-# Вход по нику + паролю через Nakama authenticate_email.
-# На мобильных браузерах отрисовываем HTML-форму поверх canvas —
-# настоящая клавиатура открывается автоматически при тапе на input.
+# Вход/регистрация по e-mail + паролю через Nakama authenticate_email.
+# Без верификации почты (Nakama её и не требует).
+# При «Войти» — единое сообщение об ошибке без раскрытия, существует ли юзер.
 extends Control
 
 signal auth_changed
@@ -14,22 +14,24 @@ signal auth_changed
 @onready var error_label: Label = %ErrorLabel
 @onready var busy_label: Label = %BusyLabel
 
-const STORAGE_KEY := "gg_player_name"
+const MIN_PASSWORD_LEN := 6
 
 var _mobile_form_active := false
 var _js_callback: JavaScriptObject = null
 
 func _ready() -> void:
-	enter_btn.pressed.connect(func(): _login(false))
-	register_btn.pressed.connect(func(): _login(true))
-	pass_input.text_submitted.connect(func(_t): _login(false))
+	_apply_card_style()
+	enter_btn.pressed.connect(func(): _do_login_action())
+	register_btn.pressed.connect(func(): _do_register_action())
+	pass_input.text_submitted.connect(func(_t): _do_login_action())
 	busy_label.hide()
 	error_label.text = ""
 	title.text = "Вход / Регистрация"
-	hint.text = "Введи ник и пароль. Если ника нет — «Регистрация»."
+	hint.text = "E-mail и пароль (мин %d символов)" % MIN_PASSWORD_LEN
+	name_input.placeholder_text = "E-mail"
 	pass_input.secret = true
 
-	var saved := _read_storage()
+	var saved := Session.get_saved_email()
 	if saved != "":
 		name_input.text = saved
 
@@ -37,6 +39,60 @@ func _ready() -> void:
 		_mount_html_form(saved)
 	else:
 		name_input.grab_focus() if saved == "" else pass_input.grab_focus()
+
+func _apply_card_style() -> void:
+	# Стилизация карточки логина — тёплое дерево + золотая рамка.
+	var card := get_node_or_null("Card")
+	if card == null: return
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.12, 0.08, 0.05, 0.88)
+	sb.border_color = Color(0.85, 0.65, 0.30, 1.0)
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(18)
+	sb.shadow_color = Color(0, 0, 0, 0.6)
+	sb.shadow_size = 10
+	sb.shadow_offset = Vector2(0, 4)
+	card.add_theme_stylebox_override("panel", sb)
+	# Поля ввода: тёмный фон + золотая обводка.
+	var inputs := [name_input, pass_input]
+	for inp in inputs:
+		var ib := StyleBoxFlat.new()
+		ib.bg_color = Color(0.07, 0.06, 0.04, 1)
+		ib.border_color = Color(0.55, 0.40, 0.20, 1)
+		ib.set_border_width_all(1)
+		ib.set_corner_radius_all(4)
+		ib.set_content_margin_all(8)
+		var ib_focus := ib.duplicate() as StyleBoxFlat
+		ib_focus.border_color = Color(0.95, 0.75, 0.35, 1)
+		ib_focus.set_border_width_all(2)
+		inp.add_theme_stylebox_override("normal", ib)
+		inp.add_theme_stylebox_override("focus", ib_focus)
+		inp.add_theme_color_override("font_color", Color(1, 0.96, 0.88, 1))
+		inp.add_theme_color_override("font_placeholder_color", Color(0.6, 0.55, 0.45, 1))
+		inp.add_theme_font_size_override("font_size", 14)
+	# Кнопки: деревянная тема.
+	_style_button(enter_btn, Color(0.28, 0.50, 0.76), Color(0.38, 0.62, 0.90), Color(1, 1, 1))
+	_style_button(register_btn, Color(0.24, 0.48, 0.22), Color(0.34, 0.62, 0.30), Color(0.85, 1, 0.85))
+
+func _style_button(btn: Button, bg: Color, hover: Color, text_col: Color) -> void:
+	var s_n := StyleBoxFlat.new()
+	s_n.bg_color = bg
+	s_n.border_color = Color(0.25, 0.18, 0.10, 1)
+	s_n.set_border_width_all(1)
+	s_n.set_corner_radius_all(6)
+	s_n.set_content_margin_all(8)
+	var s_h := s_n.duplicate() as StyleBoxFlat
+	s_h.bg_color = hover
+	var s_p := s_n.duplicate() as StyleBoxFlat
+	s_p.bg_color = bg.darkened(0.15)
+	btn.add_theme_stylebox_override("normal", s_n)
+	btn.add_theme_stylebox_override("hover", s_h)
+	btn.add_theme_stylebox_override("pressed", s_p)
+	btn.add_theme_stylebox_override("focus", s_h)
+	btn.add_theme_color_override("font_color", text_col)
+	btn.add_theme_color_override("font_hover_color", text_col)
+	btn.add_theme_color_override("font_pressed_color", text_col)
 
 func _exit_tree() -> void:
 	if _mobile_form_active:
@@ -55,14 +111,10 @@ func _is_mobile_web() -> bool:
 	var r: Variant = JavaScriptBridge.eval(code, true)
 	return bool(r)
 
-func _mount_html_form(saved_nick: String) -> void:
-	# Создаём HTML-колбэк — JS → Godot. Передаётся через глобальный callback.
+func _mount_html_form(saved_email: String) -> void:
 	_js_callback = JavaScriptBridge.create_callback(_on_html_submit)
 	JavaScriptBridge.get_interface("window").__ggAuthGodotCb = _js_callback
-	# Скрываем Godot форму — её заменит HTML
-	var canvas_layer := Control.new()  # dummy; сама Godot-сцена просто невидима через css
-	# Проще: скрываем canvas, показываем HTML overlay
-	var escaped_nick := saved_nick.replace("'", "\\'").replace('"', '\\"')
+	var escaped := saved_email.replace("'", "\\'").replace('"', '\\"')
 	var js := """
 	(function(){
 		if (window.__ggAuthMounted) return;
@@ -75,8 +127,8 @@ func _mount_html_form(saved_nick: String) -> void:
 		overlay.innerHTML = ''
 			+ '<div style=\"background:#1a1a1a;padding:24px;border-radius:10px;width:min(90vw,340px);\">'
 			+ '<h2 style=\"color:#eee;margin:0 0 4px;text-align:center;\">Вход / Регистрация</h2>'
-			+ '<p style=\"color:#888;margin:0 0 18px;text-align:center;font-size:13px;\">Введи ник и пароль</p>'
-			+ '<input id=\"gg-nick\" type=\"text\" autocomplete=\"username\" placeholder=\"Никнейм\" value=\"%s\" '
+			+ '<p style=\"color:#888;margin:0 0 18px;text-align:center;font-size:13px;\">E-mail и пароль (мин 6 символов)</p>'
+			+ '<input id=\"gg-nick\" type=\"email\" autocomplete=\"email\" placeholder=\"E-mail\" value=\"%s\" '
 			+ 'style=\"display:block;width:100%%;box-sizing:border-box;padding:12px;margin-bottom:10px;font-size:16px;background:#2a2a2a;color:#eee;border:1px solid #444;border-radius:6px;\">'
 			+ '<input id=\"gg-pwd\" type=\"password\" autocomplete=\"current-password\" placeholder=\"Пароль\" '
 			+ 'style=\"display:block;width:100%%;box-sizing:border-box;padding:12px;margin-bottom:14px;font-size:16px;background:#2a2a2a;color:#eee;border:1px solid #444;border-radius:6px;\">'
@@ -92,8 +144,6 @@ func _mount_html_form(saved_nick: String) -> void:
 			err.textContent = '';
 			var n = (nick.value || '').trim();
 			var p = pwd.value || '';
-			if (n.length < 2) { err.textContent = 'Имя минимум 2 символа'; return; }
-			if (p.length < 1) { err.textContent = 'Введи пароль'; return; }
 			if (window.__ggAuthGodotCb) window.__ggAuthGodotCb(n, p, create ? 1 : 0);
 		}
 		document.getElementById('gg-login').addEventListener('click', function(){ submit(false); });
@@ -112,15 +162,18 @@ func _mount_html_form(saved_nick: String) -> void:
 		};
 		(n ? pwd : nick).focus();
 	})();
-	""" % escaped_nick
+	""" % escaped
 	JavaScriptBridge.eval(js, true)
 	_mobile_form_active = true
 
 func _on_html_submit(args: Array) -> void:
-	var nick: String = String(args[0])
+	var email: String = String(args[0])
 	var pwd: String = String(args[1])
 	var create: bool = int(args[2]) != 0
-	await _do_login(nick, pwd, create)
+	if create:
+		await _do_register(email, pwd)
+	else:
+		await _do_login(email, pwd)
 
 func _set_busy(busy: bool) -> void:
 	enter_btn.disabled = busy
@@ -135,73 +188,76 @@ func _show_error(msg: String) -> void:
 		var escaped := msg.replace("'", "\\'")
 		JavaScriptBridge.eval("window.__ggAuthSetError && window.__ggAuthSetError('%s')" % escaped, true)
 
-func _slug(s: String) -> String:
-	var lo := s.to_lower().strip_edges()
+# ─── Валидация ───
+func _valid_email(e: String) -> bool:
+	# Минимальная проверка: есть @ и точка после него.
+	var at := e.find("@")
+	if at <= 0: return false
+	var dot := e.find(".", at)
+	return dot > at + 1 and dot < e.length() - 1
+
+func _username_from_email(email: String) -> String:
+	# Префикс до @ → в нижнем регистре → только буквы/цифры/подчёркивания.
+	var prefix := email.substr(0, email.find("@")).to_lower()
 	var out := ""
-	for ch in lo:
+	for ch in prefix:
 		var c := ch.unicode_at(0)
 		if (c >= 0x30 and c <= 0x39) or (c >= 0x61 and c <= 0x7a):
 			out += ch
 		else:
 			out += "_"
-	while out.length() < 3:
-		out += "_"
-	if out.length() > 60:
-		out = out.substr(0, 60)
+	while out.length() < 3: out += "_"
+	if out.length() > 60: out = out.substr(0, 60)
 	return out
 
-func _login(create: bool) -> void:
-	await _do_login(name_input.text.strip_edges(), pass_input.text, create)
+# ─── Действия ───
+func _do_login_action() -> void:
+	await _do_login(name_input.text.strip_edges(), pass_input.text)
 
-func _do_login(nick: String, pwd: String, create: bool) -> void:
-	if nick.length() < 2:
-		_show_error("Имя минимум 2 символа")
-		return
-	if pwd.length() < 1:
-		_show_error("Введи пароль")
+func _do_register_action() -> void:
+	await _do_register(name_input.text.strip_edges(), pass_input.text)
+
+func _do_login(email: String, pwd: String) -> void:
+	# При «Войти» любая ошибка = единое сообщение без раскрытия существования юзера.
+	if not _valid_email(email) or pwd.length() < MIN_PASSWORD_LEN:
+		_show_error("Неверный логин или пароль")
 		return
 	_show_error("")
 	_set_busy(true)
-	var email := "%s@gg.local" % _slug(nick)
-	var session: NakamaSession = await Session.client.authenticate_email_async(email, pwd, nick, create)
+	var username := _username_from_email(email)
+	var session: NakamaSession = await Session.client.authenticate_email_async(email, pwd, username, false)
 	_set_busy(false)
 	if session.is_exception():
-		var err_msg: String = session.get_exception().message
-		var lower := err_msg.to_lower()
-		# При нажатии «Регистрация» ошибка credentials почти всегда означает,
-		# что ник уже занят другим паролем: Nakama пытается залогинить и
-		# получает Invalid credentials. Показываем честное сообщение.
-		if create:
-			# При регистрации любая credentials-ошибка = ник занят.
-			if "exists" in lower or "invalid" in lower or "credentials" in lower or "password" in lower:
-				_show_error("Ник занят")
-			else:
-				_show_error("Ошибка регистрации: " + err_msg)
-		else:
-			if "exists" in lower:
-				_show_error("Ник занят")
-			elif "invalid" in lower or "credentials" in lower or "password" in lower:
-				_show_error("Неверный пароль")
-			elif "not found" in lower:
-				_show_error("Юзер не найден — нажми «Регистрация»")
-			else:
-				_show_error("Ошибка: " + err_msg)
+		_show_error("Неверный логин или пароль")
 		return
-	_write_storage(nick)
+	_finalize(session, email)
+
+func _do_register(email: String, pwd: String) -> void:
+	if not _valid_email(email):
+		_show_error("Неверный e-mail")
+		return
+	if pwd.length() < MIN_PASSWORD_LEN:
+		_show_error("Пароль минимум %d символов" % MIN_PASSWORD_LEN)
+		return
+	_show_error("")
+	_set_busy(true)
+	var username := _username_from_email(email)
+	var session: NakamaSession = await Session.client.authenticate_email_async(email, pwd, username, true)
+	_set_busy(false)
+	if session.is_exception():
+		var lower := session.get_exception().message.to_lower()
+		if "exists" in lower or "credentials" in lower or "invalid" in lower:
+			_show_error("Такой e-mail уже зарегистрирован")
+		else:
+			_show_error("Ошибка регистрации")
+		return
+	_finalize(session, email)
+
+func _finalize(session: NakamaSession, email: String) -> void:
+	Session.auth = session
+	Session.save_auth_to_storage(session)
+	Session.save_email(email)
 	if _mobile_form_active:
 		JavaScriptBridge.eval("window.__ggAuthUnmount && window.__ggAuthUnmount()", true)
 		_mobile_form_active = false
-	Session.auth = session
 	auth_changed.emit()
-
-func _read_storage() -> String:
-	if not OS.has_feature("web"):
-		return ""
-	var v = JavaScriptBridge.eval("window.localStorage.getItem('%s') || ''" % STORAGE_KEY, true)
-	return String(v) if v != null else ""
-
-func _write_storage(nick: String) -> void:
-	if not OS.has_feature("web"):
-		return
-	var safe := nick.replace("'", "\\'")
-	JavaScriptBridge.eval("window.localStorage.setItem('%s', '%s')" % [STORAGE_KEY, safe], true)
