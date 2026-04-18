@@ -57,7 +57,9 @@ var map_edit_brush: int = 0           # id из WorldData.Tile
 var _edit_toggle_btn: Button
 var _edit_brush_btns: Array = []
 
-signal map_save_requested
+signal map_save_requested              # старая: скачать world.tmj в браузер
+signal map_save_server_requested       # новая: записать в Nakama Storage
+signal map_edit_mode_changed(on: bool) # для сетки-оверлея
 
 func _ready() -> void:
 	layer = 20
@@ -195,15 +197,28 @@ func _ready() -> void:
 		if tid == map_edit_brush:
 			bt.button_pressed = true
 
+	var save_server_btn := Button.new()
+	save_server_btn.text = "💾 Сохранить на сервере"
+	save_server_btn.pressed.connect(func(): map_save_server_requested.emit())
+	map_tab.add_child(save_server_btn)
+
+	var save_server_hint := Label.new()
+	save_server_hint.text = "Запишет карту в Nakama Storage — все игроки увидят изменения при следующем заходе, правки летят всем онлайн мгновенно."
+	save_server_hint.add_theme_font_size_override("font_size", 9)
+	save_server_hint.add_theme_color_override("font_color", Color(0.7, 0.85, 0.7))
+	save_server_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	save_server_hint.custom_minimum_size = Vector2(280, 0)
+	map_tab.add_child(save_server_hint)
+
 	var save_btn := Button.new()
-	save_btn.text = "💾 Скачать world.tmj"
+	save_btn.text = "⬇ Скачать world.tmj (локально)"
 	save_btn.pressed.connect(func(): map_save_requested.emit())
 	map_tab.add_child(save_btn)
 
 	var save_hint := Label.new()
-	save_hint.text = "Положи файл в data/maps/world.tmj\nи запусти sync-world-map.sh + commit"
+	save_hint.text = "Только для бэкапа/коммита в репо"
 	save_hint.add_theme_font_size_override("font_size", 9)
-	save_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	save_hint.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	save_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	save_hint.custom_minimum_size = Vector2(280, 0)
 	map_tab.add_child(save_hint)
@@ -309,6 +324,7 @@ func _toggle_map_edit() -> void:
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
 	else:
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	map_edit_mode_changed.emit(map_edit_mode)
 
 func _select_brush(tile_id: int, btn: Button) -> void:
 	map_edit_brush = tile_id

@@ -45,6 +45,9 @@ const OP_LOOT_TAKE_ALL := 19
 const OP_SKILL        := 20
 const OP_SKILL_FX     := 21
 const OP_SKILL_REJECT := 22
+const OP_TILE_UPDATE  := 23
+const OP_MAP_SAVE     := 24
+const OP_MAP_FULL     := 25
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -183,6 +186,8 @@ func _ready() -> void:
 	add_child(admin_panel)
 	admin_panel.action_requested.connect(_on_admin_action)
 	admin_panel.map_save_requested.connect(_on_map_save)
+	admin_panel.map_save_server_requested.connect(_save_map_on_server)
+	admin_panel.map_edit_mode_changed.connect(func(on: bool): world.set_grid_visible(on))
 
 	loot_win = LOOT_SCRIPT.new()
 	add_child(loot_win)
@@ -213,16 +218,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		targeting_skill = -1
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 		return
-	# In-game map editor — клик меняет тайл, не движение/атаку
+	# In-game map editor — клик шлёт OP_TILE_UPDATE на сервер (live-sync).
+	# Локально тайл применится через эхо от сервера.
 	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseButton and event.pressed:
 		var world_pos_e := get_viewport().get_camera_2d().get_global_mouse_position()
 		var c: int = int(world_pos_e.x / WorldData.TILE_SIZE)
 		var r: int = int(world_pos_e.y / WorldData.TILE_SIZE)
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			world.set_tile(c, r, admin_panel.map_edit_brush)
+			_send_tile_update(c, r, admin_panel.map_edit_brush)
 			return
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			world.set_tile(c, r, WorldData.Tile.GRASS)
+			_send_tile_update(c, r, WorldData.Tile.GRASS)
 			return
 
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -453,6 +459,18 @@ func _on_logout() -> void:
 	Session.logout()
 	auth_changed.emit()
 
+func _send_tile_update(c: int, r: int, id: int) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_TILE_UPDATE, JSON.stringify({"c": c, "r": r, "id": id}))
+
+func _save_map_on_server() -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_MAP_SAVE, JSON.stringify({}))
+	if admin_panel:
+		admin_panel.log_result("Карта сохранена на сервере")
+
 func _on_map_save() -> void:
 	# Собираем TMJ с текущими тайлами + исходными Mobs/NPCs из оригинального world.tmj.
 	var src := FileAccess.open("res://assets/world.tmj", FileAccess.READ)
@@ -562,6 +580,15 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_NPCS:       _apply_npcs(body)
 		OP_ARROW:      _spawn_arrow(body)
 		OP_CHAT_RELAY: _apply_chat(body)
+		OP_TILE_UPDATE:
+			var c := int(body.get("c", 0))
+			var r := int(body.get("r", 0))
+			var id := int(body.get("id", 0))
+			world.set_tile(c, r, id)
+		OP_MAP_FULL:
+			var arr: Array = body.get("tiles", [])
+			if arr.size() == world.data.map_cols * world.data.map_rows:
+				world.apply_full_tiles(arr)
 
 var _last_intent_ms: int = 0
 

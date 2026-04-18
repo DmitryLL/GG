@@ -122,10 +122,28 @@ func _render_one_tile(c: int, r: int, id: int) -> void:
 		add_child(tree)
 		_register_tile_node(c, r, tree)
 
+# Применить полный массив тайлов (от OP_MAP_FULL при входе в мир).
+func apply_full_tiles(new_tiles: Array) -> void:
+	# Полная перерисовка — безопасный но дорогой путь. На карте 60×45
+	# это 2700 клеток, занимает доли секунды, происходит один раз на логине.
+	for key in _tile_nodes.keys():
+		for n in _tile_nodes[key]:
+			if is_instance_valid(n):
+				n.queue_free()
+	_tile_nodes.clear()
+	for i in range(new_tiles.size()):
+		data.tiles[i] = int(new_tiles[i])
+	# A* блокировки
+	if astar:
+		for r in data.map_rows:
+			for c in data.map_cols:
+				var id: int = data.tiles[r * data.map_cols + c]
+				astar.set_point_solid(Vector2i(c, r), WorldData.BLOCKED.has(id))
+	_render_tiles()
+
 # Экспорт текущего состояния в TMJ JSON (совместимо с Tiled).
 # Только слой Tiles; моб/NPC слои клиент не правит.
 func export_tiles_json() -> String:
-	# 1-based gid как в оригинале
 	var gids: Array = []
 	for t in data.tiles:
 		gids.append(int(t) + 1)
@@ -135,3 +153,30 @@ func export_tiles_json() -> String:
 		"tiles": gids,
 	}
 	return JSON.stringify(tmj)
+
+# ═══════════════════ Grid overlay ═══════════════════
+var _grid_overlay: Node2D = null
+
+func set_grid_visible(on: bool) -> void:
+	if on:
+		if _grid_overlay == null:
+			_grid_overlay = _GridOverlay.new(data.map_cols, data.map_rows, WorldData.TILE_SIZE)
+			_grid_overlay.z_index = 150
+			add_child(_grid_overlay)
+	else:
+		if _grid_overlay:
+			_grid_overlay.queue_free()
+			_grid_overlay = null
+
+class _GridOverlay extends Node2D:
+	var cols: int
+	var rows: int
+	var ts: int
+	func _init(c: int, r: int, t: int) -> void:
+		cols = c; rows = r; ts = t
+	func _draw() -> void:
+		var color := Color(1, 1, 1, 0.25)
+		for x in range(cols + 1):
+			draw_line(Vector2(x * ts, 0), Vector2(x * ts, rows * ts), color, 1.0)
+		for y in range(rows + 1):
+			draw_line(Vector2(0, y * ts), Vector2(cols * ts, y * ts), color, 1.0)

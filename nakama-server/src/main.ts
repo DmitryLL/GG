@@ -131,6 +131,9 @@ const OP_LOOT_TAKE_ALL = 19; // client → server { mobId } — забрать �
 const OP_SKILL        = 20; // client → server { skill, mobId?, x?, y? }
 const OP_SKILL_FX     = 21; // server → clients, visual effect for skill
 const OP_SKILL_REJECT = 22; // server → caster, скилл отвергнут (сбросить локальный cd)
+const OP_TILE_UPDATE  = 23; // admin edit: client→server {c,r,id}; server→clients broadcast
+const OP_MAP_SAVE     = 24; // admin: client→server — запись текущих tiles в Nakama Storage
+const OP_MAP_FULL     = 25; // server→client at join: весь массив tiles, если карта редактировалась
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -233,6 +236,11 @@ interface WorldState {
     mobs: { [mobId: string]: MatchMob };
     zones: ActiveZone[];
     tick: number;
+    tiles: number[];  // runtime-изменяемая копия карты (редактор, live-sync)
+}
+
+function currentTiles(state: WorldState): number[] {
+    return state.tiles && state.tiles.length > 0 ? state.tiles : WORLD.tiles;
 }
 
 function now(): number { return Date.now(); }
@@ -391,13 +399,46 @@ function saveProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
 // Match handlers
 // ================================================================== //
 
-function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
+const MAP_STORAGE_COLLECTION = "gg_world";
+const MAP_STORAGE_KEY = "tiles";
+const MAP_STORAGE_USER = "00000000-0000-0000-0000-000000000000"; // global
+
+function loadMapFromStorage(nk: nkruntime.Nakama): number[] | null {
+    try {
+        const res = nk.storageRead([{
+            collection: MAP_STORAGE_COLLECTION,
+            key: MAP_STORAGE_KEY,
+            userId: MAP_STORAGE_USER,
+        }]);
+        if (res && res.length > 0 && res[0].value && Array.isArray((res[0].value as any).tiles)) {
+            const arr = (res[0].value as any).tiles as number[];
+            if (arr.length === MAP_COLS * MAP_ROWS) return arr.slice();
+        }
+    } catch (_e) {}
+    return null;
+}
+
+function saveMapToStorage(nk: nkruntime.Nakama, tiles: number[]): void {
+    nk.storageWrite([{
+        collection: MAP_STORAGE_COLLECTION,
+        key: MAP_STORAGE_KEY,
+        userId: MAP_STORAGE_USER,
+        value: { tiles: tiles, savedAt: Date.now() },
+        version: "",
+        permissionRead: 2,
+        permissionWrite: 1,
+    }]);
+}
+
+function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
     const mobs: { [id: string]: MatchMob } = {};
     for (let i = 0; i < WORLD.mobSpawns.length; i++) {
         const mobId = "m" + i;
         mobs[mobId] = spawnMob(mobId, WORLD.mobSpawns[i]);
     }
-    const state: WorldState = { players: {}, mobs: mobs, zones: [], tick: 0 };
+    const savedTiles = loadMapFromStorage(nk);
+    const tiles = savedTiles ? savedTiles : WORLD.tiles.slice();
+    const state: WorldState = { players: {}, mobs: mobs, zones: [], tick: 0, tiles: tiles };
     return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL };
 }
 
@@ -463,6 +504,10 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         dispatcher.broadcastMessage(OP_NPCS, JSON.stringify({ npcs: NPCS, prices: prices }), [p]);
         const mobsAll = snapshotMobsAll(state);
         dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: mobsAll, full: true }), [p]);
+        // Если карта правилась в рантайме — сразу отдаём полный массив тайлов.
+        if (state.tiles) {
+            dispatcher.broadcastMessage(OP_MAP_FULL, JSON.stringify({ tiles: state.tiles }), [p]);
+        }
     }
     return { state: state };
 }
@@ -872,6 +917,26 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 } catch (_e) {}
                 break;
             }
+            case OP_TILE_UPDATE: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { c?: number; r?: number; id?: number };
+                    const c = Number(body.c), r = Number(body.r), id = Number(body.id);
+                    if (!isFinite(c) || !isFinite(r) || !isFinite(id)) break;
+                    if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) break;
+                    if (id < 0 || id > 5) break;
+                    state.tiles[r * MAP_COLS + c] = id;
+                    dispatcher.broadcastMessage(OP_TILE_UPDATE, JSON.stringify({ c, r, id }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_MAP_SAVE: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    saveMapToStorage(nk, state.tiles);
+                } catch (_e) {}
+                break;
+            }
         }
     }
 
@@ -938,7 +1003,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         const distTarget = Math.sqrt(dx * dx + dy * dy);
         const step = PLAYER_SPEED * TICK_DT;
         if (distTarget <= step) {
-            if (isWalkableAt(WORLD.tiles, pl.moveTarget.x, pl.moveTarget.y)) {
+            if (isWalkableAt(currentTiles(state), pl.moveTarget.x, pl.moveTarget.y)) {
                 pl.pos.x = pl.moveTarget.x;
                 pl.pos.y = pl.moveTarget.y;
             }
@@ -948,9 +1013,9 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             const dirX = dx / distTarget;
             const dirY = dy / distTarget;
             const nx = pl.pos.x + dirX * step;
-            if (isWalkableAt(WORLD.tiles, nx, pl.pos.y)) pl.pos.x = nx;
+            if (isWalkableAt(currentTiles(state), nx, pl.pos.y)) pl.pos.x = nx;
             const ny = pl.pos.y + dirY * step;
-            if (isWalkableAt(WORLD.tiles, pl.pos.x, ny)) pl.pos.y = ny;
+            if (isWalkableAt(currentTiles(state), pl.pos.x, ny)) pl.pos.y = ny;
             pl.dirtyPos = true;
         }
     }
@@ -1001,8 +1066,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             const d = Math.sqrt(dx * dx + dy * dy) || 1;
             const nx = mob.pos.x + (dx / d) * step;
             const ny = mob.pos.y + (dy / d) * step;
-            if (isWalkableAt(WORLD.tiles, nx, mob.pos.y)) mob.pos.x = nx; else mob.target = null;
-            if (isWalkableAt(WORLD.tiles, mob.pos.x, ny)) mob.pos.y = ny; else mob.target = null;
+            if (isWalkableAt(currentTiles(state), nx, mob.pos.y)) mob.pos.x = nx; else mob.target = null;
+            if (isWalkableAt(currentTiles(state), mob.pos.x, ny)) mob.pos.y = ny; else mob.target = null;
             mob.dirty = true;
         }
 
@@ -1234,6 +1299,10 @@ const ADMIN_USERNAMES = ["dmitryll", "admin", "prod"];
 function isAdminCtx(ctx: nkruntime.Context): boolean {
     const name = String(ctx.username || "").toLowerCase();
     return ADMIN_USERNAMES.indexOf(name) >= 0;
+}
+
+function isAdminName(username: string): boolean {
+    return ADMIN_USERNAMES.indexOf(String(username || "").toLowerCase()) >= 0;
 }
 
 // rpcAdmin — единый endpoint для админ-команд. payload:
