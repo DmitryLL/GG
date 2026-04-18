@@ -3,9 +3,6 @@
 class_name Items
 extends RefCounted
 
-const ITEMS_TEX_PATH := "res://assets/sprites/items.png"
-const ITEM_ICON_SIZE := 16
-
 const DEFS := {
 	"slime_jelly":     { "name": "Слизь",              "icon": 0, "kind": "material" },
 	"wolf_pelt":       { "name": "Шкура волка",        "icon": 0, "kind": "material" },
@@ -23,7 +20,7 @@ const DEFS := {
 
 	"wood_bow":        { "name": "Деревянный лук",    "icon": 6, "slot": "weapon", "damage": 6 },
 	"iron_bow":        { "name": "Железный лук",       "icon": 6, "slot": "weapon", "damage": 12 },
-	"golden_bow":      { "name": "Золотой лук",        "icon": 6, "icon_path": "res://assets/sprites/items/golden_bow.png", "slot": "weapon", "damage": 20 },
+	"golden_bow":      { "name": "Золотой лук",        "icon": 6, "slot": "weapon", "damage": 20 },
 
 	"cloth_armor":     { "name": "Тканая броня",       "icon": 3, "slot": "body", "hp": 12 },
 	"leather_armor":   { "name": "Кожаная броня",      "icon": 3, "slot": "body", "hp": 22 },

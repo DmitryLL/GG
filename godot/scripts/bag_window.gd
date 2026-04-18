@@ -3,13 +3,13 @@
 class_name BagWindow
 extends CanvasLayer
 
-const UI = preload("res://scripts/ui.gd")
-const Items = preload("res://scripts/items.gd")
 signal use_or_equip(slot_index: int)
 signal closed
 
-const BAG_EMBLEM := preload("res://assets/sprites/ui/bag_emblem.png")
-const SLOT_COUNT := 50
+
+const ITEMS_TEX := preload("res://assets/sprites/items.png")
+const SLOT_COUNT := 25
+
 const GRID_COLS := 5
 const FILTERS := [
 	{ "key": "all", "title": "Все" },
@@ -377,11 +377,16 @@ func _set_slot_icon(btn: Button, item_id: String, qty: int, actual_index: int) -
 	if item_id == "":
 		return
 
+	var def: Dictionary = Items.def(item_id)
+	var at := AtlasTexture.new()
+	at.atlas = ITEMS_TEX
+	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
 	var icon := TextureRect.new()
-	icon.texture = Items.icon_texture(item_id)
-	icon.custom_minimum_size = Vector2(40, 40)
-	icon.size = Vector2(40, 40)
-	icon.position = Vector2(16, 8)
+	icon.texture = at
+	icon.custom_minimum_size = Vector2(38, 38)
+	icon.size = Vector2(38, 38)
+	icon.position = Vector2(7, 7)
+
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
