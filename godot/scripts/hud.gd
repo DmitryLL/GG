@@ -10,6 +10,7 @@ signal admin_button_pressed
 
 const ICON_BAG := preload("res://assets/sprites/icon_bag.png")
 const ICON_CHAR := preload("res://assets/sprites/icon_character.png")
+const ICON_ADMIN := preload("res://assets/sprites/icon_admin.png")
 
 const BTN_SIZE := 48
 const BTN_GAP := 6
@@ -64,7 +65,7 @@ func _ready() -> void:
 	root.add_child(bag_btn)
 
 	# Админская кнопка — над × (видна только админам).
-	admin_btn = _make_icon_button(null, "🔧", Color(0.70, 0.85, 1.00), "Админка (`)")
+	admin_btn = _make_icon_button(ICON_ADMIN, "", Color(0.70, 0.85, 1.00), "Админка (`)")
 	admin_btn.anchor_left = 1.0; admin_btn.anchor_right = 1.0
 	admin_btn.anchor_top = 1.0; admin_btn.anchor_bottom = 1.0
 	var admin_y_top: int = y_top - BTN_SIZE - BTN_GAP

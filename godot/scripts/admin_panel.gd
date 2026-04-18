@@ -120,12 +120,31 @@ func _ready() -> void:
 	outer.add_theme_constant_override("separation", 4)
 	panel.add_child(outer)
 
+	# Шапка с title + крестиком закрытия.
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 4)
+	outer.add_child(header)
+
 	var title := Label.new()
 	title.text = "АДМИНКА (` или F12)"
 	title.add_theme_font_size_override("font_size", 14)
 	title.add_theme_color_override("font_color", Color(1, 0.7, 0.7))
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	outer.add_child(title)
+	header.add_child(title)
+
+	var close_btn := Button.new()
+	close_btn.text = "×"
+	close_btn.tooltip_text = "Закрыть"
+	close_btn.focus_mode = Control.FOCUS_NONE
+	close_btn.custom_minimum_size = Vector2(26, 26)
+	close_btn.add_theme_font_size_override("font_size", 16)
+	close_btn.add_theme_color_override("font_color", Color(1, 0.7, 0.7))
+	close_btn.pressed.connect(func():
+		visible_now = false
+		panel.visible = false
+	)
+	header.add_child(close_btn)
 
 	tabs = TabContainer.new()
 	tabs.custom_minimum_size = Vector2(0, 360)
@@ -528,6 +547,12 @@ func _select_brush(tile_id: int, btn: Button) -> void:
 	for entry in _edit_brush_btns:
 		var b: Button = entry["btn"]
 		b.button_pressed = (b == btn)
+	# Выбор тайла-кисти отменяет активный mob/object-инструмент,
+	# иначе клики будут уходить в _handle_mob_tool_click и тайл не нарисуется.
+	mob_tool = ""
+	for entry2 in _mob_tool_btns:
+		var b2: Button = entry2["btn"]
+		b2.button_pressed = false
 	_update_brush_preview()
 
 func select_brush_by_index(idx: int) -> void:
