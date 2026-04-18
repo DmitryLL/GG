@@ -48,6 +48,9 @@ const OP_SKILL_REJECT := 22
 const OP_TILE_UPDATE  := 23
 const OP_MAP_SAVE     := 24
 const OP_MAP_FULL     := 25
+const OP_MOB_ADD      := 26
+const OP_MOB_MOVE     := 27
+const OP_MOB_DEL      := 28
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -227,6 +230,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseButton and event.pressed:
 		var world_pos_e := get_viewport().get_camera_2d().get_global_mouse_position()
+		# Инструменты мобов перехватывают клик раньше рисования тайлов.
+		if admin_panel.mob_tool != "" and event.button_index == MOUSE_BUTTON_LEFT:
+			_handle_mob_tool_click(world_pos_e, admin_panel.mob_tool)
+			return
 		var c: int = int(world_pos_e.x / WorldData.TILE_SIZE)
 		var r: int = int(world_pos_e.y / WorldData.TILE_SIZE)
 		if event.button_index == MOUSE_BUTTON_LEFT:
@@ -551,7 +558,54 @@ func _save_map_on_server() -> void:
 		return
 	Session.socket.send_match_state_async(match_id, OP_MAP_SAVE, JSON.stringify({}))
 	if admin_panel:
-		admin_panel.log_result("Карта сохранена на сервере")
+		admin_panel.log_result("Карта сохранена на сервере (тайлы + мобы)")
+
+# ══════════════════ Редактор мобов ══════════════════
+# "Выбран" моб для перемещения (второй клик задаёт новую позицию).
+var _mob_move_selected: String = ""
+
+func _mob_at_any(world_pos: Vector2) -> Mob:
+	var best: Mob = null
+	var best_d: float = 9999.0
+	for mob_v in mobs.values():
+		var mob: Mob = mob_v
+		var d: float = mob.position.distance_to(world_pos)
+		if d < CLICK_MOB_RADIUS and d < best_d:
+			best = mob
+			best_d = d
+	return best
+
+func _handle_mob_tool_click(world_pos: Vector2, tool_id: String) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	match tool_id:
+		"add_slime", "add_goblin", "add_dummy":
+			var mob_type := tool_id.substr(4)  # "slime" / "goblin" / "dummy"
+			Session.socket.send_match_state_async(match_id, OP_MOB_ADD,
+				JSON.stringify({"type": mob_type, "x": world_pos.x, "y": world_pos.y}))
+			if admin_panel:
+				admin_panel.log_result("Моб добавлен: %s" % mob_type)
+		"move":
+			if _mob_move_selected == "":
+				var picked := _mob_at_any(world_pos)
+				if picked == null:
+					if admin_panel: admin_panel.log_result("Клик не попал в моба")
+					return
+				_mob_move_selected = picked.mob_id
+				if admin_panel: admin_panel.log_result("Двигаем: %s — кликни цель" % _mob_move_selected)
+			else:
+				Session.socket.send_match_state_async(match_id, OP_MOB_MOVE,
+					JSON.stringify({"mobId": _mob_move_selected, "x": world_pos.x, "y": world_pos.y}))
+				if admin_panel: admin_panel.log_result("Моб перемещён: %s" % _mob_move_selected)
+				_mob_move_selected = ""
+		"delete":
+			var target := _mob_at_any(world_pos)
+			if target == null:
+				if admin_panel: admin_panel.log_result("Клик не попал в моба")
+				return
+			Session.socket.send_match_state_async(match_id, OP_MOB_DEL,
+				JSON.stringify({"mobId": target.mob_id}))
+			if admin_panel: admin_panel.log_result("Моб удалён: %s" % target.mob_id)
 
 func _on_map_save() -> void:
 	# Собираем TMJ с текущими тайлами + исходными Mobs/NPCs из оригинального world.tmj.
@@ -726,6 +780,13 @@ func _apply_mobs(body: Dictionary) -> void:
 	for m in body.get("mobs", []):
 		var mid: String = String(m.get("id", ""))
 		if mid == "":
+			continue
+		# Удаление моба админом — сервер шлёт {id, removed:true}.
+		if bool(m.get("removed", false)):
+			var dead_node: Mob = mobs.get(mid)
+			if dead_node:
+				dead_node.queue_free()
+				mobs.erase(mid)
 			continue
 		var kind: String = String(m.get("t", "slime"))
 		var ms: Mob = mobs.get(mid)

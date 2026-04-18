@@ -132,8 +132,11 @@ const OP_SKILL        = 20; // client → server { skill, mobId?, x?, y? }
 const OP_SKILL_FX     = 21; // server → clients, visual effect for skill
 const OP_SKILL_REJECT = 22; // server → caster, скилл отвергнут (сбросить локальный cd)
 const OP_TILE_UPDATE  = 23; // admin edit: client→server {c,r,id}; server→clients broadcast
-const OP_MAP_SAVE     = 24; // admin: client→server — запись текущих tiles в Nakama Storage
+const OP_MAP_SAVE     = 24; // admin: client→server — запись tiles+mobs в Nakama Storage
 const OP_MAP_FULL     = 25; // server→client at join: весь массив tiles, если карта редактировалась
+const OP_MOB_ADD      = 26; // admin: client→server {type, x, y}
+const OP_MOB_MOVE     = 27; // admin: client→server {mobId, x, y}
+const OP_MOB_DEL      = 28; // admin: client→server {mobId}
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -418,23 +421,44 @@ function loadMapFromStorage(nk: nkruntime.Nakama): number[] | null {
     return null;
 }
 
-function saveMapToStorage(nk: nkruntime.Nakama, tiles: number[]): void {
+function saveMapToStorage(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: string]: MatchMob }): void {
+    const mobSpawns: MobSpawn[] = [];
+    for (const k of Object.keys(mobs)) {
+        const m = mobs[k];
+        mobSpawns.push({ x: m.home.x, y: m.home.y, type: m.type });
+    }
     nk.storageWrite([{
         collection: MAP_STORAGE_COLLECTION,
         key: MAP_STORAGE_KEY,
         userId: MAP_STORAGE_USER,
-        value: { tiles: tiles, savedAt: Date.now() },
+        value: { tiles: tiles, mobs: mobSpawns, savedAt: Date.now() },
         version: "",
         permissionRead: 2,
         permissionWrite: 1,
     }]);
 }
 
+function loadMobsFromStorage(nk: nkruntime.Nakama): MobSpawn[] | null {
+    try {
+        const res = nk.storageRead([{
+            collection: MAP_STORAGE_COLLECTION,
+            key: MAP_STORAGE_KEY,
+            userId: MAP_STORAGE_USER,
+        }]);
+        if (res && res.length > 0 && res[0].value && Array.isArray((res[0].value as any).mobs)) {
+            return (res[0].value as any).mobs as MobSpawn[];
+        }
+    } catch (_e) {}
+    return null;
+}
+
 function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
+    const savedMobs = loadMobsFromStorage(nk);
+    const mobSpawns = savedMobs ? savedMobs : WORLD.mobSpawns;
     const mobs: { [id: string]: MatchMob } = {};
-    for (let i = 0; i < WORLD.mobSpawns.length; i++) {
+    for (let i = 0; i < mobSpawns.length; i++) {
         const mobId = "m" + i;
-        mobs[mobId] = spawnMob(mobId, WORLD.mobSpawns[i]);
+        mobs[mobId] = spawnMob(mobId, mobSpawns[i]);
     }
     const savedTiles = loadMapFromStorage(nk);
     const tiles = savedTiles ? savedTiles : WORLD.tiles.slice();
@@ -933,7 +957,51 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             case OP_MAP_SAVE: {
                 try {
                     if (!isAdminName(player.username)) break;
-                    saveMapToStorage(nk, state.tiles);
+                    saveMapToStorage(nk, state.tiles, state.mobs);
+                } catch (_e) {}
+                break;
+            }
+            case OP_MOB_ADD: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { type?: string; x?: number; y?: number };
+                    const type = String(body.type || "slime");
+                    if (!MOB_TYPES[type]) break;
+                    const x = Number(body.x), y = Number(body.y);
+                    if (!isFinite(x) || !isFinite(y)) break;
+                    if (x < 0 || y < 0 || x > MAP_COLS * TILE_SIZE || y > MAP_ROWS * TILE_SIZE) break;
+                    const newId = "m_" + state.tick + "_" + Math.floor(Math.random() * 1000);
+                    state.mobs[newId] = spawnMob(newId, { x: x, y: y, type: type });
+                    dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: [mobSnap(state.mobs[newId])], full: false }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_MOB_MOVE: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string; x?: number; y?: number };
+                    const mobId = String(body.mobId || "");
+                    const mob = state.mobs[mobId];
+                    if (!mob) break;
+                    const x = Number(body.x), y = Number(body.y);
+                    if (!isFinite(x) || !isFinite(y)) break;
+                    if (x < 0 || y < 0 || x > MAP_COLS * TILE_SIZE || y > MAP_ROWS * TILE_SIZE) break;
+                    mob.home.x = x; mob.home.y = y;
+                    mob.pos.x = x; mob.pos.y = y;
+                    mob.target = null;
+                    mob.dirty = true;
+                    dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: [mobSnap(mob)], full: false }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_MOB_DEL: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string };
+                    const mobId = String(body.mobId || "");
+                    if (!state.mobs[mobId]) break;
+                    delete state.mobs[mobId];
+                    dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: [{ id: mobId, removed: true }], full: false }));
                 } catch (_e) {}
                 break;
             }

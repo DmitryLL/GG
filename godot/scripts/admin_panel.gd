@@ -61,6 +61,11 @@ var _edit_brush_btns: Array = []
 var _size_btns: Array = []
 var _bucket_btn: Button
 
+# Мобы: инструмент — "" / "add_slime" / "add_goblin" / "add_dummy" / "move" / "delete".
+# Когда не пустая — клик в мире НЕ рисует тайл, а работает с мобами.
+var mob_tool: String = ""
+var _mob_tool_btns: Array = []
+
 signal map_save_requested              # старая: скачать world.tmj в браузер
 signal map_save_server_requested       # новая: записать в Nakama Storage
 signal map_edit_mode_changed(on: bool) # для сетки-оверлея
@@ -234,6 +239,42 @@ func _ready() -> void:
 	undo_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	map_tab.add_child(undo_hint)
 
+	var mob_label := Label.new()
+	mob_label.text = "Мобы (клик → действие):"
+	mob_label.add_theme_font_size_override("font_size", 11)
+	mob_label.add_theme_color_override("font_color", Color(1, 0.8, 0.5))
+	map_tab.add_child(mob_label)
+
+	var mob_tools := [
+		{"id": "add_slime",  "name": "+ Слизень"},
+		{"id": "add_goblin", "name": "+ Гоблин"},
+		{"id": "add_dummy",  "name": "+ Манекен"},
+		{"id": "move",       "name": "⇄ Двигать"},
+		{"id": "delete",     "name": "✕ Удалить"},
+	]
+	var mob_grid := GridContainer.new()
+	mob_grid.columns = 2
+	mob_grid.add_theme_constant_override("h_separation", 4)
+	mob_grid.add_theme_constant_override("v_separation", 4)
+	map_tab.add_child(mob_grid)
+	for mt in mob_tools:
+		var mbt := Button.new()
+		mbt.text = mt["name"]
+		mbt.toggle_mode = true
+		mbt.custom_minimum_size = Vector2(140, 0)
+		var tid: String = mt["id"]
+		mbt.pressed.connect(_select_mob_tool.bind(tid, mbt))
+		mob_grid.add_child(mbt)
+		_mob_tool_btns.append({"btn": mbt, "id": tid})
+
+	var mob_hint := Label.new()
+	mob_hint.text = "Двигать: 1-й клик — выбрать моба, 2-й — новая позиция. Удалить: клик по мобу."
+	mob_hint.add_theme_font_size_override("font_size", 9)
+	mob_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	mob_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	mob_hint.custom_minimum_size = Vector2(280, 0)
+	map_tab.add_child(mob_hint)
+
 	var save_server_btn := Button.new()
 	save_server_btn.text = "💾 Сохранить на сервере"
 	save_server_btn.pressed.connect(func(): map_save_server_requested.emit())
@@ -377,3 +418,13 @@ func _select_size(size: int, btn: Button) -> void:
 
 func _toggle_bucket() -> void:
 	bucket_mode = _bucket_btn.button_pressed
+
+func _select_mob_tool(tool_id: String, btn: Button) -> void:
+	# Повторный клик по активной кнопке снимает инструмент.
+	if mob_tool == tool_id and not btn.button_pressed:
+		mob_tool = ""
+		return
+	mob_tool = tool_id
+	for entry in _mob_tool_btns:
+		var b: Button = entry["btn"]
+		b.button_pressed = (b == btn)
