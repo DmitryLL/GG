@@ -2,6 +2,7 @@
 class_name AdminPanel
 extends CanvasLayer
 
+const Items = preload("res://scripts/items.gd")
 const ADMIN_USERNAMES = ["dmitryll", "admin"]
 
 # Все предметы — берутся из Items.DEFS при первом открытии

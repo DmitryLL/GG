@@ -5,11 +5,13 @@ class_name CharacterWindow
 extends CanvasLayer
 # Выше skillbar и HUD — чтобы окно персонажа перекрывало их
 
+const UI = preload("res://scripts/ui.gd")
+const Items = preload("res://scripts/items.gd")
 signal unequip_requested(slot: String)
 signal equip_requested(inv_index: int, target_slot: String)
 signal closed
 
-const ITEMS_TEX := preload("res://assets/sprites/items.png")
+const ITEMS_TEX_PATH := "res://assets/sprites/items.png"
 
 const SLOT_LAYOUT := [
 	{ "slot": "head",   "x":   0, "y": -124, "label": "Шлем" },
@@ -310,7 +312,7 @@ func _fill_slot(btn: Button, item_id: String, fallback_label: String) -> void:
 		return
 	var def: Dictionary = Items.def(item_id)
 	var at := AtlasTexture.new()
-	at.atlas = ITEMS_TEX
+	at.atlas = load(ITEMS_TEX_PATH)
 	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
 	var icon := TextureRect.new()
 	icon.texture = at
@@ -453,7 +455,7 @@ func _make_picker_row(item_id: String, qty: int, hint_text: String, on_take: Cal
 	var def: Dictionary = Items.def(item_id)
 	var icon := TextureRect.new()
 	var at := AtlasTexture.new()
-	at.atlas = ITEMS_TEX
+	at.atlas = load(ITEMS_TEX_PATH)
 	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
 	icon.texture = at
 	icon.custom_minimum_size = Vector2(26, 26)
@@ -498,11 +500,33 @@ func set_doll(variant: int) -> void:
 	_update_doll_sprite(false)
 
 func _update_doll_sprite(has_bow: bool) -> void:
-	var path: String = "res://assets/sprites/char_%d.png" % _doll_variant
-	doll_sprite.texture = load(path)
+	doll_sprite.texture = _make_doll_texture(has_bow)
 	doll_sprite.hframes = 6
 	doll_sprite.vframes = 4
 	doll_sprite.frame = 0  # facing-down idle
+
+func _make_doll_texture(has_bow: bool) -> ImageTexture:
+	var fw := 18
+	var fh := 26
+	var img := Image.create(fw * 6, fh * 4, false, Image.FORMAT_RGBA8)
+	var base := Color.from_hsv(float(_doll_variant) / 6.0, 0.55, 0.9)
+	for dir in range(4):
+		for frame in range(6):
+			var ox := frame * fw
+			var oy := dir * fh
+			for y in range(6, 19):
+				for x in range(5, 13):
+					img.set_pixel(ox + x, oy + y, base)
+			for y in range(2, 7):
+				for x in range(6, 12):
+					img.set_pixel(ox + x, oy + y, Color(0.97, 0.88, 0.75, 1.0))
+			for y in range(19, 25):
+				img.set_pixel(ox + 7, oy + y, Color(0.24, 0.18, 0.12, 1.0))
+				img.set_pixel(ox + 10, oy + y, Color(0.24, 0.18, 0.12, 1.0))
+			if has_bow:
+				for y in range(7, 19):
+					img.set_pixel(ox + 13, oy + y, Color(0.55, 0.32, 0.15, 1.0))
+	return ImageTexture.create_from_image(img)
 
 func open(me: Dictionary) -> void:
 	overlay.visible = true

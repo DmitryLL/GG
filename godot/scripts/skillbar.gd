@@ -2,6 +2,8 @@
 class_name SkillBar
 extends CanvasLayer
 
+const SkillRegistry = preload("res://scripts/skills/skill_registry.gd")
+const SkillDef = preload("res://scripts/skills/skill_def.gd")
 signal skill_activated(index: int)
 
 var SKILLS: Array = []
@@ -110,16 +112,11 @@ func _make_slot(i: int) -> Control:
 	btn.pressed.connect(func(): skill_activated.emit(i))
 
 	# Иконка — центрирована, пропорциональная
-	var icon := TextureRect.new()
-	var tex: Resource = load(sk["icon"])
-	if tex:
-		icon.texture = tex
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var icon := ColorRect.new()
+	icon.color = Color.from_hsv(float(i) / max(1.0, float(SKILLS.size())), 0.55, 0.9)
 	icon.anchor_right = 1.0; icon.anchor_bottom = 1.0
-	icon.offset_left = 6; icon.offset_top = 6
-	icon.offset_right = -6; icon.offset_bottom = -6
+	icon.offset_left = 12; icon.offset_top = 12
+	icon.offset_right = -12; icon.offset_bottom = -12
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(icon)
 

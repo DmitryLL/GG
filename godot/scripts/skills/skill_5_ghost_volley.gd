@@ -1,4 +1,5 @@
 # Скилл 5: Призрачный залп — конус из 5 голубых стрел.
+const SkillDef = preload("res://scripts/skills/skill_def.gd")
 class_name SkillGhostVolley
 extends SkillDef
 

@@ -2,6 +2,7 @@
 class_name Player
 extends Node2D
 
+const World = preload("res://scripts/world.gd")
 signal moved(pos: Vector2)
 
 const SPEED := 120.0
@@ -52,6 +53,9 @@ var facing: int = Dir.DOWN
 var moving: bool = false
 var anim_t: float = 0.0
 var _flash_t: float = 0.0
+var _walk_tex: ImageTexture
+var _punch_tex: ImageTexture
+var _shoot_tex: ImageTexture
 
 func setup(p_world: World, p_name: String, p_variant: int) -> void:
 	world = p_world
@@ -59,8 +63,11 @@ func setup(p_world: World, p_name: String, p_variant: int) -> void:
 	variant = p_variant
 
 func _ready() -> void:
+	_walk_tex = _make_state_texture(Color.from_hsv(float(variant) / max(1.0, float(SPRITE_VARIANTS)), 0.55, 0.92), WALK_HFRAMES)
+	_punch_tex = _make_state_texture(Color(0.92, 0.62, 0.48, 1.0), PUNCH_HFRAMES)
+	_shoot_tex = _make_state_texture(Color(0.70, 0.82, 0.98, 1.0), SHOOT_HFRAMES)
 	sprite = Sprite2D.new()
-	sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
+	sprite.texture = _walk_tex
 	sprite.hframes = WALK_HFRAMES
 	sprite.vframes = 4
 	sprite.frame = Dir.DOWN * WALK_HFRAMES
@@ -73,7 +80,7 @@ func _ready() -> void:
 	_setup_layers()
 
 	bow_sprite = Sprite2D.new()
-	bow_sprite.texture = load("res://assets/sprites/bow_hand.png")
+	bow_sprite.texture = _make_bow_texture()
 	bow_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	bow_sprite.scale = Vector2(0.55, 0.55)
 	bow_sprite.visible = false
@@ -213,8 +220,7 @@ func set_has_bow(on: bool) -> void:
 	_has_bow = on
 	if bow_string: bow_string.visible = false
 	if bow_arrow: bow_arrow.visible = false
-	# Лучник и безоружный — один базовый rig; различие только в overlay-луке.
-	sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
+	sprite.texture = _walk_tex
 	sprite.hframes = WALK_HFRAMES
 	sprite.vframes = 4
 	sprite.frame = facing * WALK_HFRAMES
@@ -263,7 +269,7 @@ const ROLL_FRAMES := 6
 
 func play_punch() -> void:
 	_punch_end_ms = Session.server_now_ms() + int(PUNCH_DURATION * 1000.0)
-	sprite.texture = load("res://assets/sprites/char_base_punch.png")
+	sprite.texture = _punch_tex
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
 	_apply_layer_state("punch")
@@ -275,7 +281,7 @@ func play_bow_shot() -> void:
 	# до генерации специфического ракурса.
 	if not _has_bow: return
 	_bow_shot_end_ms = Session.server_now_ms() + int(SHOOT_DURATION * 1000.0)
-	sprite.texture = load("res://assets/sprites/char_base_shoot.png")
+	sprite.texture = _shoot_tex
 	sprite.hframes = SHOOT_HFRAMES
 	sprite.vframes = 4
 	_apply_layer_state("shoot")
@@ -283,7 +289,7 @@ func play_bow_shot() -> void:
 func play_roll() -> void:
 	# Временно: перекат = короткий punch-sprite (пока нет отдельного rig).
 	_roll_end_ms = Session.server_now_ms() + int(ROLL_DURATION * 1000.0)
-	sprite.texture = load("res://assets/sprites/char_base_punch.png")
+	sprite.texture = _punch_tex
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
 	_apply_layer_state("punch")
@@ -294,7 +300,7 @@ func play_bow_shot_upward() -> void:
 	play_bow_shot()
 
 func _restore_walk_sprite() -> void:
-	sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
+	sprite.texture = _walk_tex
 	sprite.hframes = WALK_HFRAMES
 	sprite.vframes = 4
 	sprite.frame = facing * WALK_HFRAMES
@@ -327,22 +333,9 @@ func set_wear(slot: String, item_id: String) -> void:
 		layer.visible = false
 		layer.set_meta("textures", {})
 		return
-	var textures := {}
-	for state in ["walk", "punch", "shoot"]:
-		var path := "res://assets/sprites/wear/%s/%s_%s.png" % [slot, item_id, state]
-		if ResourceLoader.exists(path):
-			textures[state] = load(path)
-	if textures.is_empty():
-		# Ни одного подходящего атласа — слой остаётся невидимым.
-		layer.visible = false
-		layer.set_meta("textures", {})
-		return
-	# Если нет атласа для state — fallback на walk.
-	var walk_tex = textures.get("walk", textures.values()[0])
-	if not textures.has("walk"): textures["walk"] = walk_tex
-	if not textures.has("punch"): textures["punch"] = walk_tex
-	if not textures.has("shoot"): textures["shoot"] = walk_tex
-	layer.set_meta("textures", textures)
+	layer.visible = false
+	layer.set_meta("textures", {})
+	return
 	layer.visible = true
 	_apply_layer_state_for(layer, _current_anim_state)
 
@@ -450,3 +443,33 @@ static func variant_from(id: String) -> int:
 	for i in id.length():
 		h = (h * 31 + id.unicode_at(i)) & 0xFFFFFFFF
 	return h % SPRITE_VARIANTS
+
+func _make_state_texture(base: Color, frames: int) -> ImageTexture:
+	var fw := 18
+	var fh := 26
+	var img := Image.create(fw * frames, fh * 4, false, Image.FORMAT_RGBA8)
+	for dir in range(4):
+		for frame in range(frames):
+			var ox := frame * fw
+			var oy := dir * fh
+			var shade := 0.88 + 0.04 * frame
+			var body := Color(base.r * shade, base.g * shade, base.b * shade, 1.0)
+			for y in range(6, 19):
+				for x in range(5, 13):
+					img.set_pixel(ox + x, oy + y, body)
+			for y in range(2, 7):
+				for x in range(6, 12):
+					img.set_pixel(ox + x, oy + y, Color(0.97, 0.88, 0.75, 1.0))
+			var leg_shift := (frame % 2) if frame > 0 else 0
+			for y in range(19, 25):
+				img.set_pixel(ox + 7 - leg_shift, oy + y, Color(0.22, 0.16, 0.12, 1.0))
+				img.set_pixel(ox + 10 + leg_shift, oy + y, Color(0.22, 0.16, 0.12, 1.0))
+	return ImageTexture.create_from_image(img)
+
+func _make_bow_texture() -> ImageTexture:
+	var img := Image.create(8, 20, false, Image.FORMAT_RGBA8)
+	for y in range(20):
+		img.set_pixel(2, y, Color(0.50, 0.28, 0.12, 1.0))
+		if y > 1 and y < 18:
+			img.set_pixel(5, y, Color(0.85, 0.82, 0.70, 1.0))
+	return ImageTexture.create_from_image(img)

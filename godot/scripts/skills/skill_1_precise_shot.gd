@@ -1,4 +1,5 @@
 # Скилл 1: Меткий выстрел — одиночная цель, x2 урон, чёрная стрела.
+const SkillDef = preload("res://scripts/skills/skill_def.gd")
 class_name SkillPreciseShot
 extends SkillDef
 

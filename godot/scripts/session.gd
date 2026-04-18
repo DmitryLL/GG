@@ -1,15 +1,16 @@
-# Singleton (autoload as "Session") holding the Nakama client and current auth session.
-# Scenes pull `Session.client` and `Session.auth` rather than reconnecting.
+# Singleton used for local offline preview of the project.
 extends Node
 
-const HOST := "nk.193-238-134-75.sslip.io"
-const PORT := 443
-const SCHEME := "https"
-const SERVER_KEY := "defaultkey" # Nakama default; overridden later in config
+class DemoAuth:
+	var username: String = "Demo Ranger"
+	var user_id: String = "demo-local-player"
+	var expired: bool = false
 
-var client: NakamaClient
-var socket: NakamaSocket
-var auth: NakamaSession
+const DEMO_MODE := true
+
+var client = null
+var socket = null
+var auth = DemoAuth.new()
 
 # Server-time offset. Обновляется из каждого OP_ME (game._apply_me).
 # ВСЕ длительности скиллов и визуальных эффектов должны считаться от
@@ -21,13 +22,11 @@ func server_now_ms() -> int:
 	return Time.get_ticks_msec() + server_offset_ms
 
 func _ready() -> void:
-	client = Nakama.create_client(SERVER_KEY, HOST, PORT, SCHEME)
+	pass
 
 func is_logged_in() -> bool:
-	return auth != null and not auth.expired
+	return true
 
 func logout() -> void:
-	if socket and socket.is_connected_to_host():
-		socket.close()
 	socket = null
-	auth = null
+	auth = DemoAuth.new()

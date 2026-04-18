@@ -7,9 +7,6 @@ signal character_button_pressed
 signal bag_button_pressed
 signal logout_button_pressed
 
-const ICON_BAG := preload("res://assets/sprites/icon_bag.png")
-const ICON_CHAR := preload("res://assets/sprites/icon_character.png")
-
 const BTN_SIZE := 48
 const BTN_GAP := 6
 
@@ -39,7 +36,7 @@ func _ready() -> void:
 	logout_btn.pressed.connect(func(): logout_button_pressed.emit())
 	root.add_child(logout_btn)
 
-	character_btn = _make_icon_button(ICON_CHAR, "", Color(0.95, 0.85, 0.55), "Персонаж (I)")
+	character_btn = _make_icon_button(null, "P", Color(0.95, 0.85, 0.55), "Персонаж (I)")
 	character_btn.anchor_left = 1.0; character_btn.anchor_right = 1.0
 	character_btn.anchor_top = 1.0; character_btn.anchor_bottom = 1.0
 	var char_right: int = x_right - BTN_SIZE - BTN_GAP
@@ -50,7 +47,7 @@ func _ready() -> void:
 	character_btn.pressed.connect(func(): character_button_pressed.emit())
 	root.add_child(character_btn)
 
-	bag_btn = _make_icon_button(ICON_BAG, "", Color(0.95, 0.75, 0.45), "Сумка (C)")
+	bag_btn = _make_icon_button(null, "B", Color(0.95, 0.75, 0.45), "Сумка (C)")
 	bag_btn.anchor_left = 1.0; bag_btn.anchor_right = 1.0
 	bag_btn.anchor_top = 1.0; bag_btn.anchor_bottom = 1.0
 	var bag_right: int = char_right - BTN_SIZE - BTN_GAP

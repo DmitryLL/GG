@@ -4,9 +4,7 @@
 class_name World
 extends Node2D
 
-const TILES_TEX := preload("res://assets/sprites/tiles.png")
-const TREE_TEX := preload("res://assets/sprites/tree.png")
-
+const WorldData = preload("res://scripts/world_data.gd")
 var data: WorldData
 var astar: AStarGrid2D
 
@@ -65,22 +63,45 @@ func _render_tiles() -> void:
 			var base_id := id
 			if id == WorldData.Tile.TREE:
 				base_id = WorldData.Tile.GRASS
-			var sprite := Sprite2D.new()
-			sprite.texture = TILES_TEX
-			sprite.region_enabled = true
-			sprite.region_rect = Rect2(base_id * WorldData.TILE_SIZE, 0, WorldData.TILE_SIZE, WorldData.TILE_SIZE)
-			sprite.centered = false
-			sprite.position = Vector2(c * WorldData.TILE_SIZE, r * WorldData.TILE_SIZE)
-			sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-			add_child(sprite)
+			var tile := ColorRect.new()
+			tile.color = _tile_color(base_id)
+			tile.size = Vector2(WorldData.TILE_SIZE, WorldData.TILE_SIZE)
+			tile.position = Vector2(c * WorldData.TILE_SIZE, r * WorldData.TILE_SIZE)
+			add_child(tile)
 			if id == WorldData.Tile.TREE:
-				var tree := Sprite2D.new()
-				tree.texture = TREE_TEX
-				tree.centered = false
-				tree.position = Vector2(c * WorldData.TILE_SIZE - 16, r * WorldData.TILE_SIZE - 64)
-				tree.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-				tree.z_index = r
-				add_child(tree)
+				var tree_shadow := ColorRect.new()
+				tree_shadow.color = Color(0.08, 0.18, 0.10, 0.92)
+				tree_shadow.size = Vector2(20, 12)
+				tree_shadow.position = Vector2(c * WorldData.TILE_SIZE + 6, r * WorldData.TILE_SIZE + 18)
+				tree_shadow.z_index = r
+				add_child(tree_shadow)
+				var trunk := ColorRect.new()
+				trunk.color = Color(0.38, 0.24, 0.12, 1.0)
+				trunk.size = Vector2(8, 18)
+				trunk.position = Vector2(c * WorldData.TILE_SIZE + 12, r * WorldData.TILE_SIZE - 8)
+				trunk.z_index = r
+				add_child(trunk)
+				var crown := ColorRect.new()
+				crown.color = Color(0.16, 0.40, 0.22, 1.0)
+				crown.size = Vector2(30, 26)
+				crown.position = Vector2(c * WorldData.TILE_SIZE + 1, r * WorldData.TILE_SIZE - 28)
+				crown.z_index = r
+				add_child(crown)
+
+func _tile_color(id: int) -> Color:
+	match id:
+		WorldData.Tile.GRASS:
+			return Color(0.35, 0.58, 0.34, 1.0)
+		WorldData.Tile.SAND:
+			return Color(0.85, 0.78, 0.58, 1.0)
+		WorldData.Tile.WATER:
+			return Color(0.24, 0.44, 0.70, 1.0)
+		WorldData.Tile.STONE:
+			return Color(0.48, 0.50, 0.56, 1.0)
+		WorldData.Tile.PATH:
+			return Color(0.60, 0.48, 0.32, 1.0)
+		_:
+			return Color(0.30, 0.54, 0.31, 1.0)
 
 func is_walkable(pos: Vector2) -> bool:
 	return data.is_walkable_at(pos.x, pos.y)

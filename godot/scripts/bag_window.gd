@@ -3,10 +3,12 @@
 class_name BagWindow
 extends CanvasLayer
 
+const UI = preload("res://scripts/ui.gd")
+const Items = preload("res://scripts/items.gd")
 signal use_or_equip(slot_index: int)
 signal closed
 
-const ITEMS_TEX := preload("res://assets/sprites/items.png")
+const ITEMS_TEX_PATH := "res://assets/sprites/items.png"
 const SLOT_COUNT := 25
 const GRID_COLS := 5
 
@@ -212,7 +214,7 @@ func _set_slot_icon(btn: Button, item_id: String, qty: int) -> void:
 		return
 	var def: Dictionary = Items.def(item_id)
 	var at := AtlasTexture.new()
-	at.atlas = ITEMS_TEX
+	at.atlas = load(ITEMS_TEX_PATH)
 	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
 	var icon := TextureRect.new()
 	icon.texture = at

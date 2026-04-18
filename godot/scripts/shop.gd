@@ -3,11 +3,12 @@
 class_name Shop
 extends CanvasLayer
 
+const Items = preload("res://scripts/items.gd")
 signal buy_requested(npc_id: String, item_id: String)
 signal sell_requested(slot_index: int)
 signal closed
 
-const ITEMS_TEX := preload("res://assets/sprites/items.png")
+const ITEMS_TEX_PATH := "res://assets/sprites/items.png"
 
 # Цены приходят с сервера (one-shot OP_NPCS).
 var prices: Dictionary = {}
@@ -292,7 +293,7 @@ func _entry_button(item_id: String, price: int, enabled: bool, qty: int = 1) -> 
 	var r := Items.rarity(item_id)
 	var icon := TextureRect.new()
 	var at := AtlasTexture.new()
-	at.atlas = ITEMS_TEX
+	at.atlas = load(ITEMS_TEX_PATH)
 	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
 	icon.texture = at
 	icon.custom_minimum_size = Vector2(24, 24)

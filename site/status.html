@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GG — Local Status</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero hero-compact">
+        <nav class="topbar">
+          <div class="brand">
+            <span class="brand-mark">GG</span>
+            <span class="brand-copy">Local Project Status</span>
+          </div>
+          <div class="topbar-links">
+            <a href="./index.html">Главная</a>
+            <a href="#services">Сервисы</a>
+            <a href="#commands">Команды</a>
+          </div>
+        </nav>
+      </header>
+
+      <main>
+        <section class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Status</p>
+            <h2>Как быстро понять, что локальный GG поднят</h2>
+          </div>
+
+          <div class="cards cards-3">
+            <article class="card">
+              <h3>Docker stack</h3>
+              <p>
+                `Nakama` и `Postgres` должны быть подняты через локальный
+                compose-файл.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Godot demo</h3>
+              <p>
+                Demo-режим позволяет открыть клиент локально, даже если
+                production-поток еще не доведен.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Project site</h3>
+              <p>
+                `site/` — это отдельная статическая витрина проекта, ее можно
+                открыть без Godot и без сервера игры.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="services" class="section section-accent">
+          <div class="section-heading">
+            <p class="eyebrow">Services</p>
+            <h2>Чек-лист локального окружения</h2>
+          </div>
+
+          <div class="run-grid">
+            <article class="run-card">
+              <h3>Nakama API</h3>
+              <pre><code>curl http://127.0.0.1:7350/healthcheck</code></pre>
+              <p>Если сервис жив, ответ будет пустым JSON: <code>{}</code>.</p>
+            </article>
+
+            <article class="run-card">
+              <h3>Godot demo</h3>
+              <pre><code>cd /home/bvd/codex/GG
+./run-godot-demo.sh</code></pre>
+              <p>Это самый короткий путь увидеть клиент локально.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="commands" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Commands</p>
+            <h2>Быстрые команды</h2>
+          </div>
+
+          <div class="timeline">
+            <article class="timeline-item is-active">
+              <span class="timeline-dot"></span>
+              <h3>Поднять backend</h3>
+              <pre><code>cd /home/bvd/codex/GG
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml up -d</code></pre>
+            </article>
+
+            <article class="timeline-item">
+              <span class="timeline-dot"></span>
+              <h3>Открыть сайт проекта</h3>
+              <pre><code>cd /home/bvd/codex/GG/site
+python3 -m http.server 8090</code></pre>
+            </article>
+
+            <article class="timeline-item">
+              <span class="timeline-dot"></span>
+              <h3>Проверить git-ветку</h3>
+              <pre><code>cd /home/bvd/codex/GG
+git branch --show-current</code></pre>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

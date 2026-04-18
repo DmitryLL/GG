@@ -1,0 +1,8 @@
+services:
+  nakama:
+    ports:
+      - "7350:7350"
+      - "7351:7351"
+
+  caddy:
+    profiles: ["prod"]

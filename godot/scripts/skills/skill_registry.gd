@@ -3,20 +3,18 @@
 class_name SkillRegistry
 extends RefCounted
 
-const SKILLS: Array = [
-	preload("res://scripts/skills/skill_1_precise_shot.gd"),
-	preload("res://scripts/skills/skill_2_poison_arrow.gd"),
-	preload("res://scripts/skills/skill_3_dodge.gd"),
-	preload("res://scripts/skills/skill_4_arrow_rain.gd"),
-	preload("res://scripts/skills/skill_5_ghost_volley.gd"),
-]
-
+const SkillDef = preload("res://scripts/skills/skill_def.gd")
 static var _instances: Array = []
 
 static func all() -> Array:
 	if _instances.is_empty():
-		for cls in SKILLS:
-			_instances.append(cls.new())
+		_instances = [
+			_make("Меткий выстрел", 5.0, true, false),
+			_make("Отравленная стрела", 6.0, true, false),
+			_make("Отскок", 8.0, false, false),
+			_make("Ливень стрел", 12.0, false, true),
+			_make("Призрачный залп", 15.0, false, true),
+		]
 	return _instances
 
 static func by_index(i: int) -> SkillDef:
@@ -26,4 +24,12 @@ static func by_index(i: int) -> SkillDef:
 	return arr[i]
 
 static func count() -> int:
-	return SKILLS.size()
+	return all().size()
+
+static func _make(name: String, cooldown: float, targets_mob: bool, targets_ground: bool) -> SkillDef:
+	var d := SkillDef.new()
+	d.display_name = name
+	d.cooldown = cooldown
+	d.targets_mob = targets_mob
+	d.targets_ground = targets_ground
+	return d

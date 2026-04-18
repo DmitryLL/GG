@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GG — Godot MMORPG Prototype</title>
+    <meta
+      name="description"
+      content="GG — локальный прототип 2D top-down MMORPG на Godot 4 и Nakama: мир, мобы, лут, скиллы и realtime-архитектура."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <nav class="topbar">
+          <div class="brand">
+            <span class="brand-mark">GG</span>
+            <span class="brand-copy">Godot 4 + Nakama Prototype</span>
+          </div>
+          <div class="topbar-links">
+            <a href="#about">О проекте</a>
+            <a href="#stack">Стек</a>
+            <a href="#world">Мир</a>
+            <a href="#run">Запуск</a>
+            <a href="./status.html">Status</a>
+          </div>
+        </nav>
+
+        <section class="hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">MMORPG / Pixel World / Real-time Match</p>
+            <h1>GG — браузерная витрина проекта с духом самой игры</h1>
+            <p class="lead">
+              Локальный прототип top-down MMORPG: пиксельный мир, лучник, мобы,
+              NPC, инвентарь, лут и realtime-логика на Nakama.
+            </p>
+
+            <div class="hero-actions">
+              <a class="button button-primary" href="#run">Как запустить</a>
+              <a class="button button-ghost" href="#world">Посмотреть фичи</a>
+              <a class="button button-ghost" href="./status.html">Local Status</a>
+            </div>
+
+            <ul class="hero-stats">
+              <li>
+                <strong>60×45</strong>
+                <span>размер карты</span>
+              </li>
+              <li>
+                <strong>5</strong>
+                <span>активных скиллов</span>
+              </li>
+              <li>
+                <strong>Godot 4</strong>
+                <span>клиентская база</span>
+              </li>
+            </ul>
+          </div>
+
+          <div class="hero-stage">
+            <div class="stage-card">
+              <div class="stage-screen">
+                <div class="pixel pixel-tree"></div>
+                <div class="pixel pixel-slime"></div>
+                <div class="pixel pixel-goblin"></div>
+                <div class="pixel pixel-player"></div>
+                <div class="scanline"></div>
+              </div>
+              <div class="stage-footer">
+                <span>Preview Scene</span>
+                <span id="status-badge">build: local showcase</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </header>
+
+      <main>
+        <section id="about" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">О проекте</p>
+            <h2>Что такое GG</h2>
+          </div>
+
+          <div class="cards cards-3">
+            <article class="card">
+              <h3>Игровой контур</h3>
+              <p>
+                Клиент строится вокруг Godot-сцен, top-down мира, лучника,
+                NPC, мобов, PvE/PvP, инвентаря и визуальных скиллов.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Realtime-архитектура</h3>
+              <p>
+                Серверная часть опирается на Nakama match loop, RPC и игровые
+                данные из JSON-конфигов с последующей генерацией runtime-бандла.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Локальная разработка</h3>
+              <p>
+                Репозиторий уже содержит Godot-клиент, Nakama runtime,
+                docker-compose для локального окружения и тестовые скрипты.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="stack" class="section section-accent">
+          <div class="section-heading">
+            <p class="eyebrow">Стек</p>
+            <h2>Из чего собран проект</h2>
+          </div>
+
+          <div class="stack-layout">
+            <div class="stack-panel">
+              <h3>Клиент</h3>
+              <ul class="feature-list">
+                <li>Godot 4</li>
+                <li>GDScript</li>
+                <li>Pixel-art UI и sprites</li>
+                <li>Сцены `Main`, `Auth`, `Game`</li>
+              </ul>
+            </div>
+            <div class="stack-panel">
+              <h3>Сервер</h3>
+              <ul class="feature-list">
+                <li>Nakama</li>
+                <li>TypeScript runtime modules</li>
+                <li>RPC и match state</li>
+                <li>Postgres через Docker</li>
+              </ul>
+            </div>
+            <div class="stack-panel">
+              <h3>Контент</h3>
+              <ul class="feature-list">
+                <li>`data/items.json` и баланс</li>
+                <li>`data/mobs.json` и дроп</li>
+                <li>NPC-сток и экономика</li>
+                <li>Скиллы 1–5 на обеих сторонах</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="world" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Мир</p>
+            <h2>Что уже есть в прототипе</h2>
+          </div>
+
+          <div class="world-grid">
+            <article class="world-card world-card-large">
+              <h3>Боевая петля</h3>
+              <p>
+                Автоатака, дистанционные навыки, дебаффы, моб-хайлайт, стрелы,
+                трупы с лутом и окно добычи после боя.
+              </p>
+              <div class="sprite-row">
+                <img src="./assets/skill_1.png" alt="" />
+                <img src="./assets/skill_2.png" alt="" />
+                <img src="./assets/skill_3.png" alt="" />
+                <img src="./assets/skill_4.png" alt="" />
+                <img src="./assets/skill_5.png" alt="" />
+              </div>
+            </article>
+
+            <article class="world-card">
+              <h3>Живые сущности</h3>
+              <p>Слаймы, гоблины, манекены, торговцы и разные вариации игрока.</p>
+              <div class="sprite-row compact">
+                <img src="./assets/slime.png" alt="Slime" />
+                <img src="./assets/goblin.png" alt="Goblin" />
+                <img src="./assets/dummy.png" alt="Dummy" />
+                <img src="./assets/npc.png" alt="NPC" />
+              </div>
+            </article>
+
+            <article class="world-card">
+              <h3>Интерфейс</h3>
+              <p>
+                Сумка, персонаж, миникарта, чат, nameplate, админ-панель и
+                нижняя панель способностей.
+              </p>
+            </article>
+
+            <article class="world-card">
+              <h3>Навигация по миру</h3>
+              <p>
+                Tile-based карта, коллизии, click-to-move, AStarGrid2D и
+                сервер-авторитетное движение.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section roadmap">
+          <div class="section-heading">
+            <p class="eyebrow">Roadmap</p>
+            <h2>Ближайшие шаги</h2>
+          </div>
+
+          <div class="timeline">
+            <article class="timeline-item is-active">
+              <span class="timeline-dot"></span>
+              <h3>Фаза сейчас</h3>
+              <p>
+                Миграция на Godot-клиент, базовый мир, runtime-модули, локальная
+                инфраструктура и игровые данные уже в репозитории.
+              </p>
+            </article>
+            <article class="timeline-item">
+              <span class="timeline-dot"></span>
+              <h3>Следом</h3>
+              <p>
+                Довести стабильный запуск клиента, realtime-сцену и полный
+                рабочий цикл авторизации и мира.
+              </p>
+            </article>
+            <article class="timeline-item">
+              <span class="timeline-dot"></span>
+              <h3>Дальше</h3>
+              <p>
+                Развивать контент: баланс, новые мобы, новые предметы, новые
+                карты и более уверенный production flow через PR.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="run" class="section section-accent">
+          <div class="section-heading">
+            <p class="eyebrow">Запуск</p>
+            <h2>Как открыть эту страницу и проект локально</h2>
+          </div>
+
+          <div class="run-grid">
+            <article class="run-card">
+              <h3>Веб-страница</h3>
+              <pre><code>cd /home/bvd/codex/GG/site
+python3 -m http.server 8080</code></pre>
+              <p>
+                Затем открой <code>http://127.0.0.1:8080</code> в браузере.
+              </p>
+            </article>
+
+            <article class="run-card">
+              <h3>Godot-проект</h3>
+              <pre><code>cd /home/bvd/codex/GG
+./run-godot-demo.sh</code></pre>
+              <p>
+                Локальный launcher уже добавлен и использует подготовленные
+                библиотеки из домашней директории.
+              </p>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./main.js"></script>
+  </body>
+</html>

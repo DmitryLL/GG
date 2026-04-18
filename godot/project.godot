@@ -15,8 +15,6 @@ boot_splash/bg_color=Color(0.06, 0.06, 0.06, 1)
 
 [autoload]
 
-Nakama="*res://addons/com.heroiclabs.nakama/Nakama.gd"
-Satori="*res://addons/com.heroiclabs.nakama/Satori.gd"
 Session="*res://scripts/session.gd"
 
 [display]

@@ -16,7 +16,24 @@ const BAG_SCRIPT := preload("res://scripts/bag_window.gd")
 const LOOT_SCRIPT := preload("res://scripts/loot_window.gd")
 const SKILLBAR_SCRIPT := preload("res://scripts/skillbar.gd")
 const ADMIN_SCRIPT := preload("res://scripts/admin_panel.gd")
-const BUTTERFLIES_SCRIPT := preload("res://scripts/butterflies.gd")
+const World = WORLD_SCRIPT
+const Player = PLAYER_SCRIPT
+const Mob = MOB_SCRIPT
+const Hud = HUD_SCRIPT
+const Shop = SHOP_SCRIPT
+const ChatPanel = CHAT_SCRIPT
+const Minimap = MINIMAP_SCRIPT
+const Nameplate = NAMEPLATE_SCRIPT
+const CharacterWindow = CHARACTER_SCRIPT
+const BagWindow = BAG_SCRIPT
+const LootWindow = LOOT_SCRIPT
+const SkillBar = SKILLBAR_SCRIPT
+const AdminPanel = ADMIN_SCRIPT
+const WorldData = preload("res://scripts/world_data.gd")
+const Items = preload("res://scripts/items.gd")
+const SkillRegistry = preload("res://scripts/skills/skill_registry.gd")
+const SkillDef = preload("res://scripts/skills/skill_def.gd")
+const Arrow = preload("res://scripts/arrow.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -96,15 +113,10 @@ var _targeting_ring: Sprite2D
 var admin_panel: AdminPanel
 
 func _ready() -> void:
-	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
+	var display: String = Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
 
 	world = WORLD_SCRIPT.new()
 	world_root.add_child(world)
-
-	# Декоративные летающие бабочки/пчёлки над лугами.
-	var butterflies := BUTTERFLIES_SCRIPT.new()
-	butterflies.setup(world)
-	world.add_child(butterflies)
 
 	me = PLAYER_SCRIPT.new()
 	me.setup(world, display, PLAYER_SCRIPT.variant_from(Session.auth.user_id))
@@ -186,12 +198,17 @@ func _ready() -> void:
 	loot_win = LOOT_SCRIPT.new()
 	add_child(loot_win)
 	loot_win.take_requested.connect(func(mob_id, idx):
-		Session.socket.send_match_state_async(match_id, OP_LOOT_TAKE, JSON.stringify({"mobId": mob_id, "index": idx})))
+		if Session.socket != null:
+			Session.socket.send_match_state_async(match_id, OP_LOOT_TAKE, JSON.stringify({"mobId": mob_id, "index": idx})))
 	loot_win.take_all_requested.connect(func(mob_id):
-		Session.socket.send_match_state_async(match_id, OP_LOOT_TAKE_ALL, JSON.stringify({"mobId": mob_id})))
+		if Session.socket != null:
+			Session.socket.send_match_state_async(match_id, OP_LOOT_TAKE_ALL, JSON.stringify({"mobId": mob_id})))
 
-	status_label.text = "Подключаюсь к real-time…"
-	_connect_and_join()
+	if Session.DEMO_MODE:
+		_setup_demo_state()
+	else:
+		status_label.text = "Подключаюсь к real-time…"
+		_connect_and_join()
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Хоткеи для окон: C/С — сумка, I/Ш — персонаж.
@@ -440,35 +457,51 @@ func _on_logout() -> void:
 	Session.logout()
 	auth_changed.emit()
 
+func _setup_demo_state() -> void:
+	match_id = "demo"
+	my_session_id = "demo-local"
+	var now_ms: int = Time.get_ticks_msec()
+	var demo_me := {
+		"username": Session.auth.username,
+		"userId": Session.auth.user_id,
+		"hp": 100,
+		"hpMax": 100,
+		"damage": 12,
+		"lv": 7,
+		"xp": 18,
+		"xpMax": 50,
+		"gold": 275,
+		"eq": {"weapon": "wood_bow", "body": "leather_armor", "head": "leather_helmet", "boots": "leather_boots"},
+		"inv": [
+			{"itemId": "health_potion", "qty": 3},
+			{"itemId": "wood_bow", "qty": 1},
+			{"itemId": "leather_armor", "qty": 1},
+			{"itemId": "wolf_pelt", "qty": 5},
+			{"itemId": "slime_jelly", "qty": 7}
+		],
+		"skillCd": {},
+		"t": now_ms,
+	}
+	_apply_me(demo_me)
+	_apply_mobs({
+		"mobs": [
+			{"id": "slime-1", "t": "slime", "x": world.player_spawn().x + 220.0, "y": world.player_spawn().y + 40.0, "hp": 30, "hpMax": 30, "st": "alive", "loot": []},
+			{"id": "goblin-1", "t": "goblin", "x": world.player_spawn().x + 340.0, "y": world.player_spawn().y - 60.0, "hp": 48, "hpMax": 48, "st": "alive", "loot": []},
+			{"id": "slime-dead", "t": "slime", "x": world.player_spawn().x + 120.0, "y": world.player_spawn().y + 180.0, "hp": 0, "hpMax": 30, "st": "dead", "loot": [{"itemId": "slime_jelly", "qty": 2}, {"itemId": "small_potion", "qty": 1}]}
+		]
+	})
+	_apply_npcs({
+		"npcs": [
+			{"id": "merchant", "name": "Торговец", "x": world.player_spawn().x - 180.0, "y": world.player_spawn().y - 40.0, "stock": ["small_potion", "health_potion", "wood_bow", "leather_armor"]}
+		],
+		"prices": {"small_potion": 8, "health_potion": 20, "wood_bow": 75, "leather_armor": 120}
+	})
+	status_label.text = "Локальный demo-режим: мир и интерфейс доступны без сервера"
+
 func _connect_and_join() -> void:
-	var socket := Nakama.create_socket_from(Session.client)
-	var err: NakamaAsyncResult = await socket.connect_async(Session.auth)
-	if err.is_exception():
-		status_label.text = "Socket ошибка: %s" % err.get_exception().message
-		return
-	Session.socket = socket
-	socket.received_match_state.connect(_on_match_state)
-	socket.received_match_presence.connect(_on_presence)
+	status_label.text = "Сетевой режим отключен в локальном preview"
 
-	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "get_world_match", "")
-	if rpc_res.is_exception():
-		status_label.text = "RPC ошибка: %s" % rpc_res.get_exception().message
-		return
-	var data: Dictionary = JSON.parse_string(rpc_res.payload)
-	var requested_id: String = data.get("match_id", "")
-	if requested_id == "":
-		status_label.text = "Пустой match_id"
-		return
-
-	var joined: NakamaRTAPI.Match = await socket.join_match_async(requested_id)
-	if joined.is_exception():
-		status_label.text = "Join ошибка: %s" % joined.get_exception().message
-		return
-	match_id = joined.match_id
-	my_session_id = joined.self_user.session_id
-	status_label.text = "В мире · игроков: %d" % (joined.presences.size() + 1)
-
-func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
+func _on_match_state(state) -> void:
 	var body = JSON.parse_string(state.data)
 	if typeof(body) != TYPE_DICTIONARY:
 		return
@@ -518,6 +551,9 @@ func _send_move_intent(target: Vector2) -> void:
 	# Server-authoritative: клиент сообщает цель, сервер сам шагает.
 	# Throttle: один и тот же target не пересылаем чаще 4 раз/сек;
 	# новую цель шлём только если отличается > 8px от предыдущей.
+	if Session.DEMO_MODE:
+		me.remote_update(target)
+		return
 	if match_id == "" or Session.socket == null:
 		return
 	var now_ms: int = Time.get_ticks_msec()
@@ -629,10 +665,10 @@ func _apply_npcs(body: Dictionary) -> void:
 		npcs.append(entry)
 		var npc_root := Node2D.new()
 		npc_root.position = Vector2(float(entry.get("x", 0)), float(entry.get("y", 0)))
-		var sprite := Sprite2D.new()
-		sprite.texture = load("res://assets/sprites/npc.png")
-		sprite.scale = Vector2(1.2, 1.2)
-		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		var sprite := ColorRect.new()
+		sprite.color = Color(0.90, 0.80, 0.48, 1.0)
+		sprite.size = Vector2(18, 26)
+		sprite.position = Vector2(-9, -26)
 		npc_root.add_child(sprite)
 		var label := Label.new()
 		label.text = String(entry.get("name", "?"))
@@ -646,7 +682,7 @@ func _apply_npcs(body: Dictionary) -> void:
 		entities.add_child(npc_root)
 		npc_nodes.append(npc_root)
 
-func _on_presence(ev: NakamaRTAPI.MatchPresenceEvent) -> void:
+func _on_presence(ev) -> void:
 	for p in ev.leaves:
 		var sid: String = p.session_id
 		# Если меня кикнуло (заход с другого устройства) — показать сообщение
@@ -932,7 +968,7 @@ func _on_admin_action(action: String, extra: Dictionary = {}) -> void:
 			payload = {"op": "set_level", "target": extra.get("target", ""), "level": 50 + d}  # TODO: точное значение
 		_:
 			return
-	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "admin", JSON.stringify(payload))
+	var rpc_res = await Session.client.rpc_async(Session.auth, "admin", JSON.stringify(payload))
 	if rpc_res.is_exception():
 		admin_panel.log_result("ERR: " + rpc_res.get_exception().message)
 		return
@@ -1058,7 +1094,7 @@ func _cast_instant(index: int) -> void:
 func _send_skill(index: int, payload: Dictionary) -> void:
 	Session.socket.send_match_state_async(match_id, OP_SKILL, JSON.stringify(payload))
 	skillbar.trigger_cooldown(index)
-	var sk_def := SkillRegistry.by_index(index)
+	var sk_def = SkillRegistry.by_index(index)
 	if sk_def:
 		sk_def.on_send(self)
 

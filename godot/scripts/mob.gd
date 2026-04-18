@@ -31,9 +31,9 @@ func setup(id: String, p_kind: String) -> void:
 
 func _ready() -> void:
 	var def := {
-		"slime":  { "tex": "res://assets/sprites/slime.png",  "scale": 1.3, "frames": 8, "fps": 6.0 },
-		"goblin": { "tex": "res://assets/sprites/goblin.png", "scale": 1.25, "frames": 4, "fps": 4.0 },
-		"dummy":  { "tex": "res://assets/sprites/dummy.png",  "scale": 1.4, "frames": 1, "fps": 1.0 },
+		"slime":  { "color": Color(0.38, 0.92, 0.46, 1.0), "scale": 1.3, "frames": 4, "fps": 4.0 },
+		"goblin": { "color": Color(0.70, 0.86, 0.34, 1.0), "scale": 1.25, "frames": 4, "fps": 4.0 },
+		"dummy":  { "color": Color(0.72, 0.62, 0.44, 1.0), "scale": 1.4, "frames": 1, "fps": 1.0 },
 	}
 	var info: Dictionary = def.get(kind, def["slime"])
 
@@ -48,7 +48,7 @@ func _ready() -> void:
 	add_child(glow)
 
 	sprite = Sprite2D.new()
-	sprite.texture = load(info["tex"])
+	sprite.texture = _make_mob_texture(info["color"], int(info["frames"]))
 	sprite.hframes = int(info["frames"])
 	sprite.vframes = 1
 	sprite.frame = 0
@@ -196,3 +196,19 @@ func _process(delta: float) -> void:
 		_flash_t -= delta
 		if _flash_t <= 0.0:
 			sprite.modulate = Color(1, 1, 1, 1)
+
+func _make_mob_texture(base: Color, frames: int) -> ImageTexture:
+	var fw := 16
+	var fh := 16
+	var img := Image.create(fw * frames, fh, false, Image.FORMAT_RGBA8)
+	for frame in range(frames):
+		var ox := frame * fw
+		for y in range(3, 14):
+			for x in range(2, 14):
+				var d := Vector2(x - 8, y - 9).length()
+				if d <= 5.8:
+					var shade := 0.9 + 0.04 * (frame % 2)
+					img.set_pixel(ox + x, y, Color(base.r * shade, base.g * shade, base.b * shade, 1.0))
+		img.set_pixel(ox + 5, 7, Color.BLACK)
+		img.set_pixel(ox + 10, 7, Color.BLACK)
+	return ImageTexture.create_from_image(img)
