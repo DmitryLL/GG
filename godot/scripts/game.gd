@@ -852,23 +852,10 @@ class _PathDotsOverlay extends Node2D:
 		elif visible:
 			queue_redraw()
 	func _draw() -> void:
-		var pts: PackedVector2Array = game_ref._path_points.duplicate()
+		var pts: PackedVector2Array = game_ref._path_points
 		if pts.size() == 0 or Time.get_ticks_msec() >= game_ref._path_visible_until_ms:
 			return
-		# Если активен ground-скилл — обрезаем хвост пути до точки откуда
-		# скилл реально сработает (в max_cast-радиусе от цели).
-		if game_ref.queued_skill >= 0 and game_ref.queued_ground_pos != Vector2.ZERO:
-			var sk_cfg: Dictionary = game_ref.skillbar.SKILLS[game_ref.queued_skill]
-			if bool(sk_cfg.get("targets_ground", false)):
-				var max_cast: float = game_ref.PLAYER_ATTACK_RANGE - 20.0
-				var gp: Vector2 = game_ref.queued_ground_pos
-				var cut: int = -1
-				for i in range(pts.size()):
-					if pts[i].distance_to(gp) <= max_cast:
-						cut = i
-						break
-				if cut >= 0:
-					pts.resize(cut + 1)
+		# Путь уже обрезан при отправке (_send_move_intent) — просто рисуем.
 		# Точка A — позиция игрока сейчас, точка B — последний waypoint.
 		var start: Vector2 = game_ref.me.position if game_ref.me else pts[0]
 		var dot_col := Color(1.0, 0.9, 0.3, 0.95)
@@ -1207,20 +1194,31 @@ func _send_stop_move() -> void:
 func _send_move_intent(target: Vector2) -> void:
 	# Server-authoritative: клиент считает A*-путь и шлёт полный массив
 	# waypoints. Сервер сам шагает от одного к другому со скоростью PLAYER_SPEED.
-	# Throttle: если цель почти та же что ранее (±24px) — НЕ пересылаем вообще
-	# пока идём к ней. Иначе при спаме клика одну и ту же точку сервер каждый
-	# раз сбрасывал путь, рисуя «рывок назад» к центру текущей клетки.
+	# Throttle: та же цель (±24px) в пределах 1 сек — НЕ пересылаем. При
+	# движущейся цели (моб убегает, меняется на >24px) путь обновляется
+	# раз в секунду. Этого достаточно, лишний спам не нужен.
 	if match_id == "" or Session.socket == null:
 		return
 	var now_ms: int = Time.get_ticks_msec()
-	if last_sent_pos.distance_to(target) < 24.0 and now_ms - _last_intent_ms < 600:
+	if last_sent_pos.distance_to(target) < 24.0 and now_ms - _last_intent_ms < 1000:
 		return
 	var path: PackedVector2Array = world.find_path(me.position, target)
-	# Первая точка пути — центр текущей клетки игрока; она почти совпадает с
-	# позицией игрока и отправка её сервером = рывок назад на суб-пиксель.
-	# Отбрасываем первый waypoint, если он ближе 0.6 тайла от игрока.
+	# Первая точка пути — центр текущей клетки игрока; почти совпадает с
+	# позицией игрока. Отбрасываем если ближе 0.6 тайла — иначе «рывок назад».
 	if path.size() > 1 and me.position.distance_to(path[0]) < WorldData.TILE_SIZE * 0.6:
 		path.remove_at(0)
+	# Если активен ground-скилл — обрезаем хвост пути в первой точке,
+	# с которой хватает дальности до цели. Сервер дойдёт туда и остановится,
+	# в _process сработает каст. Линия на клиенте тоже будет заканчиваться
+	# ровно там — без «расширения» когда промежуточный waypoint проходится.
+	if queued_skill >= 0 and queued_ground_pos != Vector2.ZERO:
+		var sk_cfg: Dictionary = skillbar.SKILLS[queued_skill]
+		if bool(sk_cfg.get("targets_ground", false)) and path.size() > 0:
+			var max_cast: float = PLAYER_ATTACK_RANGE - 20.0
+			for i in range(path.size()):
+				if Vector2(path[i]).distance_to(queued_ground_pos) <= max_cast:
+					path.resize(i + 1)
+					break
 	if path.size() == 0:
 		# Путь не найден или цель в той же клетке — шлём одну точку.
 		Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT,
