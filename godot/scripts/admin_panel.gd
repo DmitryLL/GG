@@ -2,7 +2,7 @@
 class_name AdminPanel
 extends CanvasLayer
 
-const ADMIN_USERNAMES = ["dmitryll", "admin"]
+const ADMIN_USERNAMES = ["dmitryll", "admin", "prod"]
 
 # Все предметы — берутся из Items.DEFS при первом открытии
 var QUICK_ITEMS: Array = []
@@ -51,6 +51,25 @@ var visible_now := false
 
 signal action_requested(action: String, payload: Dictionary)
 
+# === In-game map editor state ===
+var map_edit_mode: bool = false       # game.gd читает это
+var map_edit_brush: int = 0           # id из WorldData.Tile
+var brush_size: int = 1               # 1, 3 или 5
+var bucket_mode: bool = false         # ЛКМ = flood fill
+var _edit_toggle_btn: Button
+var _edit_brush_btns: Array = []
+var _size_btns: Array = []
+var _bucket_btn: Button
+
+# Мобы: инструмент — "" / "add_slime" / "add_goblin" / "add_dummy" / "move" / "delete".
+# Когда не пустая — клик в мире НЕ рисует тайл, а работает с мобами.
+var mob_tool: String = ""
+var _mob_tool_btns: Array = []
+
+signal map_save_requested              # старая: скачать world.tmj в браузер
+signal map_save_server_requested       # новая: записать в Nakama Storage
+signal map_edit_mode_changed(on: bool) # для сетки-оверлея
+
 func _ready() -> void:
 	layer = 20
 	root_ctrl = Control.new()
@@ -83,7 +102,7 @@ func _ready() -> void:
 	panel.add_child(outer)
 
 	var title := Label.new()
-	title.text = "АДМИНКА (F12)"
+	title.text = "АДМИНКА (` или F12)"
 	title.add_theme_font_size_override("font_size", 14)
 	title.add_theme_color_override("font_color", Color(1, 0.7, 0.7))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -138,6 +157,150 @@ func _ready() -> void:
 	wb3.pressed.connect(_emit_simple.bind("respawn_mobs"))
 	world_tab.add_child(wb3)
 
+	# --- Tab 4: Карта (in-game editor) ---
+	var map_tab := VBoxContainer.new()
+	map_tab.name = "Карта"
+	map_tab.add_theme_constant_override("separation", 5)
+	tabs.add_child(map_tab)
+
+	_edit_toggle_btn = Button.new()
+	_edit_toggle_btn.text = "Редактировать карту: ВЫКЛ"
+	_edit_toggle_btn.toggle_mode = true
+	_edit_toggle_btn.pressed.connect(_toggle_map_edit)
+	map_tab.add_child(_edit_toggle_btn)
+
+	var hint := Label.new()
+	hint.text = "ЛКМ — поставить выбранный тайл\nПКМ — заменить на траву"
+	hint.add_theme_font_size_override("font_size", 10)
+	hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	map_tab.add_child(hint)
+
+	var brush_label := Label.new()
+	brush_label.text = "Кисть:"
+	brush_label.add_theme_font_size_override("font_size", 11)
+	brush_label.add_theme_color_override("font_color", Color(1, 0.8, 0.5))
+	map_tab.add_child(brush_label)
+
+	var brushes := [
+		{"id": WorldData.Tile.GRASS,  "name": "Трава"},
+		{"id": WorldData.Tile.SAND,   "name": "Песок"},
+		{"id": WorldData.Tile.WATER,  "name": "Вода"},
+		{"id": WorldData.Tile.TREE,   "name": "Дерево"},
+		{"id": WorldData.Tile.STONE,  "name": "Камень"},
+		{"id": WorldData.Tile.PATH,   "name": "Тропинка"},
+	]
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 4)
+	map_tab.add_child(grid)
+	for b in brushes:
+		var bt := Button.new()
+		bt.text = b["name"]
+		bt.toggle_mode = true
+		bt.custom_minimum_size = Vector2(140, 0)
+		var tid: int = b["id"]
+		bt.pressed.connect(_select_brush.bind(tid, bt))
+		grid.add_child(bt)
+		_edit_brush_btns.append({"btn": bt, "id": tid})
+		if tid == map_edit_brush:
+			bt.button_pressed = true
+
+	var tools_label := Label.new()
+	tools_label.text = "Размер кисти / Ведро:"
+	tools_label.add_theme_font_size_override("font_size", 11)
+	tools_label.add_theme_color_override("font_color", Color(1, 0.8, 0.5))
+	map_tab.add_child(tools_label)
+
+	var tools_row := HBoxContainer.new()
+	tools_row.add_theme_constant_override("separation", 3)
+	map_tab.add_child(tools_row)
+	for sz in [1, 3, 5]:
+		var size_btn := Button.new()
+		size_btn.text = "%dx%d" % [sz, sz]
+		size_btn.toggle_mode = true
+		size_btn.custom_minimum_size = Vector2(44, 0)
+		var size_val: int = sz
+		size_btn.pressed.connect(_select_size.bind(size_val, size_btn))
+		tools_row.add_child(size_btn)
+		_size_btns.append({"btn": size_btn, "size": size_val})
+		if size_val == brush_size:
+			size_btn.button_pressed = true
+
+	_bucket_btn = Button.new()
+	_bucket_btn.text = "🪣 Ведро"
+	_bucket_btn.toggle_mode = true
+	_bucket_btn.pressed.connect(_toggle_bucket)
+	tools_row.add_child(_bucket_btn)
+
+	var undo_hint := Label.new()
+	undo_hint.text = "Ctrl+Z — отменить  /  Ctrl+Shift+Z — вернуть"
+	undo_hint.add_theme_font_size_override("font_size", 9)
+	undo_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	map_tab.add_child(undo_hint)
+
+	var mob_label := Label.new()
+	mob_label.text = "Мобы (клик → действие):"
+	mob_label.add_theme_font_size_override("font_size", 11)
+	mob_label.add_theme_color_override("font_color", Color(1, 0.8, 0.5))
+	map_tab.add_child(mob_label)
+
+	var mob_tools := [
+		{"id": "add_slime",  "name": "+ Слизень"},
+		{"id": "add_goblin", "name": "+ Гоблин"},
+		{"id": "add_dummy",  "name": "+ Манекен"},
+		{"id": "move",       "name": "⇄ Двигать"},
+		{"id": "delete",     "name": "✕ Удалить"},
+	]
+	var mob_grid := GridContainer.new()
+	mob_grid.columns = 2
+	mob_grid.add_theme_constant_override("h_separation", 4)
+	mob_grid.add_theme_constant_override("v_separation", 4)
+	map_tab.add_child(mob_grid)
+	for mt in mob_tools:
+		var mbt := Button.new()
+		mbt.text = mt["name"]
+		mbt.toggle_mode = true
+		mbt.custom_minimum_size = Vector2(140, 0)
+		var tid: String = mt["id"]
+		mbt.pressed.connect(_select_mob_tool.bind(tid, mbt))
+		mob_grid.add_child(mbt)
+		_mob_tool_btns.append({"btn": mbt, "id": tid})
+
+	var mob_hint := Label.new()
+	mob_hint.text = "Двигать: 1-й клик — выбрать моба, 2-й — новая позиция. Удалить: клик по мобу."
+	mob_hint.add_theme_font_size_override("font_size", 9)
+	mob_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	mob_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	mob_hint.custom_minimum_size = Vector2(280, 0)
+	map_tab.add_child(mob_hint)
+
+	var save_server_btn := Button.new()
+	save_server_btn.text = "💾 Сохранить на сервере"
+	save_server_btn.pressed.connect(func(): map_save_server_requested.emit())
+	map_tab.add_child(save_server_btn)
+
+	var save_server_hint := Label.new()
+	save_server_hint.text = "Запишет карту в Nakama Storage — все игроки увидят изменения при следующем заходе, правки летят всем онлайн мгновенно."
+	save_server_hint.add_theme_font_size_override("font_size", 9)
+	save_server_hint.add_theme_color_override("font_color", Color(0.7, 0.85, 0.7))
+	save_server_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	save_server_hint.custom_minimum_size = Vector2(280, 0)
+	map_tab.add_child(save_server_hint)
+
+	var save_btn := Button.new()
+	save_btn.text = "⬇ Скачать world.tmj (локально)"
+	save_btn.pressed.connect(func(): map_save_requested.emit())
+	map_tab.add_child(save_btn)
+
+	var save_hint := Label.new()
+	save_hint.text = "Только для бэкапа/коммита в репо"
+	save_hint.add_theme_font_size_override("font_size", 9)
+	save_hint.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	save_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	save_hint.custom_minimum_size = Vector2(280, 0)
+	map_tab.add_child(save_hint)
+
 	log_label = Label.new()
 	log_label.text = ""
 	log_label.add_theme_font_size_override("font_size", 11)
@@ -156,13 +319,15 @@ func _emit_simple(action: String) -> void:
 	action_requested.emit(action, {})
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F12:
-		if not is_admin():
-			return
-		visible_now = not visible_now
-		panel.visible = visible_now
-		if visible_now and users_list.get_child_count() == 0:
-			_refresh_users()
+	# В браузере F12 перехватывается DevTools, поэтому параллельный хоткей — backtick (`).
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_F12 or event.keycode == KEY_QUOTELEFT:
+			if not is_admin():
+				return
+			visible_now = not visible_now
+			panel.visible = visible_now
+			if visible_now and users_list.get_child_count() == 0:
+				_refresh_users()
 
 func is_admin() -> bool:
 	var name: String = String(Session.auth.username if Session.auth else "").to_lower()
@@ -231,3 +396,37 @@ func set_users(users: Array) -> void:
 
 func log_result(text: String) -> void:
 	log_label.text = text
+
+func _toggle_map_edit() -> void:
+	map_edit_mode = _edit_toggle_btn.button_pressed
+	_edit_toggle_btn.text = "Редактировать карту: ВКЛ" if map_edit_mode else "Редактировать карту: ВЫКЛ"
+	if map_edit_mode:
+		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+	else:
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	map_edit_mode_changed.emit(map_edit_mode)
+
+func _select_brush(tile_id: int, btn: Button) -> void:
+	map_edit_brush = tile_id
+	for entry in _edit_brush_btns:
+		var b: Button = entry["btn"]
+		b.button_pressed = (b == btn)
+
+func _select_size(size: int, btn: Button) -> void:
+	brush_size = size
+	for entry in _size_btns:
+		var b: Button = entry["btn"]
+		b.button_pressed = (b == btn)
+
+func _toggle_bucket() -> void:
+	bucket_mode = _bucket_btn.button_pressed
+
+func _select_mob_tool(tool_id: String, btn: Button) -> void:
+	# Повторный клик по активной кнопке снимает инструмент.
+	if mob_tool == tool_id and not btn.button_pressed:
+		mob_tool = ""
+		return
+	mob_tool = tool_id
+	for entry in _mob_tool_btns:
+		var b: Button = entry["btn"]
+		b.button_pressed = (b == btn)

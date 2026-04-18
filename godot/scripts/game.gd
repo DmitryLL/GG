@@ -45,6 +45,12 @@ const OP_LOOT_TAKE_ALL := 19
 const OP_SKILL        := 20
 const OP_SKILL_FX     := 21
 const OP_SKILL_REJECT := 22
+const OP_TILE_UPDATE  := 23
+const OP_MAP_SAVE     := 24
+const OP_MAP_FULL     := 25
+const OP_MOB_ADD      := 26
+const OP_MOB_MOVE     := 27
+const OP_MOB_DEL      := 28
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -182,6 +188,9 @@ func _ready() -> void:
 	admin_panel = ADMIN_SCRIPT.new()
 	add_child(admin_panel)
 	admin_panel.action_requested.connect(_on_admin_action)
+	admin_panel.map_save_requested.connect(_on_map_save)
+	admin_panel.map_save_server_requested.connect(_save_map_on_server)
+	admin_panel.map_edit_mode_changed.connect(func(on: bool): world.set_grid_visible(on))
 
 	loot_win = LOOT_SCRIPT.new()
 	add_child(loot_win)
@@ -212,6 +221,31 @@ func _unhandled_input(event: InputEvent) -> void:
 		targeting_skill = -1
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 		return
+	# In-game map editor — клик шлёт OP_TILE_UPDATE на сервер (live-sync).
+	# Undo/redo: Ctrl+Z / Ctrl+Shift+Z.
+	if admin_panel and admin_panel.map_edit_mode and event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_Z and event.ctrl_pressed:
+			if event.shift_pressed: _map_redo()
+			else: _map_undo()
+			return
+	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseButton and event.pressed:
+		var world_pos_e := get_viewport().get_camera_2d().get_global_mouse_position()
+		# Инструменты мобов перехватывают клик раньше рисования тайлов.
+		if admin_panel.mob_tool != "" and event.button_index == MOUSE_BUTTON_LEFT:
+			_handle_mob_tool_click(world_pos_e, admin_panel.mob_tool)
+			return
+		var c: int = int(world_pos_e.x / WorldData.TILE_SIZE)
+		var r: int = int(world_pos_e.y / WorldData.TILE_SIZE)
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if admin_panel.bucket_mode:
+				_map_bucket_fill(c, r, admin_panel.map_edit_brush)
+			else:
+				_map_paint(c, r, admin_panel.map_edit_brush)
+			return
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			_map_paint(c, r, WorldData.Tile.GRASS)
+			return
+
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var world_pos := get_viewport().get_camera_2d().get_global_mouse_position()
 		if targeting_skill >= 0:
@@ -440,6 +474,180 @@ func _on_logout() -> void:
 	Session.logout()
 	auth_changed.emit()
 
+func _send_tile_update(c: int, r: int, id: int) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_TILE_UPDATE, JSON.stringify({"c": c, "r": r, "id": id}))
+
+# ══════════════════ Map editor: undo + brush + bucket ══════════════════
+const _UNDO_MAX := 100
+var _map_undo_stack: Array = []  # [[{c,r,old_id,new_id}, ...], ...]
+var _map_redo_stack: Array = []
+
+func _record_edit(changes: Array) -> void:
+	if changes.is_empty(): return
+	_map_undo_stack.append(changes)
+	if _map_undo_stack.size() > _UNDO_MAX:
+		_map_undo_stack.pop_front()
+	_map_redo_stack.clear()
+
+func _map_paint(c: int, r: int, new_id: int) -> void:
+	var radius: int = (admin_panel.brush_size - 1) / 2
+	var changes: Array = []
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var nc := c + dx
+			var nr := r + dy
+			if nc < 0 or nr < 0 or nc >= world.data.map_cols or nr >= world.data.map_rows:
+				continue
+			var old_id: int = world.data.tiles[nr * world.data.map_cols + nc]
+			if old_id == new_id:
+				continue
+			changes.append({"c": nc, "r": nr, "old_id": old_id, "new_id": new_id})
+			_send_tile_update(nc, nr, new_id)
+	_record_edit(changes)
+
+func _map_bucket_fill(c: int, r: int, new_id: int) -> void:
+	if c < 0 or r < 0 or c >= world.data.map_cols or r >= world.data.map_rows:
+		return
+	var target_id: int = world.data.tiles[r * world.data.map_cols + c]
+	if target_id == new_id:
+		return
+	var visited: Dictionary = {}
+	var queue: Array = [Vector2i(c, r)]
+	var changes: Array = []
+	var limit := 2000
+	while queue.size() > 0 and changes.size() < limit:
+		var p: Vector2i = queue.pop_front()
+		var key := p.y * world.data.map_cols + p.x
+		if visited.has(key): continue
+		visited[key] = true
+		if p.x < 0 or p.y < 0 or p.x >= world.data.map_cols or p.y >= world.data.map_rows:
+			continue
+		var cur: int = world.data.tiles[p.y * world.data.map_cols + p.x]
+		if cur != target_id:
+			continue
+		changes.append({"c": p.x, "r": p.y, "old_id": cur, "new_id": new_id})
+		_send_tile_update(p.x, p.y, new_id)
+		queue.append(Vector2i(p.x + 1, p.y))
+		queue.append(Vector2i(p.x - 1, p.y))
+		queue.append(Vector2i(p.x, p.y + 1))
+		queue.append(Vector2i(p.x, p.y - 1))
+	_record_edit(changes)
+
+func _map_undo() -> void:
+	if _map_undo_stack.is_empty():
+		admin_panel.log_result("Нечего отменять")
+		return
+	var group: Array = _map_undo_stack.pop_back()
+	_map_redo_stack.append(group)
+	for e in group:
+		_send_tile_update(int(e["c"]), int(e["r"]), int(e["old_id"]))
+
+func _map_redo() -> void:
+	if _map_redo_stack.is_empty():
+		admin_panel.log_result("Нечего возвращать")
+		return
+	var group: Array = _map_redo_stack.pop_back()
+	_map_undo_stack.append(group)
+	for e in group:
+		_send_tile_update(int(e["c"]), int(e["r"]), int(e["new_id"]))
+
+func _save_map_on_server() -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_MAP_SAVE, JSON.stringify({}))
+	if admin_panel:
+		admin_panel.log_result("Карта сохранена на сервере (тайлы + мобы)")
+
+# ══════════════════ Редактор мобов ══════════════════
+# "Выбран" моб для перемещения (второй клик задаёт новую позицию).
+var _mob_move_selected: String = ""
+
+func _mob_at_any(world_pos: Vector2) -> Mob:
+	var best: Mob = null
+	var best_d: float = 9999.0
+	for mob_v in mobs.values():
+		var mob: Mob = mob_v
+		var d: float = mob.position.distance_to(world_pos)
+		if d < CLICK_MOB_RADIUS and d < best_d:
+			best = mob
+			best_d = d
+	return best
+
+func _handle_mob_tool_click(world_pos: Vector2, tool_id: String) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	match tool_id:
+		"add_slime", "add_goblin", "add_dummy":
+			var mob_type := tool_id.substr(4)  # "slime" / "goblin" / "dummy"
+			Session.socket.send_match_state_async(match_id, OP_MOB_ADD,
+				JSON.stringify({"type": mob_type, "x": world_pos.x, "y": world_pos.y}))
+			if admin_panel:
+				admin_panel.log_result("Моб добавлен: %s" % mob_type)
+		"move":
+			if _mob_move_selected == "":
+				var picked := _mob_at_any(world_pos)
+				if picked == null:
+					if admin_panel: admin_panel.log_result("Клик не попал в моба")
+					return
+				_mob_move_selected = picked.mob_id
+				if admin_panel: admin_panel.log_result("Двигаем: %s — кликни цель" % _mob_move_selected)
+			else:
+				Session.socket.send_match_state_async(match_id, OP_MOB_MOVE,
+					JSON.stringify({"mobId": _mob_move_selected, "x": world_pos.x, "y": world_pos.y}))
+				if admin_panel: admin_panel.log_result("Моб перемещён: %s" % _mob_move_selected)
+				_mob_move_selected = ""
+		"delete":
+			var target := _mob_at_any(world_pos)
+			if target == null:
+				if admin_panel: admin_panel.log_result("Клик не попал в моба")
+				return
+			Session.socket.send_match_state_async(match_id, OP_MOB_DEL,
+				JSON.stringify({"mobId": target.mob_id}))
+			if admin_panel: admin_panel.log_result("Моб удалён: %s" % target.mob_id)
+
+func _on_map_save() -> void:
+	# Собираем TMJ с текущими тайлами + исходными Mobs/NPCs из оригинального world.tmj.
+	var src := FileAccess.open("res://assets/world.tmj", FileAccess.READ)
+	if src == null:
+		admin_panel.log_result("world.tmj не найден")
+		return
+	var src_json: Dictionary = JSON.parse_string(src.get_as_text())
+	# Заменяем data слоя Tiles на текущее состояние.
+	for layer in src_json.get("layers", []):
+		if String(layer.get("name", "")) == "Tiles":
+			var gids: Array = []
+			for t in world.data.tiles:
+				gids.append(int(t) + 1)
+			layer["data"] = gids
+			break
+	var full_json: String = JSON.stringify(src_json, "\t")
+	# Триггерим скачивание через JS Blob → <a download>.
+	if OS.has_feature("web"):
+		var escaped := full_json.replace("\\", "\\\\").replace("`", "\\`")
+		JavaScriptBridge.eval("""
+		(function(){
+			var data = `%s`;
+			var blob = new Blob([data], {type: 'application/json'});
+			var url = URL.createObjectURL(blob);
+			var a = document.createElement('a');
+			a.href = url;
+			a.download = 'world.tmj';
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		})();
+		""" % escaped, true)
+		admin_panel.log_result("world.tmj скачан. Положи в data/maps/")
+	else:
+		# Desktop — сохраняем рядом с exe
+		var out := FileAccess.open("user://world.tmj", FileAccess.WRITE)
+		out.store_string(full_json)
+		out.close()
+		admin_panel.log_result("user://world.tmj сохранён")
+
 func _connect_and_join() -> void:
 	var socket := Nakama.create_socket_from(Session.client)
 	var err: NakamaAsyncResult = await socket.connect_async(Session.auth)
@@ -508,6 +716,15 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_NPCS:       _apply_npcs(body)
 		OP_ARROW:      _spawn_arrow(body)
 		OP_CHAT_RELAY: _apply_chat(body)
+		OP_TILE_UPDATE:
+			var c := int(body.get("c", 0))
+			var r := int(body.get("r", 0))
+			var id := int(body.get("id", 0))
+			world.set_tile(c, r, id)
+		OP_MAP_FULL:
+			var arr: Array = body.get("tiles", [])
+			if arr.size() == world.data.map_cols * world.data.map_rows:
+				world.apply_full_tiles(arr)
 
 var _last_intent_ms: int = 0
 
@@ -563,6 +780,13 @@ func _apply_mobs(body: Dictionary) -> void:
 	for m in body.get("mobs", []):
 		var mid: String = String(m.get("id", ""))
 		if mid == "":
+			continue
+		# Удаление моба админом — сервер шлёт {id, removed:true}.
+		if bool(m.get("removed", false)):
+			var dead_node: Mob = mobs.get(mid)
+			if dead_node:
+				dead_node.queue_free()
+				mobs.erase(mid)
 			continue
 		var kind: String = String(m.get("t", "slime"))
 		var ms: Mob = mobs.get(mid)
