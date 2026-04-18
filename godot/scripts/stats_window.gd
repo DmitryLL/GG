@@ -141,11 +141,13 @@ func close() -> void:
 func refresh(me: Dictionary) -> void:
 	if me == null or me.is_empty():
 		return
-	# Персонаж
-	var lv := int(me.get("lv", 1))
+	# Персонаж — «10 / 100» (текущий опыт / для следующего уровня).
 	var xp := int(me.get("xp", 0))
-	var xp_next := int(me.get("xpNext", 0))
-	_set_stat(_char_lbl, "xp", "lv%d · %d / %d" % [lv, xp, xp_next] if xp_next > 0 else "lv%d · %d" % [lv, xp])
+	var xp_need := int(me.get("xpNeed", 0))
+	if xp_need > 0:
+		_set_stat(_char_lbl, "xp", "%d / %d" % [xp, xp_need])
+	else:
+		_set_stat(_char_lbl, "xp", str(xp))
 	var hp := int(me.get("hp", 0)); var hp_max := int(me.get("hpMax", 0))
 	_set_stat(_char_lbl, "hp", "%d / %d" % [hp, hp_max])
 	_set_stat(_char_lbl, "hp_regen", "—")
