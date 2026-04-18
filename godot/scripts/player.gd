@@ -6,6 +6,9 @@ const World = preload("res://scripts/world.gd")
 signal moved(pos: Vector2)
 
 const SPEED := 100.0
+const WALK_TEX_PATH := "res://assets/sprites/char_base_walk.png"
+const PUNCH_TEX_PATH := "res://assets/sprites/char_base_punch.png"
+const SHOOT_TEX_PATH := "res://assets/sprites/char_base_shoot.png"
 const SPRITE_VARIANTS := 6
 # Фундамент (pixellab walking-6-frames + cross-punch-6-frames):
 # walk-атлас: 6 walk frames × 4 directions (hframes=6, vframes=4)
@@ -64,9 +67,18 @@ func setup(p_world: World, p_name: String, p_variant: int) -> void:
 	variant = p_variant
 
 func _ready() -> void:
-	_walk_tex = _make_state_texture(Color.from_hsv(float(variant) / max(1.0, float(SPRITE_VARIANTS)), 0.55, 0.92), WALK_HFRAMES)
-	_punch_tex = _make_state_texture(Color(0.92, 0.62, 0.48, 1.0), PUNCH_HFRAMES)
-	_shoot_tex = _make_state_texture(Color(0.70, 0.82, 0.98, 1.0), SHOOT_HFRAMES)
+	_walk_tex = _load_texture_or_fallback(
+		WALK_TEX_PATH,
+		_make_state_texture(Color.from_hsv(float(variant) / max(1.0, float(SPRITE_VARIANTS)), 0.55, 0.92), WALK_HFRAMES)
+	)
+	_punch_tex = _load_texture_or_fallback(
+		PUNCH_TEX_PATH,
+		_make_state_texture(Color(0.92, 0.62, 0.48, 1.0), PUNCH_HFRAMES)
+	)
+	_shoot_tex = _load_texture_or_fallback(
+		SHOOT_TEX_PATH,
+		_make_state_texture(Color(0.70, 0.82, 0.98, 1.0), SHOOT_HFRAMES)
+	)
 	sprite = Sprite2D.new()
 	sprite.texture = _walk_tex
 	sprite.hframes = WALK_HFRAMES
@@ -449,10 +461,16 @@ static func variant_from(id: String) -> int:
 		h = (h * 31 + id.unicode_at(i)) & 0xFFFFFFFF
 	return h % SPRITE_VARIANTS
 
+func _load_texture_or_fallback(path: String, fallback: ImageTexture) -> ImageTexture:
+	var tex = load(path)
+	return tex if tex != null else fallback
+
 func _make_state_texture(base: Color, frames: int) -> ImageTexture:
 	var fw := 18
 	var fh := 26
 	var img := Image.create(fw * frames, fh * 4, false, Image.FORMAT_RGBA8)
+	var skin := Color(0.97, 0.88, 0.75, 1.0)
+	var hair := Color(0.22, 0.16, 0.12, 1.0)
 	for dir in range(4):
 		for frame in range(frames):
 			var ox := frame * fw
@@ -462,13 +480,36 @@ func _make_state_texture(base: Color, frames: int) -> ImageTexture:
 			for y in range(6, 19):
 				for x in range(5, 13):
 					img.set_pixel(ox + x, oy + y, body)
-			for y in range(2, 7):
-				for x in range(6, 12):
-					img.set_pixel(ox + x, oy + y, Color(0.97, 0.88, 0.75, 1.0))
+			match dir:
+				Dir.DOWN:
+					for y in range(2, 5):
+						for x in range(6, 12):
+							img.set_pixel(ox + x, oy + y, hair)
+					for y in range(5, 8):
+						for x in range(6, 12):
+							img.set_pixel(ox + x, oy + y, skin)
+				Dir.UP:
+					for y in range(2, 8):
+						for x in range(6, 12):
+							img.set_pixel(ox + x, oy + y, hair)
+				Dir.LEFT:
+					for y in range(2, 8):
+						for x in range(6, 10):
+							img.set_pixel(ox + x, oy + y, skin)
+					for y in range(2, 8):
+						for x in range(10, 12):
+							img.set_pixel(ox + x, oy + y, hair)
+				Dir.RIGHT:
+					for y in range(2, 8):
+						for x in range(8, 12):
+							img.set_pixel(ox + x, oy + y, skin)
+					for y in range(2, 8):
+						for x in range(6, 8):
+							img.set_pixel(ox + x, oy + y, hair)
 			var leg_shift := (frame % 2) if frame > 0 else 0
 			for y in range(19, 25):
-				img.set_pixel(ox + 7 - leg_shift, oy + y, Color(0.22, 0.16, 0.12, 1.0))
-				img.set_pixel(ox + 10 + leg_shift, oy + y, Color(0.22, 0.16, 0.12, 1.0))
+				img.set_pixel(ox + 7 - leg_shift, oy + y, hair)
+				img.set_pixel(ox + 10 + leg_shift, oy + y, hair)
 	return ImageTexture.create_from_image(img)
 
 func _make_bow_texture() -> ImageTexture:
