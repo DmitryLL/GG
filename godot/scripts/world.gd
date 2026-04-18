@@ -62,28 +62,76 @@ func _render_tiles() -> void:
 	for r in data.map_rows:
 		for c in data.map_cols:
 			var id: int = data.tiles[r * data.map_cols + c]
-			var base_id := id
-			if id == WorldData.Tile.TREE:
-				base_id = WorldData.Tile.GRASS
-			var sprite := Sprite2D.new()
-			sprite.texture = TILES_TEX
-			sprite.region_enabled = true
-			sprite.region_rect = Rect2(base_id * WorldData.TILE_SIZE, 0, WorldData.TILE_SIZE, WorldData.TILE_SIZE)
-			sprite.centered = false
-			sprite.position = Vector2(c * WorldData.TILE_SIZE, r * WorldData.TILE_SIZE)
-			sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-			add_child(sprite)
-			if id == WorldData.Tile.TREE:
-				var tree := Sprite2D.new()
-				tree.texture = TREE_TEX
-				tree.centered = false
-				tree.position = Vector2(c * WorldData.TILE_SIZE - 16, r * WorldData.TILE_SIZE - 64)
-				tree.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-				tree.z_index = r
-				add_child(tree)
+			_render_one_tile(c, r, id)
 
 func is_walkable(pos: Vector2) -> bool:
 	return data.is_walkable_at(pos.x, pos.y)
 
 func player_spawn() -> Vector2:
 	return data.player_spawn
+
+# ══════════════════ In-game map editor ══════════════════
+# Трекаем спрайты по клеткам (base + tree overlay), чтобы при правке
+# одного тайла быстро найти и удалить его ноды.
+var _tile_nodes: Dictionary = {}  # Vector2i(col, row) → Array[Node2D]
+
+func _register_tile_node(col: int, row: int, node: Node2D) -> void:
+	var key := Vector2i(col, row)
+	if not _tile_nodes.has(key):
+		_tile_nodes[key] = []
+	_tile_nodes[key].append(node)
+
+# Заменяет тайл в клетке (c, r) на new_id и обновляет A*.
+func set_tile(c: int, r: int, new_id: int) -> void:
+	if c < 0 or r < 0 or c >= data.map_cols or r >= data.map_rows:
+		return
+	data.tiles[r * data.map_cols + c] = new_id
+	# Удалить старые спрайты в этой клетке.
+	var key := Vector2i(c, r)
+	if _tile_nodes.has(key):
+		for n in _tile_nodes[key]:
+			if is_instance_valid(n):
+				n.queue_free()
+		_tile_nodes.erase(key)
+	# Отрендерить заново.
+	_render_one_tile(c, r, new_id)
+	# Обновить A* блокировку.
+	if astar:
+		astar.set_point_solid(Vector2i(c, r), WorldData.BLOCKED.has(new_id))
+
+func _render_one_tile(c: int, r: int, id: int) -> void:
+	var base_id := id
+	if id == WorldData.Tile.TREE:
+		base_id = WorldData.Tile.GRASS
+	var sprite := Sprite2D.new()
+	sprite.texture = TILES_TEX
+	sprite.region_enabled = true
+	sprite.region_rect = Rect2(base_id * WorldData.TILE_SIZE, 0, WorldData.TILE_SIZE, WorldData.TILE_SIZE)
+	sprite.centered = false
+	sprite.position = Vector2(c * WorldData.TILE_SIZE, r * WorldData.TILE_SIZE)
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	add_child(sprite)
+	_register_tile_node(c, r, sprite)
+	if id == WorldData.Tile.TREE:
+		var tree := Sprite2D.new()
+		tree.texture = TREE_TEX
+		tree.centered = false
+		tree.position = Vector2(c * WorldData.TILE_SIZE - 16, r * WorldData.TILE_SIZE - 64)
+		tree.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		tree.z_index = r
+		add_child(tree)
+		_register_tile_node(c, r, tree)
+
+# Экспорт текущего состояния в TMJ JSON (совместимо с Tiled).
+# Только слой Tiles; моб/NPC слои клиент не правит.
+func export_tiles_json() -> String:
+	# 1-based gid как в оригинале
+	var gids: Array = []
+	for t in data.tiles:
+		gids.append(int(t) + 1)
+	var tmj := {
+		"width": data.map_cols,
+		"height": data.map_rows,
+		"tiles": gids,
+	}
+	return JSON.stringify(tmj)

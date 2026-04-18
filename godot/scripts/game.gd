@@ -182,6 +182,7 @@ func _ready() -> void:
 	admin_panel = ADMIN_SCRIPT.new()
 	add_child(admin_panel)
 	admin_panel.action_requested.connect(_on_admin_action)
+	admin_panel.map_save_requested.connect(_on_map_save)
 
 	loot_win = LOOT_SCRIPT.new()
 	add_child(loot_win)
@@ -212,6 +213,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		targeting_skill = -1
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 		return
+	# In-game map editor — клик меняет тайл, не движение/атаку
+	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseButton and event.pressed:
+		var world_pos_e := get_viewport().get_camera_2d().get_global_mouse_position()
+		var c: int = int(world_pos_e.x / WorldData.TILE_SIZE)
+		var r: int = int(world_pos_e.y / WorldData.TILE_SIZE)
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			world.set_tile(c, r, admin_panel.map_edit_brush)
+			return
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			world.set_tile(c, r, WorldData.Tile.GRASS)
+			return
+
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var world_pos := get_viewport().get_camera_2d().get_global_mouse_position()
 		if targeting_skill >= 0:
@@ -439,6 +452,47 @@ func _tick_rain_zones() -> void:
 func _on_logout() -> void:
 	Session.logout()
 	auth_changed.emit()
+
+func _on_map_save() -> void:
+	# Собираем TMJ с текущими тайлами + исходными Mobs/NPCs из оригинального world.tmj.
+	var src := FileAccess.open("res://assets/world.tmj", FileAccess.READ)
+	if src == null:
+		admin_panel.log_result("world.tmj не найден")
+		return
+	var src_json: Dictionary = JSON.parse_string(src.get_as_text())
+	# Заменяем data слоя Tiles на текущее состояние.
+	for layer in src_json.get("layers", []):
+		if String(layer.get("name", "")) == "Tiles":
+			var gids: Array = []
+			for t in world.data.tiles:
+				gids.append(int(t) + 1)
+			layer["data"] = gids
+			break
+	var full_json: String = JSON.stringify(src_json, "\t")
+	# Триггерим скачивание через JS Blob → <a download>.
+	if OS.has_feature("web"):
+		var escaped := full_json.replace("\\", "\\\\").replace("`", "\\`")
+		JavaScriptBridge.eval("""
+		(function(){
+			var data = `%s`;
+			var blob = new Blob([data], {type: 'application/json'});
+			var url = URL.createObjectURL(blob);
+			var a = document.createElement('a');
+			a.href = url;
+			a.download = 'world.tmj';
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		})();
+		""" % escaped, true)
+		admin_panel.log_result("world.tmj скачан. Положи в data/maps/")
+	else:
+		# Desktop — сохраняем рядом с exe
+		var out := FileAccess.open("user://world.tmj", FileAccess.WRITE)
+		out.store_string(full_json)
+		out.close()
+		admin_panel.log_result("user://world.tmj сохранён")
 
 func _connect_and_join() -> void:
 	var socket := Nakama.create_socket_from(Session.client)

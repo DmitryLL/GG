@@ -51,6 +51,14 @@ var visible_now := false
 
 signal action_requested(action: String, payload: Dictionary)
 
+# === In-game map editor state ===
+var map_edit_mode: bool = false       # game.gd читает это
+var map_edit_brush: int = 0           # id из WorldData.Tile
+var _edit_toggle_btn: Button
+var _edit_brush_btns: Array = []
+
+signal map_save_requested
+
 func _ready() -> void:
 	layer = 20
 	root_ctrl = Control.new()
@@ -137,6 +145,68 @@ func _ready() -> void:
 	var wb3 := Button.new(); wb3.text = "Мгновенный респавн"
 	wb3.pressed.connect(_emit_simple.bind("respawn_mobs"))
 	world_tab.add_child(wb3)
+
+	# --- Tab 4: Карта (in-game editor) ---
+	var map_tab := VBoxContainer.new()
+	map_tab.name = "Карта"
+	map_tab.add_theme_constant_override("separation", 5)
+	tabs.add_child(map_tab)
+
+	_edit_toggle_btn = Button.new()
+	_edit_toggle_btn.text = "Редактировать карту: ВЫКЛ"
+	_edit_toggle_btn.toggle_mode = true
+	_edit_toggle_btn.pressed.connect(_toggle_map_edit)
+	map_tab.add_child(_edit_toggle_btn)
+
+	var hint := Label.new()
+	hint.text = "ЛКМ — поставить выбранный тайл\nПКМ — заменить на траву"
+	hint.add_theme_font_size_override("font_size", 10)
+	hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	map_tab.add_child(hint)
+
+	var brush_label := Label.new()
+	brush_label.text = "Кисть:"
+	brush_label.add_theme_font_size_override("font_size", 11)
+	brush_label.add_theme_color_override("font_color", Color(1, 0.8, 0.5))
+	map_tab.add_child(brush_label)
+
+	var brushes := [
+		{"id": WorldData.Tile.GRASS,  "name": "Трава"},
+		{"id": WorldData.Tile.SAND,   "name": "Песок"},
+		{"id": WorldData.Tile.WATER,  "name": "Вода"},
+		{"id": WorldData.Tile.TREE,   "name": "Дерево"},
+		{"id": WorldData.Tile.STONE,  "name": "Камень"},
+		{"id": WorldData.Tile.PATH,   "name": "Тропинка"},
+	]
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 4)
+	map_tab.add_child(grid)
+	for b in brushes:
+		var bt := Button.new()
+		bt.text = b["name"]
+		bt.toggle_mode = true
+		bt.custom_minimum_size = Vector2(140, 0)
+		var tid: int = b["id"]
+		bt.pressed.connect(_select_brush.bind(tid, bt))
+		grid.add_child(bt)
+		_edit_brush_btns.append({"btn": bt, "id": tid})
+		if tid == map_edit_brush:
+			bt.button_pressed = true
+
+	var save_btn := Button.new()
+	save_btn.text = "💾 Скачать world.tmj"
+	save_btn.pressed.connect(func(): map_save_requested.emit())
+	map_tab.add_child(save_btn)
+
+	var save_hint := Label.new()
+	save_hint.text = "Положи файл в data/maps/world.tmj\nи запусти sync-world-map.sh + commit"
+	save_hint.add_theme_font_size_override("font_size", 9)
+	save_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	save_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	save_hint.custom_minimum_size = Vector2(280, 0)
+	map_tab.add_child(save_hint)
 
 	log_label = Label.new()
 	log_label.text = ""
@@ -231,3 +301,17 @@ func set_users(users: Array) -> void:
 
 func log_result(text: String) -> void:
 	log_label.text = text
+
+func _toggle_map_edit() -> void:
+	map_edit_mode = _edit_toggle_btn.button_pressed
+	_edit_toggle_btn.text = "Редактировать карту: ВКЛ" if map_edit_mode else "Редактировать карту: ВЫКЛ"
+	if map_edit_mode:
+		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+	else:
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+func _select_brush(tile_id: int, btn: Button) -> void:
+	map_edit_brush = tile_id
+	for entry in _edit_brush_btns:
+		var b: Button = entry["btn"]
+		b.button_pressed = (b == btn)
