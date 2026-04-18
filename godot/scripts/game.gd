@@ -372,31 +372,21 @@ func _process(delta: float) -> void:
 				else:
 					_send_move_intent(attack_target.position)
 			else:
-				# Melee: Player.position = ноги, mob.position = центр (ноги моба на +20).
-				# Все дистанции < 36px, чтобы сервер принимал атаку.
-				var mob_feet_y: float = attack_target.position.y + 20.0
-				var diff: Vector2 = attack_target.position - me.position
-				var cardinal_spot: Vector2
-				if absf(diff.x) >= absf(diff.y):
-					# Сбоку: ноги игрока на уровне ног моба
-					cardinal_spot = Vector2(attack_target.position.x - signf(diff.x) * 28.0, mob_feet_y)
-				elif diff.y > 0:
-					# Сверху: ноги над головой моба
-					cardinal_spot = Vector2(attack_target.position.x, attack_target.position.y - 24.0)
-				else:
-					# Снизу: ноги НИЖЕ ног моба (персонаж всё равно рисуется поверх z_index)
-					cardinal_spot = Vector2(attack_target.position.x, mob_feet_y + 12.0)
-				var at_spot: bool = me.position.distance_to(cardinal_spot) <= 3.0
-				if at_spot:
+				# Melee без оружия: бьём если в радиусе PLAYER_MELEE_RANGE от моба.
+				# Сервер принимает атаку при dist <= 36px (см. main.ts: atkRange = 36).
+				# Идём не в «кардинальную точку» (её A*-сетка точно не достигает),
+				# а прямо к мобу — как только окажемся в радиусе, бьём.
+				const MELEE_RANGE := 30.0
+				var d_melee: float = me.position.distance_to(attack_target.position)
+				if d_melee <= MELEE_RANGE:
 					me.has_target = false
-					me.position = cardinal_spot
 					me.face_toward(attack_target.position)
 					if _attack_ready():
 						Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"mobId": attack_target.mob_id}))
 						_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 						me.play_punch()
 				else:
-					_send_move_intent(cardinal_spot)
+					_send_move_intent(attack_target.position)
 	# attack cooldown теперь на server-time (_attack_ready / attack_ready_at_ms),
 	# client-side декремента больше нет.
 

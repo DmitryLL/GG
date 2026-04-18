@@ -564,7 +564,38 @@ function loadMobsFromStorage(nk: nkruntime.Nakama, zoneId: string): MobSpawn[] |
     return null;
 }
 
-function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
+// Одноразовая миграция: удаляем аккаунты старых админов (dmitryll/admin/prod/etc.)
+// после смены whitelist на новых админов. Идемпотентно: флаг в storage.
+function runAdminCleanupMigration(nk: nkruntime.Nakama, logger: nkruntime.Logger): void {
+    const FLAG_COLLECTION = "_system";
+    const FLAG_KEY = "admin_cleanup_v1";
+    try {
+        const existing = nk.storageRead([{
+            collection: FLAG_COLLECTION, key: FLAG_KEY, userId: MAP_STORAGE_USER,
+        }]);
+        if (existing && existing.length > 0 && existing[0].value && (existing[0].value as any).done) return;
+    } catch (_e) {}
+    const oldAdmins = ["dmitryll", "admin", "prod", "Dmitryll", "Admin", "Prod", "DmitryLL"];
+    try {
+        const users = nk.usersGetUsername(oldAdmins);
+        for (const u of users || []) {
+            try {
+                nk.accountDeleteId(u.userId, true);
+                logger.info("Deleted old admin account: %s", u.username);
+            } catch (_e) {}
+        }
+    } catch (_e) {}
+    try {
+        nk.storageWrite([{
+            collection: FLAG_COLLECTION, key: FLAG_KEY, userId: MAP_STORAGE_USER,
+            value: { done: true, ranAt: Date.now() }, version: "",
+            permissionRead: 2, permissionWrite: 0,
+        }]);
+    } catch (_e) {}
+}
+
+function matchInit(_ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
+    runAdminCleanupMigration(nk, logger);
     let zoneId = String((params && params.zone) || DEFAULT_ZONE);
     if (KNOWN_ZONES.indexOf(zoneId) < 0) zoneId = DEFAULT_ZONE;
     // Village = исходная карта (WORLD). Остальные зоны стартуют пустыми (чистая трава).
@@ -1736,7 +1767,11 @@ function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
 
 // ===== ADMIN =====
 // Whitelist админ-имён (lowercase). Нельзя редактировать через API — только в коде.
-const ADMIN_USERNAMES = ["dmitryll", "admin", "prod"];
+const ADMIN_USERNAMES = ["dimka4344", "v_tip"];
+// Префиксы email'ов, с которых префикс превращается в один из ADMIN_USERNAMES
+// через auth.gd:_username_from_email. Для справки, чтобы не забыть:
+// dimka4344@gmail.com → "dimka4344"
+// v.tip@mail.ru → "v_tip" (точка не-[a-z0-9] → "_")
 
 function isAdminCtx(ctx: nkruntime.Context): boolean {
     const name = String(ctx.username || "").toLowerCase();
