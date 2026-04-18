@@ -216,16 +216,16 @@ func _ready() -> void:
 	tools_row.add_theme_constant_override("separation", 3)
 	map_tab.add_child(tools_row)
 	for sz in [1, 3, 5]:
-		var sb := Button.new()
-		sb.text = "%dx%d" % [sz, sz]
-		sb.toggle_mode = true
-		sb.custom_minimum_size = Vector2(44, 0)
+		var size_btn := Button.new()
+		size_btn.text = "%dx%d" % [sz, sz]
+		size_btn.toggle_mode = true
+		size_btn.custom_minimum_size = Vector2(44, 0)
 		var size_val: int = sz
-		sb.pressed.connect(_select_size.bind(size_val, sb))
-		tools_row.add_child(sb)
-		_size_btns.append({"btn": sb, "size": size_val})
+		size_btn.pressed.connect(_select_size.bind(size_val, size_btn))
+		tools_row.add_child(size_btn)
+		_size_btns.append({"btn": size_btn, "size": size_val})
 		if size_val == brush_size:
-			sb.button_pressed = true
+			size_btn.button_pressed = true
 
 	_bucket_btn = Button.new()
 	_bucket_btn.text = "🪣 Ведро"
