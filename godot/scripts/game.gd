@@ -1758,6 +1758,10 @@ func _has_valid_target() -> bool:
 	return false
 
 func _cast_instant(index: int) -> void:
+	# Останавливаем server-side движение ДО отправки скилла. Иначе после
+	# телепорта (Отскок) сервер продолжит тащить игрока к прежнему moveTarget,
+	# который теперь может оказаться позади — визуально «вернулся назад».
+	_send_stop_move()
 	var payload := {"skill": index + 1}
 	var fdir: Vector2 = me.facing_vector()
 	payload["dx"] = fdir.x
