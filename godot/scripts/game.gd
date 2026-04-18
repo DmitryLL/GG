@@ -846,15 +846,16 @@ class _PathDotsOverlay extends Node2D:
 		game_ref = g
 	func _process(delta: float) -> void:
 		_t += delta
-		# Перерисовываем часто чтобы точка бежала по линии + скрывали когда игрок дошёл.
 		var should_show: bool = game_ref._path_points.size() > 0 and Time.get_ticks_msec() < game_ref._path_visible_until_ms
 		if should_show and game_ref.me:
-			# Автоскрытие когда игрок близко к цели.
+			# Убираем из начала пути точки, которые игрок уже прошёл — путь
+			# всегда отображается от ТЕКУЩЕЙ позиции игрока (A) до цели (B).
+			while game_ref._path_points.size() > 1 and game_ref.me.position.distance_to(game_ref._path_points[0]) < 18.0:
+				game_ref._path_points.remove_at(0)
+			# Автоскрытие когда игрок близко к финальной цели.
 			if game_ref.me.position.distance_to(game_ref._path_target) < 12.0:
 				game_ref._path_points = PackedVector2Array()
-				queue_redraw()
-			else:
-				queue_redraw()
+			queue_redraw()
 		elif visible:
 			queue_redraw()
 	func _draw() -> void:
@@ -1189,16 +1190,22 @@ func server_now_ms() -> int:
 func _send_move_intent(target: Vector2) -> void:
 	# Server-authoritative: клиент считает A*-путь и шлёт полный массив
 	# waypoints. Сервер сам шагает от одного к другому со скоростью PLAYER_SPEED.
-	# Throttle: одинаковая цель не чаще 4 раз/сек; новая цель — если > 8px.
+	# Throttle: если цель почти та же что ранее (±24px) — НЕ пересылаем вообще
+	# пока идём к ней. Иначе при спаме клика одну и ту же точку сервер каждый
+	# раз сбрасывал путь, рисуя «рывок назад» к центру текущей клетки.
 	if match_id == "" or Session.socket == null:
 		return
 	var now_ms: int = Time.get_ticks_msec()
-	if last_sent_pos.distance_to(target) < 8.0 and now_ms - _last_intent_ms < 250:
+	if last_sent_pos.distance_to(target) < 24.0 and now_ms - _last_intent_ms < 600:
 		return
 	var path: PackedVector2Array = world.find_path(me.position, target)
+	# Первая точка пути — центр текущей клетки игрока; она почти совпадает с
+	# позицией игрока и отправка её сервером = рывок назад на суб-пиксель.
+	# Отбрасываем первый waypoint, если он ближе 0.6 тайла от игрока.
+	if path.size() > 1 and me.position.distance_to(path[0]) < WorldData.TILE_SIZE * 0.6:
+		path.remove_at(0)
 	if path.size() == 0:
-		# Путь не найден (цель в стене или вне карты) — шлём одну точку;
-		# сервер сам разрулит (ещё раз проверит walkable и не сдвинет в стену).
+		# Путь не найден или цель в той же клетке — шлём одну точку.
 		Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT,
 			JSON.stringify({"x": target.x, "y": target.y}))
 	else:
