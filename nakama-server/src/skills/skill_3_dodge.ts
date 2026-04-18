@@ -3,7 +3,7 @@ registerSkill(3, {
     requiresBow: false,
     cooldownMs: 8000,
     handler: function (ctx: SkillContext): void {
-        const { player, body, t, dispatcher } = ctx;
+        const { player, body, t, state, dispatcher } = ctx;
         // Направление: сначала dx/dy от клиента (взгляд), иначе вниз
         let dx = Number(body.dx) || 0;
         let dy = Number(body.dy) || 0;
@@ -11,13 +11,26 @@ registerSkill(3, {
         if (len < 0.01) { dx = 0; dy = 1; }
         else { dx /= len; dy /= len; }
         // Сохраняем конечную цель ходьбы ДО телепорта: если игрок шёл куда-то,
-        // должен продолжить идти туда же после Dodge, а не тянуться обратно
-        // к промежуточному moveTarget, оказавшемуся позади.
+        // должен продолжить идти туда же после Dodge.
         const finalDest: Vec2 | null = (player.movePath && player.movePath.length > 0)
             ? player.movePath[player.movePath.length - 1]
             : player.moveTarget;
-        player.pos.x = Math.max(TILE_SIZE, Math.min(MAP_WIDTH - TILE_SIZE, player.pos.x + dx * 80));
-        player.pos.y = Math.max(TILE_SIZE, Math.min(MAP_HEIGHT - TILE_SIZE, player.pos.y + dy * 80));
+        // Raycast по линии с шагом 6px: останавливаемся перед первой непроходимой
+        // клеткой, чтобы нельзя было «перескочить» через стену или попасть в неё.
+        const tiles = currentTiles(state);
+        const maxDist = 80;
+        const step = 6;
+        let reach = 0;
+        for (let s = step; s <= maxDist; s += step) {
+            const tx = player.pos.x + dx * s;
+            const ty = player.pos.y + dy * s;
+            if (!isWalkableAt(tiles, tx, ty)) break;
+            reach = s;
+        }
+        const nx = player.pos.x + dx * reach;
+        const ny = player.pos.y + dy * reach;
+        player.pos.x = Math.max(TILE_SIZE, Math.min(MAP_WIDTH - TILE_SIZE, nx));
+        player.pos.y = Math.max(TILE_SIZE, Math.min(MAP_HEIGHT - TILE_SIZE, ny));
         player.dirtyPos = true;
         // Сбрасываем промежуточные waypoints и ведём игрока напрямую к финалу.
         player.movePath = [];
