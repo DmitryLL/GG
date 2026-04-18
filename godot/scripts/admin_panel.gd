@@ -54,8 +54,12 @@ signal action_requested(action: String, payload: Dictionary)
 # === In-game map editor state ===
 var map_edit_mode: bool = false       # game.gd читает это
 var map_edit_brush: int = 0           # id из WorldData.Tile
+var brush_size: int = 1               # 1, 3 или 5
+var bucket_mode: bool = false         # ЛКМ = flood fill
 var _edit_toggle_btn: Button
 var _edit_brush_btns: Array = []
+var _size_btns: Array = []
+var _bucket_btn: Button
 
 signal map_save_requested              # старая: скачать world.tmj в браузер
 signal map_save_server_requested       # новая: записать в Nakama Storage
@@ -197,6 +201,39 @@ func _ready() -> void:
 		if tid == map_edit_brush:
 			bt.button_pressed = true
 
+	var tools_label := Label.new()
+	tools_label.text = "Размер кисти / Ведро:"
+	tools_label.add_theme_font_size_override("font_size", 11)
+	tools_label.add_theme_color_override("font_color", Color(1, 0.8, 0.5))
+	map_tab.add_child(tools_label)
+
+	var tools_row := HBoxContainer.new()
+	tools_row.add_theme_constant_override("separation", 3)
+	map_tab.add_child(tools_row)
+	for sz in [1, 3, 5]:
+		var sb := Button.new()
+		sb.text = "%dx%d" % [sz, sz]
+		sb.toggle_mode = true
+		sb.custom_minimum_size = Vector2(44, 0)
+		var size_val: int = sz
+		sb.pressed.connect(_select_size.bind(size_val, sb))
+		tools_row.add_child(sb)
+		_size_btns.append({"btn": sb, "size": size_val})
+		if size_val == brush_size:
+			sb.button_pressed = true
+
+	_bucket_btn = Button.new()
+	_bucket_btn.text = "🪣 Ведро"
+	_bucket_btn.toggle_mode = true
+	_bucket_btn.pressed.connect(_toggle_bucket)
+	tools_row.add_child(_bucket_btn)
+
+	var undo_hint := Label.new()
+	undo_hint.text = "Ctrl+Z — отменить  /  Ctrl+Shift+Z — вернуть"
+	undo_hint.add_theme_font_size_override("font_size", 9)
+	undo_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	map_tab.add_child(undo_hint)
+
 	var save_server_btn := Button.new()
 	save_server_btn.text = "💾 Сохранить на сервере"
 	save_server_btn.pressed.connect(func(): map_save_server_requested.emit())
@@ -331,3 +368,12 @@ func _select_brush(tile_id: int, btn: Button) -> void:
 	for entry in _edit_brush_btns:
 		var b: Button = entry["btn"]
 		b.button_pressed = (b == btn)
+
+func _select_size(size: int, btn: Button) -> void:
+	brush_size = size
+	for entry in _size_btns:
+		var b: Button = entry["btn"]
+		b.button_pressed = (b == btn)
+
+func _toggle_bucket() -> void:
+	bucket_mode = _bucket_btn.button_pressed

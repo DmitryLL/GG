@@ -219,16 +219,24 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 		return
 	# In-game map editor — клик шлёт OP_TILE_UPDATE на сервер (live-sync).
-	# Локально тайл применится через эхо от сервера.
+	# Undo/redo: Ctrl+Z / Ctrl+Shift+Z.
+	if admin_panel and admin_panel.map_edit_mode and event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_Z and event.ctrl_pressed:
+			if event.shift_pressed: _map_redo()
+			else: _map_undo()
+			return
 	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseButton and event.pressed:
 		var world_pos_e := get_viewport().get_camera_2d().get_global_mouse_position()
 		var c: int = int(world_pos_e.x / WorldData.TILE_SIZE)
 		var r: int = int(world_pos_e.y / WorldData.TILE_SIZE)
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			_send_tile_update(c, r, admin_panel.map_edit_brush)
+			if admin_panel.bucket_mode:
+				_map_bucket_fill(c, r, admin_panel.map_edit_brush)
+			else:
+				_map_paint(c, r, admin_panel.map_edit_brush)
 			return
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			_send_tile_update(c, r, WorldData.Tile.GRASS)
+			_map_paint(c, r, WorldData.Tile.GRASS)
 			return
 
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -463,6 +471,80 @@ func _send_tile_update(c: int, r: int, id: int) -> void:
 	if match_id == "" or Session.socket == null:
 		return
 	Session.socket.send_match_state_async(match_id, OP_TILE_UPDATE, JSON.stringify({"c": c, "r": r, "id": id}))
+
+# ══════════════════ Map editor: undo + brush + bucket ══════════════════
+const _UNDO_MAX := 100
+var _map_undo_stack: Array = []  # [[{c,r,old_id,new_id}, ...], ...]
+var _map_redo_stack: Array = []
+
+func _record_edit(changes: Array) -> void:
+	if changes.is_empty(): return
+	_map_undo_stack.append(changes)
+	if _map_undo_stack.size() > _UNDO_MAX:
+		_map_undo_stack.pop_front()
+	_map_redo_stack.clear()
+
+func _map_paint(c: int, r: int, new_id: int) -> void:
+	var radius: int = (admin_panel.brush_size - 1) / 2
+	var changes: Array = []
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var nc := c + dx
+			var nr := r + dy
+			if nc < 0 or nr < 0 or nc >= world.data.map_cols or nr >= world.data.map_rows:
+				continue
+			var old_id: int = world.data.tiles[nr * world.data.map_cols + nc]
+			if old_id == new_id:
+				continue
+			changes.append({"c": nc, "r": nr, "old_id": old_id, "new_id": new_id})
+			_send_tile_update(nc, nr, new_id)
+	_record_edit(changes)
+
+func _map_bucket_fill(c: int, r: int, new_id: int) -> void:
+	if c < 0 or r < 0 or c >= world.data.map_cols or r >= world.data.map_rows:
+		return
+	var target_id: int = world.data.tiles[r * world.data.map_cols + c]
+	if target_id == new_id:
+		return
+	var visited: Dictionary = {}
+	var queue: Array = [Vector2i(c, r)]
+	var changes: Array = []
+	var limit := 2000
+	while queue.size() > 0 and changes.size() < limit:
+		var p: Vector2i = queue.pop_front()
+		var key := p.y * world.data.map_cols + p.x
+		if visited.has(key): continue
+		visited[key] = true
+		if p.x < 0 or p.y < 0 or p.x >= world.data.map_cols or p.y >= world.data.map_rows:
+			continue
+		var cur: int = world.data.tiles[p.y * world.data.map_cols + p.x]
+		if cur != target_id:
+			continue
+		changes.append({"c": p.x, "r": p.y, "old_id": cur, "new_id": new_id})
+		_send_tile_update(p.x, p.y, new_id)
+		queue.append(Vector2i(p.x + 1, p.y))
+		queue.append(Vector2i(p.x - 1, p.y))
+		queue.append(Vector2i(p.x, p.y + 1))
+		queue.append(Vector2i(p.x, p.y - 1))
+	_record_edit(changes)
+
+func _map_undo() -> void:
+	if _map_undo_stack.is_empty():
+		admin_panel.log_result("Нечего отменять")
+		return
+	var group: Array = _map_undo_stack.pop_back()
+	_map_redo_stack.append(group)
+	for e in group:
+		_send_tile_update(int(e["c"]), int(e["r"]), int(e["old_id"]))
+
+func _map_redo() -> void:
+	if _map_redo_stack.is_empty():
+		admin_panel.log_result("Нечего возвращать")
+		return
+	var group: Array = _map_redo_stack.pop_back()
+	_map_undo_stack.append(group)
+	for e in group:
+		_send_tile_update(int(e["c"]), int(e["r"]), int(e["new_id"]))
 
 func _save_map_on_server() -> void:
 	if match_id == "" or Session.socket == null:
