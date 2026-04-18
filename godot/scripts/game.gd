@@ -384,8 +384,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		attack_target = null
 		pvp_target = null
 		_set_mob_highlight(null)
-		_show_marker(world_pos)
-		_send_move_intent(world_pos)
+		# Снап к центру клетки: персонаж всегда встаёт в центр тайла (A*-сетка),
+		# поэтому маркер должен быть там же — иначе «кликнул сюда, а пришёл туда».
+		var ts: int = WorldData.TILE_SIZE
+		var snap_x: float = (floor(world_pos.x / ts) + 0.5) * ts
+		var snap_y: float = (floor(world_pos.y / ts) + 0.5) * ts
+		var snap_pos := Vector2(snap_x, snap_y)
+		_show_marker(snap_pos)
+		_send_move_intent(snap_pos)
 
 func _process(delta: float) -> void:
 	if match_id == "" or Session.socket == null:
