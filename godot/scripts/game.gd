@@ -548,18 +548,27 @@ func server_now_ms() -> int:
 	return Session.server_now_ms()
 
 func _send_move_intent(target: Vector2) -> void:
-	# Server-authoritative: клиент сообщает цель, сервер сам шагает.
-	# Throttle: один и тот же target не пересылаем чаще 4 раз/сек;
-	# новую цель шлём только если отличается > 8px от предыдущей.
+	# Server-authoritative: клиент считает путь и шлёт waypoints.
+	# Если цель почти та же, не спамим повторной отправкой — иначе сервер
+	# постоянно сбрасывает маршрут и движение выглядит дёрганым.
 	if Session.DEMO_MODE:
 		me.remote_update(target)
 		return
 	if match_id == "" or Session.socket == null:
 		return
 	var now_ms: int = Time.get_ticks_msec()
-	if last_sent_pos.distance_to(target) < 8.0 and now_ms - _last_intent_ms < 250:
+	if last_sent_pos.distance_to(target) < 24.0 and now_ms - _last_intent_ms < 600:
 		return
-	Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": target.x, "y": target.y}))
+	var path: PackedVector2Array = world.find_path(me.position, target)
+	if path.size() > 1 and me.position.distance_to(path[0]) < WorldData.TILE_SIZE * 0.6:
+		path.remove_at(0)
+	if path.size() == 0:
+		Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": target.x, "y": target.y}))
+	else:
+		var arr: Array = []
+		for p in path:
+			arr.append({"x": p.x, "y": p.y})
+		Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"path": arr}))
 	last_sent_pos = target
 	_last_intent_ms = now_ms
 

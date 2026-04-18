@@ -41,19 +41,27 @@ func _ready() -> void:
 		name_input.grab_focus() if saved == "" else pass_input.grab_focus()
 
 func _apply_card_style() -> void:
-	# Стилизация карточки логина — тёплое дерево + золотая рамка.
+	# Карточка — без фона, без рамки: чтобы не перекрывать красивый фон.
+	# Остаются только поля ввода и кнопки (у них свои стили для читаемости).
 	var card := get_node_or_null("Card")
 	if card == null: return
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.12, 0.08, 0.05, 0.88)
-	sb.border_color = Color(0.85, 0.65, 0.30, 1.0)
-	sb.set_border_width_all(3)
-	sb.set_corner_radius_all(10)
+	var sb := StyleBoxEmpty.new()
 	sb.set_content_margin_all(18)
-	sb.shadow_color = Color(0, 0, 0, 0.6)
-	sb.shadow_size = 10
-	sb.shadow_offset = Vector2(0, 4)
 	card.add_theme_stylebox_override("panel", sb)
+	# Тексту (заголовок/подсказка/ошибка) добавим чёрный outline,
+	# чтобы читались поверх любой части фона.
+	if title:
+		title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		title.add_theme_constant_override("outline_size", 4)
+	if hint:
+		hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		hint.add_theme_constant_override("outline_size", 3)
+	if error_label:
+		error_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		error_label.add_theme_constant_override("outline_size", 3)
+	if busy_label:
+		busy_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		busy_label.add_theme_constant_override("outline_size", 3)
 	# Поля ввода: тёмный фон + золотая обводка.
 	var inputs := [name_input, pass_input]
 	for inp in inputs:
