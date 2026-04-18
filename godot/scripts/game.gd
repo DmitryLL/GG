@@ -56,6 +56,10 @@ const OP_MAP_HISTORY  := 30
 const OP_MAP_SNAPSHOT := 31
 const OP_MAP_ROLLBACK := 32
 const OP_EDITOR_CURSOR := 33
+const OP_OBJ_ADD      := 34
+const OP_OBJ_DEL      := 35
+const OP_OBJS         := 36
+const OP_OBJ_INTERACT := 37
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -317,6 +321,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		var world_pos := get_viewport().get_camera_2d().get_global_mouse_position()
 		if targeting_skill >= 0:
 			_resolve_targeting_click(targeting_skill, world_pos)
+			return
+		# Сундук (объект карты) — приоритет выше мобов/NPC.
+		var obj_hit := _object_at(world_pos)
+		if obj_hit != "":
+			var node: Node2D = _map_objects.get(obj_hit)
+			if node and node.position.distance_to(me.position) <= 60:
+				Session.socket.send_match_state_async(match_id, OP_OBJ_INTERACT,
+					JSON.stringify({"id": obj_hit}))
+			else:
+				_send_move_intent(node.position if node else world_pos)
 			return
 		# NPC takes priority over mobs/move.
 		var npc := _npc_at(world_pos)
@@ -745,6 +759,62 @@ class _AdminCursor extends Node2D:
 		var f := ThemeDB.fallback_font
 		draw_string(f, Vector2(10, -4), admin_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
 
+# ══════════════════ Объекты карты (порталы, сундуки) ══════════════════
+var _map_objects: Dictionary = {}       # id → Node2D
+var _portal_pair_source: Dictionary = {} # {x, y} при первом клике в режиме portal
+
+func _apply_objects(body: Dictionary) -> void:
+	for o in body.get("objects", []):
+		var oid: String = String(o.get("id", ""))
+		if oid == "":
+			continue
+		if bool(o.get("removed", false)):
+			var nd: Node2D = _map_objects.get(oid)
+			if nd: nd.queue_free()
+			_map_objects.erase(oid)
+			continue
+		var node: Node2D = _map_objects.get(oid)
+		if node == null:
+			node = _MapObjectNode.new(oid, String(o.get("kind", "")), o.get("data", {}))
+			node.z_index = 40
+			entities.add_child(node)
+			_map_objects[oid] = node
+		node.position = Vector2(float(o.get("x", 0)), float(o.get("y", 0)))
+		node.update_data(o.get("data", {}))
+
+class _MapObjectNode extends Node2D:
+	var obj_id: String = ""
+	var kind: String = ""
+	var data: Dictionary = {}
+	var _t: float = 0.0
+	func _init(id: String, k: String, d) -> void:
+		obj_id = id; kind = k; data = d if d is Dictionary else {}
+	func _process(delta: float) -> void:
+		_t += delta
+		queue_redraw()
+	func update_data(d) -> void:
+		data = d if d is Dictionary else {}
+		queue_redraw()
+	func _draw() -> void:
+		match kind:
+			"portal":
+				var base_r: float = 14.0
+				var pulse: float = base_r + sin(_t * 3.0) * 3.0
+				draw_circle(Vector2.ZERO, pulse + 2, Color(0.4, 0.8, 1.0, 0.25))
+				draw_circle(Vector2.ZERO, pulse, Color(0.3, 0.6, 1.0, 0.55))
+				draw_arc(Vector2.ZERO, pulse + 6, 0, TAU, 32, Color(0.7, 0.9, 1.0, 0.8), 2.0)
+			"chest":
+				var opened: bool = bool(data.get("opened", false))
+				var col: Color = Color(0.5, 0.3, 0.1) if opened else Color(0.85, 0.6, 0.2)
+				var rect := Rect2(Vector2(-10, -8), Vector2(20, 16))
+				draw_rect(rect, col, true)
+				draw_rect(rect, Color(0.3, 0.15, 0.05), false, 1.5)
+				if not opened:
+					draw_rect(Rect2(Vector2(-2, -2), Vector2(4, 6)), Color(0.3, 0.15, 0.05), true)
+			"spawn":
+				var r2: int = int(data.get("radius", 60))
+				draw_arc(Vector2.ZERO, r2, 0, TAU, 24, Color(1, 0.3, 0.3, 0.6), 1.5)
+
 func _editor_zoom(factor: float, focus_world: Vector2) -> void:
 	if editor_camera == null: return
 	var old_zoom: Vector2 = editor_camera.zoom
@@ -759,6 +829,19 @@ func _editor_zoom(factor: float, focus_world: Vector2) -> void:
 # "Выбран" моб для перемещения (второй клик задаёт новую позицию).
 var _mob_move_selected: String = ""
 
+func _object_at(world_pos: Vector2) -> String:
+	# Кликаем ТОЛЬКО по сундукам (порталы проходятся ногами).
+	var best := ""
+	var best_d: float = 28.0
+	for id in _map_objects.keys():
+		var n: Node2D = _map_objects.get(id)
+		if n == null: continue
+		if String(n.kind) != "chest": continue
+		var d: float = n.position.distance_to(world_pos)
+		if d < best_d:
+			best_d = d; best = id
+	return best
+
 func _mob_at_any(world_pos: Vector2) -> Mob:
 	var best: Mob = null
 	var best_d: float = 9999.0
@@ -772,6 +855,42 @@ func _mob_at_any(world_pos: Vector2) -> Mob:
 
 func _handle_mob_tool_click(world_pos: Vector2, tool_id: String) -> void:
 	if match_id == "" or Session.socket == null:
+		return
+	# Объекты карты.
+	if tool_id == "portal_pair":
+		# Первый клик — источник, второй — назначение, шлём OP_OBJ_ADD portal.
+		if _portal_pair_source.is_empty():
+			_portal_pair_source = {"x": world_pos.x, "y": world_pos.y}
+			if admin_panel: admin_panel.log_result("Источник портала — клик назначения")
+		else:
+			var src: Dictionary = _portal_pair_source
+			Session.socket.send_match_state_async(match_id, OP_OBJ_ADD,
+				JSON.stringify({"kind": "portal", "x": src["x"], "y": src["y"],
+					"data": {"tx": world_pos.x, "ty": world_pos.y}}))
+			_portal_pair_source = {}
+			if admin_panel: admin_panel.log_result("Портал создан")
+		return
+	if tool_id == "chest":
+		# Стандартный сундук с рандомным набором материалов.
+		var loot := [{"itemId": "slime_jelly", "qty": 3}, {"itemId": "leather", "qty": 1}]
+		Session.socket.send_match_state_async(match_id, OP_OBJ_ADD,
+			JSON.stringify({"kind": "chest", "x": world_pos.x, "y": world_pos.y,
+				"data": {"loot": loot, "respawnMs": 60000}}))
+		if admin_panel: admin_panel.log_result("Сундук размещён")
+		return
+	if tool_id == "obj_delete":
+		# Найти ближайший объект и удалить.
+		var nearest_id := ""
+		var best_d: float = 40.0
+		for id in _map_objects.keys():
+			var n: Node2D = _map_objects[id]
+			if n == null: continue
+			var d: float = n.position.distance_to(world_pos)
+			if d < best_d:
+				best_d = d; nearest_id = id
+		if nearest_id != "":
+			Session.socket.send_match_state_async(match_id, OP_OBJ_DEL, JSON.stringify({"id": nearest_id}))
+			if admin_panel: admin_panel.log_result("Удалён объект: %s" % nearest_id)
 		return
 	# Пресет-высадка: preset_slime / preset_goblin / preset_dummy.
 	if tool_id.begins_with("preset_"):
@@ -944,6 +1063,8 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 			if admin_panel: admin_panel.log_result("Снимок сохранён (ts=%s)" % str(body.get("ts", 0)))
 		OP_EDITOR_CURSOR:
 			_update_editor_cursor(body)
+		OP_OBJS:
+			_apply_objects(body)
 
 var _last_intent_ms: int = 0
 

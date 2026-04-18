@@ -142,6 +142,10 @@ const OP_MAP_HISTORY  = 30; // admin: client→server пусто; server→clien
 const OP_MAP_SNAPSHOT = 31; // admin: client→server пусто → создать версию
 const OP_MAP_ROLLBACK = 32; // admin: client→server {ts} → восстановить
 const OP_EDITOR_CURSOR = 33; // admin: client→server {x,y}; server→others {sid,name,x,y}
+const OP_OBJ_ADD       = 34; // admin: client→server {kind, x, y, data}
+const OP_OBJ_DEL       = 35; // admin: client→server {id}
+const OP_OBJS          = 36; // server→client: {objects: MapObject[], full: bool} — snapshot/delta
+const OP_OBJ_INTERACT  = 37; // client→server {id} — игрок кликнул на объект (сундук etc.)
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -239,12 +243,25 @@ interface MatchMob {
     debuff?: MobDebuff;
 }
 
+// Универсальная сущность карты: портал, сундук, спавн-зона, (позже NPC).
+interface MapObject {
+    id: string;
+    kind: string;       // "portal" | "chest" | "spawn"
+    x: number;
+    y: number;
+    data: any;          // portal: {tx, ty, label?}
+                        // chest: {loot: InvEntry[], respawnMs, nextRespawnAt?, opened?}
+                        // spawn: {mobType, radius, maxCount}
+}
+
 interface WorldState {
     players: { [sessionId: string]: MatchPlayer };
     mobs: { [mobId: string]: MatchMob };
     zones: ActiveZone[];
     tick: number;
-    tiles: number[];  // runtime-изменяемая копия карты (редактор, live-sync)
+    tiles: number[];                                // runtime-изменяемая копия карты (редактор, live-sync)
+    objects: { [id: string]: MapObject };           // порталы, сундуки и т.п.
+    portalCooldowns: { [sessionId: string]: number }; // антидребезг телепорта (server-ms)
 }
 
 function currentTiles(state: WorldState): number[] {
@@ -426,17 +443,19 @@ function loadMapFromStorage(nk: nkruntime.Nakama): number[] | null {
     return null;
 }
 
-function saveMapToStorage(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: string]: MatchMob }): void {
+function saveMapToStorage(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: string]: MatchMob }, objects: { [id: string]: MapObject }): void {
     const mobSpawns: MobSpawn[] = [];
     for (const k of Object.keys(mobs)) {
         const m = mobs[k];
         mobSpawns.push({ x: m.home.x, y: m.home.y, type: m.type });
     }
+    const objList: MapObject[] = [];
+    for (const k of Object.keys(objects)) objList.push(objects[k]);
     nk.storageWrite([{
         collection: MAP_STORAGE_COLLECTION,
         key: MAP_STORAGE_KEY,
         userId: MAP_STORAGE_USER,
-        value: { tiles: tiles, mobs: mobSpawns, savedAt: Date.now() },
+        value: { tiles: tiles, mobs: mobSpawns, objects: objList, savedAt: Date.now() },
         version: "",
         permissionRead: 2,
         permissionWrite: 1,
@@ -448,18 +467,20 @@ function saveMapToStorage(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: st
 const MAP_SNAPSHOT_LIMIT = 20;
 const MAP_SNAPSHOT_PREFIX = "snap_";
 
-function createMapSnapshot(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: string]: MatchMob }): number {
+function createMapSnapshot(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: string]: MatchMob }, objects: { [id: string]: MapObject }): number {
     const ts = Date.now();
     const mobSpawns: MobSpawn[] = [];
     for (const k of Object.keys(mobs)) {
         const m = mobs[k];
         mobSpawns.push({ x: m.home.x, y: m.home.y, type: m.type });
     }
+    const objList: MapObject[] = [];
+    for (const k of Object.keys(objects)) objList.push(objects[k]);
     nk.storageWrite([{
         collection: MAP_STORAGE_COLLECTION,
         key: MAP_SNAPSHOT_PREFIX + ts,
         userId: MAP_STORAGE_USER,
-        value: { tiles: tiles, mobs: mobSpawns, savedAt: ts },
+        value: { tiles: tiles, mobs: mobSpawns, objects: objList, savedAt: ts },
         version: "",
         permissionRead: 2,
         permissionWrite: 1,
@@ -495,7 +516,7 @@ function listMapSnapshots(nk: nkruntime.Nakama): { ts: number; key: string }[] {
     } catch (_e) { return []; }
 }
 
-function loadMapSnapshot(nk: nkruntime.Nakama, ts: number): { tiles: number[]; mobs: MobSpawn[] } | null {
+function loadMapSnapshot(nk: nkruntime.Nakama, ts: number): { tiles: number[]; mobs: MobSpawn[]; objects: MapObject[] } | null {
     try {
         const res = nk.storageRead([{
             collection: MAP_STORAGE_COLLECTION,
@@ -506,8 +527,9 @@ function loadMapSnapshot(nk: nkruntime.Nakama, ts: number): { tiles: number[]; m
             const v = res[0].value as any;
             const tiles = Array.isArray(v.tiles) ? v.tiles as number[] : null;
             const mobs = Array.isArray(v.mobs) ? v.mobs as MobSpawn[] : [];
+            const objects = Array.isArray(v.objects) ? v.objects as MapObject[] : [];
             if (tiles && tiles.length === MAP_COLS * MAP_ROWS) {
-                return { tiles: tiles, mobs: mobs };
+                return { tiles: tiles, mobs: mobs, objects: objects };
             }
         }
     } catch (_e) {}
@@ -538,8 +560,32 @@ function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
     const savedTiles = loadMapFromStorage(nk);
     const tiles = savedTiles ? savedTiles : WORLD.tiles.slice();
-    const state: WorldState = { players: {}, mobs: mobs, zones: [], tick: 0, tiles: tiles };
+    const savedObjects = loadObjectsFromStorage(nk);
+    const objects: { [id: string]: MapObject } = {};
+    if (savedObjects) {
+        for (let i = 0; i < savedObjects.length; i++) {
+            objects[savedObjects[i].id] = savedObjects[i];
+        }
+    }
+    const state: WorldState = {
+        players: {}, mobs: mobs, zones: [], tick: 0, tiles: tiles,
+        objects: objects, portalCooldowns: {},
+    };
     return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL };
+}
+
+function loadObjectsFromStorage(nk: nkruntime.Nakama): MapObject[] | null {
+    try {
+        const res = nk.storageRead([{
+            collection: MAP_STORAGE_COLLECTION,
+            key: MAP_STORAGE_KEY,
+            userId: MAP_STORAGE_USER,
+        }]);
+        if (res && res.length > 0 && res[0].value && Array.isArray((res[0].value as any).objects)) {
+            return (res[0].value as any).objects as MapObject[];
+        }
+    } catch (_e) {}
+    return null;
 }
 
 function matchJoinAttempt(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, _presence: nkruntime.Presence, _metadata: { [key: string]: any }): { state: WorldState; accept: boolean; rejectMessage?: string } {
@@ -608,6 +654,10 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         if (state.tiles) {
             dispatcher.broadcastMessage(OP_MAP_FULL, JSON.stringify({ tiles: state.tiles }), [p]);
         }
+        // Объекты карты (порталы, сундуки).
+        const objList: MapObject[] = [];
+        for (const ok of Object.keys(state.objects)) objList.push(state.objects[ok]);
+        dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: objList, full: true }), [p]);
     }
     return { state: state };
 }
@@ -1033,7 +1083,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             case OP_MAP_SAVE: {
                 try {
                     if (!isAdminName(player.username)) break;
-                    saveMapToStorage(nk, state.tiles, state.mobs);
+                    saveMapToStorage(nk, state.tiles, state.mobs, state.objects);
                 } catch (_e) {}
                 break;
             }
@@ -1110,7 +1160,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             case OP_MAP_SNAPSHOT: {
                 try {
                     if (!isAdminName(player.username)) break;
-                    const ts = createMapSnapshot(nk, state.tiles, state.mobs);
+                    const ts = createMapSnapshot(nk, state.tiles, state.mobs, state.objects);
                     dispatcher.broadcastMessage(OP_MAP_SNAPSHOT, JSON.stringify({ ts: ts }), [player.presence]);
                 } catch (_e) {}
                 break;
@@ -1141,9 +1191,63 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         const mid = "s_" + ts + "_" + i;
                         state.mobs[mid] = spawnMob(mid, snap.mobs[i]);
                     }
-                    // Broadcast: полный набор тайлов + всех мобов.
+                    // Перезалить объекты карты.
+                    for (const ok of Object.keys(state.objects)) delete state.objects[ok];
+                    for (const o of snap.objects) state.objects[o.id] = o;
+                    // Broadcast: полный набор тайлов + всех мобов + всех объектов.
                     dispatcher.broadcastMessage(OP_MAP_FULL, JSON.stringify({ tiles: state.tiles }));
                     dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: snapshotMobsAll(state), full: true }));
+                    dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: snap.objects, full: true }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_OBJ_ADD: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { kind?: string; x?: number; y?: number; data?: any };
+                    const kind = String(body.kind || "");
+                    if (kind !== "portal" && kind !== "chest" && kind !== "spawn") break;
+                    const x = Number(body.x), y = Number(body.y);
+                    if (!isFinite(x) || !isFinite(y)) break;
+                    if (x < 0 || y < 0 || x > MAP_COLS * TILE_SIZE || y > MAP_ROWS * TILE_SIZE) break;
+                    const objId = kind.substring(0, 3) + "_" + state.tick + "_" + Math.floor(Math.random() * 1000);
+                    const obj: MapObject = { id: objId, kind: kind, x: x, y: y, data: body.data || {} };
+                    state.objects[objId] = obj;
+                    dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: [obj], full: false }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_OBJ_DEL: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { id?: string };
+                    const id = String(body.id || "");
+                    if (!state.objects[id]) break;
+                    delete state.objects[id];
+                    dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: [{ id: id, removed: true }], full: false }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_OBJ_INTERACT: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { id?: string };
+                    const id = String(body.id || "");
+                    const obj = state.objects[id];
+                    if (!obj) break;
+                    // Игрок должен быть рядом.
+                    if (dist(player.pos, { x: obj.x, y: obj.y }) > 60) break;
+                    if (obj.kind === "chest") {
+                        const data = obj.data || {};
+                        if (data.opened && Number(data.nextRespawnAt || 0) > t) break;
+                        // Перекинуть loot в инвентарь игрока.
+                        const loot: InvEntry[] = Array.isArray(data.loot) ? data.loot as InvEntry[] : [];
+                        for (const e of loot) addToInventory(player, e.itemId, e.qty);
+                        data.opened = true;
+                        data.nextRespawnAt = t + (Number(data.respawnMs) || 60000);
+                        obj.data = data;
+                        markMe(player);
+                        dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: [obj], full: false }));
+                    }
                 } catch (_e) {}
                 break;
             }
@@ -1249,6 +1353,41 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             const ny = pl.pos.y + dirY * step;
             if (isWalkableAt(currentTiles(state), pl.pos.x, ny)) pl.pos.y = ny;
             pl.dirtyPos = true;
+        }
+    }
+
+    // --- portals: player в радиусе 24px → телепорт к target, с cooldown 2s ---
+    for (const ok of Object.keys(state.objects)) {
+        const obj = state.objects[ok];
+        if (obj.kind !== "portal") continue;
+        const data = obj.data || {};
+        const tx = Number(data.tx), ty = Number(data.ty);
+        if (!isFinite(tx) || !isFinite(ty)) continue;
+        for (const sk of Object.keys(state.players)) {
+            const pl = state.players[sk];
+            if (pl.hp <= 0) continue;
+            if ((state.portalCooldowns[sk] || 0) > t) continue;
+            const dx = pl.pos.x - obj.x;
+            const dy = pl.pos.y - obj.y;
+            if (dx * dx + dy * dy > 24 * 24) continue;
+            pl.pos.x = tx; pl.pos.y = ty;
+            pl.moveTarget = null;
+            pl.dirtyPos = true;
+            markMe(pl);
+            state.portalCooldowns[sk] = t + 2000;
+        }
+    }
+
+    // --- chest respawn (opened → closed) ---
+    for (const ok of Object.keys(state.objects)) {
+        const obj = state.objects[ok];
+        if (obj.kind !== "chest") continue;
+        const data = obj.data || {};
+        if (data.opened && Number(data.nextRespawnAt || 0) <= t) {
+            data.opened = false;
+            data.nextRespawnAt = 0;
+            obj.data = data;
+            dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: [obj], full: false }));
         }
     }
 

@@ -279,11 +279,14 @@ func _ready() -> void:
 	map_tab.add_child(mob_label)
 
 	var mob_tools := [
-		{"id": "add_slime",  "name": "+ Слизень"},
-		{"id": "add_goblin", "name": "+ Гоблин"},
-		{"id": "add_dummy",  "name": "+ Манекен"},
-		{"id": "move",       "name": "⇄ Двигать"},
-		{"id": "delete",     "name": "✕ Удалить"},
+		{"id": "add_slime",   "name": "+ Слизень"},
+		{"id": "add_goblin",  "name": "+ Гоблин"},
+		{"id": "add_dummy",   "name": "+ Манекен"},
+		{"id": "move",        "name": "⇄ Двигать"},
+		{"id": "delete",      "name": "✕ Удалить моба"},
+		{"id": "portal_pair", "name": "🌀 Портал A↔B"},
+		{"id": "chest",       "name": "📦 Сундук"},
+		{"id": "obj_delete",  "name": "✕ Удалить объект"},
 	]
 	var mob_grid := GridContainer.new()
 	mob_grid.columns = 2
