@@ -20,6 +20,7 @@ var _mobile_form_active := false
 var _js_callback: JavaScriptObject = null
 
 func _ready() -> void:
+	_apply_card_style()
 	enter_btn.pressed.connect(func(): _do_login_action())
 	register_btn.pressed.connect(func(): _do_register_action())
 	pass_input.text_submitted.connect(func(_t): _do_login_action())
@@ -38,6 +39,60 @@ func _ready() -> void:
 		_mount_html_form(saved)
 	else:
 		name_input.grab_focus() if saved == "" else pass_input.grab_focus()
+
+func _apply_card_style() -> void:
+	# Стилизация карточки логина — тёплое дерево + золотая рамка.
+	var card := get_node_or_null("Card")
+	if card == null: return
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.12, 0.08, 0.05, 0.88)
+	sb.border_color = Color(0.85, 0.65, 0.30, 1.0)
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(18)
+	sb.shadow_color = Color(0, 0, 0, 0.6)
+	sb.shadow_size = 10
+	sb.shadow_offset = Vector2(0, 4)
+	card.add_theme_stylebox_override("panel", sb)
+	# Поля ввода: тёмный фон + золотая обводка.
+	var inputs := [name_input, pass_input]
+	for inp in inputs:
+		var ib := StyleBoxFlat.new()
+		ib.bg_color = Color(0.07, 0.06, 0.04, 1)
+		ib.border_color = Color(0.55, 0.40, 0.20, 1)
+		ib.set_border_width_all(1)
+		ib.set_corner_radius_all(4)
+		ib.set_content_margin_all(8)
+		var ib_focus := ib.duplicate() as StyleBoxFlat
+		ib_focus.border_color = Color(0.95, 0.75, 0.35, 1)
+		ib_focus.set_border_width_all(2)
+		inp.add_theme_stylebox_override("normal", ib)
+		inp.add_theme_stylebox_override("focus", ib_focus)
+		inp.add_theme_color_override("font_color", Color(1, 0.96, 0.88, 1))
+		inp.add_theme_color_override("font_placeholder_color", Color(0.6, 0.55, 0.45, 1))
+		inp.add_theme_font_size_override("font_size", 14)
+	# Кнопки: деревянная тема.
+	_style_button(enter_btn, Color(0.28, 0.50, 0.76), Color(0.38, 0.62, 0.90), Color(1, 1, 1))
+	_style_button(register_btn, Color(0.24, 0.48, 0.22), Color(0.34, 0.62, 0.30), Color(0.85, 1, 0.85))
+
+func _style_button(btn: Button, bg: Color, hover: Color, text_col: Color) -> void:
+	var s_n := StyleBoxFlat.new()
+	s_n.bg_color = bg
+	s_n.border_color = Color(0.25, 0.18, 0.10, 1)
+	s_n.set_border_width_all(1)
+	s_n.set_corner_radius_all(6)
+	s_n.set_content_margin_all(8)
+	var s_h := s_n.duplicate() as StyleBoxFlat
+	s_h.bg_color = hover
+	var s_p := s_n.duplicate() as StyleBoxFlat
+	s_p.bg_color = bg.darkened(0.15)
+	btn.add_theme_stylebox_override("normal", s_n)
+	btn.add_theme_stylebox_override("hover", s_h)
+	btn.add_theme_stylebox_override("pressed", s_p)
+	btn.add_theme_stylebox_override("focus", s_h)
+	btn.add_theme_color_override("font_color", text_col)
+	btn.add_theme_color_override("font_hover_color", text_col)
+	btn.add_theme_color_override("font_pressed_color", text_col)
 
 func _exit_tree() -> void:
 	if _mobile_form_active:
