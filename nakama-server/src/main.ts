@@ -105,7 +105,9 @@ const NPC_INTERACT_RANGE = BALANCE_DATA.npc.interactRange;
 // ================================================================== //
 
 const MATCH_MODULE = "world_match";
-const MATCH_LABEL = "world";
+const MATCH_LABEL_PREFIX = "world_";    // label = "world_<zoneId>"
+const DEFAULT_ZONE = "village";
+const KNOWN_ZONES = ["village", "forest", "dungeon"]; // можно расширять
 const TICK_RATE = 10;
 const TICK_DT = 1 / TICK_RATE;
 
@@ -146,6 +148,7 @@ const OP_OBJ_ADD       = 34; // admin: client→server {kind, x, y, data}
 const OP_OBJ_DEL       = 35; // admin: client→server {id}
 const OP_OBJS          = 36; // server→client: {objects: MapObject[], full: bool} — snapshot/delta
 const OP_OBJ_INTERACT  = 37; // client→server {id} — игрок кликнул на объект (сундук etc.)
+const OP_ZONE_SWITCH   = 38; // server→client {zone, matchId, x, y} — клиент переподключается
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -262,6 +265,7 @@ interface WorldState {
     tiles: number[];                                // runtime-изменяемая копия карты (редактор, live-sync)
     objects: { [id: string]: MapObject };           // порталы, сундуки и т.п.
     portalCooldowns: { [sessionId: string]: number }; // антидребезг телепорта (server-ms)
+    zoneId: string;                                 // "village" | "forest" | "dungeon"
 }
 
 function currentTiles(state: WorldState): number[] {
@@ -425,14 +429,18 @@ function saveProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
 // ================================================================== //
 
 const MAP_STORAGE_COLLECTION = "gg_world";
-const MAP_STORAGE_KEY = "tiles";
 const MAP_STORAGE_USER = "00000000-0000-0000-0000-000000000000"; // global
 
-function loadMapFromStorage(nk: nkruntime.Nakama): number[] | null {
+function zoneKey(zoneId: string): string {
+    // Для village оставлен старый ключ "tiles" (backward-compat со старыми сохранениями).
+    return zoneId === DEFAULT_ZONE ? "tiles" : ("tiles_" + zoneId);
+}
+
+function loadMapFromStorage(nk: nkruntime.Nakama, zoneId: string): number[] | null {
     try {
         const res = nk.storageRead([{
             collection: MAP_STORAGE_COLLECTION,
-            key: MAP_STORAGE_KEY,
+            key: zoneKey(zoneId),
             userId: MAP_STORAGE_USER,
         }]);
         if (res && res.length > 0 && res[0].value && Array.isArray((res[0].value as any).tiles)) {
@@ -443,7 +451,7 @@ function loadMapFromStorage(nk: nkruntime.Nakama): number[] | null {
     return null;
 }
 
-function saveMapToStorage(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: string]: MatchMob }, objects: { [id: string]: MapObject }): void {
+function saveMapToStorage(nk: nkruntime.Nakama, zoneId: string, tiles: number[], mobs: { [id: string]: MatchMob }, objects: { [id: string]: MapObject }): void {
     const mobSpawns: MobSpawn[] = [];
     for (const k of Object.keys(mobs)) {
         const m = mobs[k];
@@ -453,7 +461,7 @@ function saveMapToStorage(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: st
     for (const k of Object.keys(objects)) objList.push(objects[k]);
     nk.storageWrite([{
         collection: MAP_STORAGE_COLLECTION,
-        key: MAP_STORAGE_KEY,
+        key: zoneKey(zoneId),
         userId: MAP_STORAGE_USER,
         value: { tiles: tiles, mobs: mobSpawns, objects: objList, savedAt: Date.now() },
         version: "",
@@ -467,7 +475,10 @@ function saveMapToStorage(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: st
 const MAP_SNAPSHOT_LIMIT = 20;
 const MAP_SNAPSHOT_PREFIX = "snap_";
 
-function createMapSnapshot(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: string]: MatchMob }, objects: { [id: string]: MapObject }): number {
+function snapKey(zoneId: string, ts: number): string { return MAP_SNAPSHOT_PREFIX + zoneId + "_" + ts; }
+function snapZonePrefix(zoneId: string): string { return MAP_SNAPSHOT_PREFIX + zoneId + "_"; }
+
+function createMapSnapshot(nk: nkruntime.Nakama, zoneId: string, tiles: number[], mobs: { [id: string]: MatchMob }, objects: { [id: string]: MapObject }): number {
     const ts = Date.now();
     const mobSpawns: MobSpawn[] = [];
     for (const k of Object.keys(mobs)) {
@@ -478,17 +489,18 @@ function createMapSnapshot(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: s
     for (const k of Object.keys(objects)) objList.push(objects[k]);
     nk.storageWrite([{
         collection: MAP_STORAGE_COLLECTION,
-        key: MAP_SNAPSHOT_PREFIX + ts,
+        key: snapKey(zoneId, ts),
         userId: MAP_STORAGE_USER,
-        value: { tiles: tiles, mobs: mobSpawns, objects: objList, savedAt: ts },
+        value: { tiles: tiles, mobs: mobSpawns, objects: objList, savedAt: ts, zone: zoneId },
         version: "",
         permissionRead: 2,
         permissionWrite: 1,
     }]);
-    // Подрезать старые снапшоты.
+    // Подрезать старые снапшоты этой зоны.
     try {
-        const list = nk.storageList(MAP_STORAGE_USER, MAP_STORAGE_COLLECTION, 100);
-        const snaps = (list.objects || []).filter(o => o.key.indexOf(MAP_SNAPSHOT_PREFIX) === 0);
+        const list = nk.storageList(MAP_STORAGE_USER, MAP_STORAGE_COLLECTION, 200);
+        const prefix = snapZonePrefix(zoneId);
+        const snaps = (list.objects || []).filter(o => o.key.indexOf(prefix) === 0);
         snaps.sort((a, b) => a.key < b.key ? 1 : -1); // новые первыми
         if (snaps.length > MAP_SNAPSHOT_LIMIT) {
             const toDel = snaps.slice(MAP_SNAPSHOT_LIMIT).map(o => ({
@@ -502,13 +514,14 @@ function createMapSnapshot(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: s
     return ts;
 }
 
-function listMapSnapshots(nk: nkruntime.Nakama): { ts: number; key: string }[] {
+function listMapSnapshots(nk: nkruntime.Nakama, zoneId: string): { ts: number; key: string }[] {
     try {
-        const list = nk.storageList(MAP_STORAGE_USER, MAP_STORAGE_COLLECTION, 100);
-        const snaps = (list.objects || []).filter(o => o.key.indexOf(MAP_SNAPSHOT_PREFIX) === 0);
+        const list = nk.storageList(MAP_STORAGE_USER, MAP_STORAGE_COLLECTION, 200);
+        const prefix = snapZonePrefix(zoneId);
+        const snaps = (list.objects || []).filter(o => o.key.indexOf(prefix) === 0);
         const out: { ts: number; key: string }[] = [];
         for (const o of snaps) {
-            const ts = parseInt(o.key.substring(MAP_SNAPSHOT_PREFIX.length), 10);
+            const ts = parseInt(o.key.substring(prefix.length), 10);
             if (isFinite(ts)) out.push({ ts: ts, key: o.key });
         }
         out.sort((a, b) => b.ts - a.ts);
@@ -516,11 +529,11 @@ function listMapSnapshots(nk: nkruntime.Nakama): { ts: number; key: string }[] {
     } catch (_e) { return []; }
 }
 
-function loadMapSnapshot(nk: nkruntime.Nakama, ts: number): { tiles: number[]; mobs: MobSpawn[]; objects: MapObject[] } | null {
+function loadMapSnapshot(nk: nkruntime.Nakama, zoneId: string, ts: number): { tiles: number[]; mobs: MobSpawn[]; objects: MapObject[] } | null {
     try {
         const res = nk.storageRead([{
             collection: MAP_STORAGE_COLLECTION,
-            key: MAP_SNAPSHOT_PREFIX + ts,
+            key: snapKey(zoneId, ts),
             userId: MAP_STORAGE_USER,
         }]);
         if (res && res.length > 0 && res[0].value) {
@@ -536,11 +549,11 @@ function loadMapSnapshot(nk: nkruntime.Nakama, ts: number): { tiles: number[]; m
     return null;
 }
 
-function loadMobsFromStorage(nk: nkruntime.Nakama): MobSpawn[] | null {
+function loadMobsFromStorage(nk: nkruntime.Nakama, zoneId: string): MobSpawn[] | null {
     try {
         const res = nk.storageRead([{
             collection: MAP_STORAGE_COLLECTION,
-            key: MAP_STORAGE_KEY,
+            key: zoneKey(zoneId),
             userId: MAP_STORAGE_USER,
         }]);
         if (res && res.length > 0 && res[0].value && Array.isArray((res[0].value as any).mobs)) {
@@ -550,17 +563,24 @@ function loadMobsFromStorage(nk: nkruntime.Nakama): MobSpawn[] | null {
     return null;
 }
 
-function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
-    const savedMobs = loadMobsFromStorage(nk);
-    const mobSpawns = savedMobs ? savedMobs : WORLD.mobSpawns;
+function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, params: { [key: string]: string }): { state: WorldState; tickRate: number; label: string } {
+    let zoneId = String((params && params.zone) || DEFAULT_ZONE);
+    if (KNOWN_ZONES.indexOf(zoneId) < 0) zoneId = DEFAULT_ZONE;
+    // Village = исходная карта (WORLD). Остальные зоны стартуют пустыми (чистая трава).
+    const isVillage = (zoneId === DEFAULT_ZONE);
+    const defaultTiles = isVillage ? WORLD.tiles.slice() : new Array(MAP_COLS * MAP_ROWS).fill(0) as number[];
+    const defaultMobs: MobSpawn[] = isVillage ? WORLD.mobSpawns : [];
+
+    const savedMobs = loadMobsFromStorage(nk, zoneId);
+    const mobSpawns = savedMobs ? savedMobs : defaultMobs;
     const mobs: { [id: string]: MatchMob } = {};
     for (let i = 0; i < mobSpawns.length; i++) {
         const mobId = "m" + i;
         mobs[mobId] = spawnMob(mobId, mobSpawns[i]);
     }
-    const savedTiles = loadMapFromStorage(nk);
-    const tiles = savedTiles ? savedTiles : WORLD.tiles.slice();
-    const savedObjects = loadObjectsFromStorage(nk);
+    const savedTiles = loadMapFromStorage(nk, zoneId);
+    const tiles = savedTiles ? savedTiles : defaultTiles;
+    const savedObjects = loadObjectsFromStorage(nk, zoneId);
     const objects: { [id: string]: MapObject } = {};
     if (savedObjects) {
         for (let i = 0; i < savedObjects.length; i++) {
@@ -569,16 +589,16 @@ function matchInit(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
     const state: WorldState = {
         players: {}, mobs: mobs, zones: [], tick: 0, tiles: tiles,
-        objects: objects, portalCooldowns: {},
+        objects: objects, portalCooldowns: {}, zoneId: zoneId,
     };
-    return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL };
+    return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL_PREFIX + zoneId };
 }
 
-function loadObjectsFromStorage(nk: nkruntime.Nakama): MapObject[] | null {
+function loadObjectsFromStorage(nk: nkruntime.Nakama, zoneId: string): MapObject[] | null {
     try {
         const res = nk.storageRead([{
             collection: MAP_STORAGE_COLLECTION,
-            key: MAP_STORAGE_KEY,
+            key: zoneKey(zoneId),
             userId: MAP_STORAGE_USER,
         }]);
         if (res && res.length > 0 && res[0].value && Array.isArray((res[0].value as any).objects)) {
@@ -1083,7 +1103,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             case OP_MAP_SAVE: {
                 try {
                     if (!isAdminName(player.username)) break;
-                    saveMapToStorage(nk, state.tiles, state.mobs, state.objects);
+                    saveMapToStorage(nk, state.zoneId, state.tiles, state.mobs, state.objects);
                 } catch (_e) {}
                 break;
             }
@@ -1160,7 +1180,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             case OP_MAP_SNAPSHOT: {
                 try {
                     if (!isAdminName(player.username)) break;
-                    const ts = createMapSnapshot(nk, state.tiles, state.mobs, state.objects);
+                    const ts = createMapSnapshot(nk, state.zoneId, state.tiles, state.mobs, state.objects);
                     dispatcher.broadcastMessage(OP_MAP_SNAPSHOT, JSON.stringify({ ts: ts }), [player.presence]);
                 } catch (_e) {}
                 break;
@@ -1168,7 +1188,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             case OP_MAP_HISTORY: {
                 try {
                     if (!isAdminName(player.username)) break;
-                    const snaps = listMapSnapshots(nk);
+                    const snaps = listMapSnapshots(nk, state.zoneId);
                     dispatcher.broadcastMessage(OP_MAP_HISTORY, JSON.stringify({ list: snaps }), [player.presence]);
                 } catch (_e) {}
                 break;
@@ -1179,7 +1199,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     const body = JSON.parse(nk.binaryToString(msg.data)) as { ts?: number };
                     const ts = Number(body.ts);
                     if (!isFinite(ts)) break;
-                    const snap = loadMapSnapshot(nk, ts);
+                    const snap = loadMapSnapshot(nk, state.zoneId, ts);
                     if (!snap) break;
                     // Применить тайлы.
                     for (let i = 0; i < snap.tiles.length && i < state.tiles.length; i++) {
@@ -1357,12 +1377,14 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
 
     // --- portals: player в радиусе 24px → телепорт к target, с cooldown 2s ---
+    // Если portal.data.targetZone установлен — отправить игрока в другую зону (новый матч).
     for (const ok of Object.keys(state.objects)) {
         const obj = state.objects[ok];
         if (obj.kind !== "portal") continue;
         const data = obj.data || {};
         const tx = Number(data.tx), ty = Number(data.ty);
         if (!isFinite(tx) || !isFinite(ty)) continue;
+        const targetZone: string = String(data.targetZone || "").trim();
         for (const sk of Object.keys(state.players)) {
             const pl = state.players[sk];
             if (pl.hp <= 0) continue;
@@ -1370,11 +1392,25 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             const dx = pl.pos.x - obj.x;
             const dy = pl.pos.y - obj.y;
             if (dx * dx + dy * dy > 24 * 24) continue;
-            pl.pos.x = tx; pl.pos.y = ty;
-            pl.moveTarget = null;
-            pl.dirtyPos = true;
-            markMe(pl);
             state.portalCooldowns[sk] = t + 2000;
+            if (targetZone !== "" && targetZone !== state.zoneId && KNOWN_ZONES.indexOf(targetZone) >= 0) {
+                // Межзонный переход: сохраняем новую позицию и шлём клиенту инструкцию переподключиться.
+                pl.pos.x = tx; pl.pos.y = ty;
+                try { saveProgress(nk, pl); } catch (_e) {}
+                const targetLabel = MATCH_LABEL_PREFIX + targetZone;
+                const existing = nk.matchList(1, true, targetLabel);
+                const matchId = (existing.length > 0) ? existing[0].matchId : nk.matchCreate(MATCH_MODULE, { zone: targetZone });
+                dispatcher.broadcastMessage(OP_ZONE_SWITCH, JSON.stringify({
+                    zone: targetZone, matchId: matchId, x: tx, y: ty,
+                }), [pl.presence]);
+                // Отключение будет инициировано клиентом сразу после приёма сообщения.
+            } else {
+                // Обычный локальный телепорт внутри зоны.
+                pl.pos.x = tx; pl.pos.y = ty;
+                pl.moveTarget = null;
+                pl.dirtyPos = true;
+                markMe(pl);
+            }
         }
     }
 
@@ -1638,11 +1674,19 @@ function adminApply(state: WorldState, payload: string): { ok: boolean; error?: 
     }
 }
 
-function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
-    const existing = nk.matchList(1, true, MATCH_LABEL);
-    if (existing.length > 0) return JSON.stringify({ match_id: existing[0].matchId });
-    const matchId = nk.matchCreate(MATCH_MODULE, {});
-    return JSON.stringify({ match_id: matchId });
+function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    let zoneId = DEFAULT_ZONE;
+    try {
+        const p = JSON.parse(payload || "{}");
+        if (p && typeof p.zone === "string" && KNOWN_ZONES.indexOf(p.zone) >= 0) {
+            zoneId = p.zone;
+        }
+    } catch (_e) {}
+    const label = MATCH_LABEL_PREFIX + zoneId;
+    const existing = nk.matchList(1, true, label);
+    if (existing.length > 0) return JSON.stringify({ match_id: existing[0].matchId, zone: zoneId });
+    const matchId = nk.matchCreate(MATCH_MODULE, { zone: zoneId });
+    return JSON.stringify({ match_id: matchId, zone: zoneId });
 }
 
 // Debug RPC — снимок состояния матча через matchSignal.
@@ -1650,7 +1694,7 @@ function rpcGetWorldMatch(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk
 function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
     let filter = "";
     try { filter = String((JSON.parse(payload || "{}") as any).filter || ""); } catch (_e) {}
-    const matches = nk.matchList(1, true, MATCH_LABEL);
+    const matches = nk.matchList(1, true, MATCH_LABEL_PREFIX + DEFAULT_ZONE);
     if (matches.length === 0) return JSON.stringify({ error: "no active match" });
     const matchId = matches[0].matchId;
     const result = nk.matchSignal(matchId, "snapshot");
@@ -1757,7 +1801,7 @@ function rpcAdmin(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrunti
     }
 
     // Try online first via matchSignal
-    const matches = nk.matchList(1, true, MATCH_LABEL);
+    const matches = nk.matchList(1, true, MATCH_LABEL_PREFIX + DEFAULT_ZONE);
     let onlineResult: any = null;
     if (matches.length > 0) {
         const sig = nk.matchSignal(matches[0].matchId, "admin:" + payload);

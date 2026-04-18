@@ -11,6 +11,9 @@ var client: NakamaClient
 var socket: NakamaSocket
 var auth: NakamaSession
 
+# Текущая зона, где игрок сейчас. Меняется при межзонном переходе.
+var current_zone: String = "village"
+
 # Server-time offset. Обновляется из каждого OP_ME (game._apply_me).
 # ВСЕ длительности скиллов и визуальных эффектов должны считаться от
 # server_now_ms(), а не от client delta — иначе при сворачивании вкладки

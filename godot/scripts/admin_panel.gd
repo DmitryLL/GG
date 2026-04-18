@@ -66,6 +66,10 @@ var _bucket_btn: Button
 var mob_tool: String = ""
 var _mob_tool_btns: Array = []
 
+# Если не пусто — порталы создаются с targetZone (межзонный переход).
+var portal_target_zone: String = ""
+const KNOWN_ZONES := ["village", "forest", "dungeon"]
+
 # Превью выбранной кисти — мини-тайл + имя.
 var _brush_preview: TextureRect
 var _brush_preview_name: Label
@@ -311,6 +315,27 @@ func _ready() -> void:
 	mob_hint.custom_minimum_size = Vector2(280, 0)
 	map_tab.add_child(mob_hint)
 
+	# Выбор целевой зоны для следующего портала.
+	var zone_row := HBoxContainer.new()
+	zone_row.add_theme_constant_override("separation", 4)
+	map_tab.add_child(zone_row)
+	var zlbl := Label.new()
+	zlbl.text = "Цель портала:"
+	zlbl.add_theme_font_size_override("font_size", 10)
+	zone_row.add_child(zlbl)
+	var zopt := OptionButton.new()
+	zopt.add_item("(локальный)")
+	zopt.set_item_metadata(0, "")
+	for zi in range(KNOWN_ZONES.size()):
+		var zn: String = KNOWN_ZONES[zi]
+		zopt.add_item("→ " + zn)
+		zopt.set_item_metadata(zi + 1, zn)
+	zopt.item_selected.connect(func(idx: int):
+		portal_target_zone = String(zopt.get_item_metadata(idx))
+		log_result("Портал будет в зону: %s" % (portal_target_zone if portal_target_zone != "" else "(локальный телепорт)"))
+	)
+	zone_row.add_child(zopt)
+
 	# Пресеты — кнопка «+N», клик в мире высаживает стаю.
 	var preset_label := Label.new()
 	preset_label.text = "Пресеты (клик в мире = высадить стаю):"
@@ -416,6 +441,14 @@ func _input(event: InputEvent) -> void:
 func is_admin() -> bool:
 	var name: String = String(Session.auth.username if Session.auth else "").to_lower()
 	return ADMIN_USERNAMES.has(name)
+
+func toggle() -> void:
+	if not is_admin():
+		return
+	visible_now = not visible_now
+	panel.visible = visible_now
+	if visible_now and users_list.get_child_count() == 0:
+		_refresh_users()
 
 func _refresh_users() -> void:
 	for c in users_list.get_children():
