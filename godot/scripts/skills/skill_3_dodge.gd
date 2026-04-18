@@ -1,6 +1,6 @@
 # Скилл 3: Отскок — телепорт, неуязвимость, x2 атак-спид.
 class_name SkillDodge
-extends "res://scripts/skills/skill_def.gd"
+extends SkillDef
 
 func _init() -> void:
 	display_name = "Отскок"

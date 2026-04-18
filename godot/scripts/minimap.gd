@@ -4,10 +4,6 @@
 class_name Minimap
 extends CanvasLayer
 
-const World = preload("res://scripts/world.gd")
-const WorldData = preload("res://scripts/world_data.gd")
-const Mob = preload("res://scripts/mob.gd")
-const Player = preload("res://scripts/player.gd")
 const TILE_PX := 3
 var world: World
 var get_me: Callable
