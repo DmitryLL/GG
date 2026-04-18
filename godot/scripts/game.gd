@@ -430,14 +430,13 @@ func _process(delta: float) -> void:
 			else:
 				_send_move_intent(pvp_target.position)
 
-	# Queued ground skill (Ливень/Залп) — идём к зафиксированному approach и кастуем
+	# Queued ground skill (Ливень/Залп) — идём к цели через A*, кастуем когда в радиусе.
 	if queued_skill >= 0 and attack_target == null and pvp_target == null:
 		var sk: Dictionary = skillbar.SKILLS[queued_skill]
 		if bool(sk["targets_ground"]):
 			if skillbar.cooldowns[queued_skill] > 0.0:
 				queued_skill = -1
 			else:
-				# Если в зоне каста (по фактической дистанции до самой цели) — каст
 				var d_now: float = me.position.distance_to(queued_ground_pos)
 				var max_cast: float = PLAYER_ATTACK_RANGE - 20.0
 				if d_now <= max_cast:
@@ -447,9 +446,9 @@ func _process(delta: float) -> void:
 					_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 					queued_skill = -1
 					return
-				# Иначе идём к approach (точка зафиксирована в момент queue, не дёргается)
-				if not me.has_target:
-					_send_move_intent(queued_approach_pos)
+				# Идём НАПРЯМУЮ к цели через A* — обходя стены. Throttle в _send_move_intent
+				# не шлёт повторно одну и ту же цель, так что безопасно вызывать каждый тик.
+				_send_move_intent(queued_ground_pos)
 				return
 
 	# Auto-pursuit: keep walking toward the locked target and shoot/punch when in range.
