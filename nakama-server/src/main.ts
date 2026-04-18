@@ -1229,7 +1229,7 @@ function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
 
 // ===== ADMIN =====
 // Whitelist админ-имён (lowercase). Нельзя редактировать через API — только в коде.
-const ADMIN_USERNAMES = ["dmitryll", "admin"];
+const ADMIN_USERNAMES = ["dmitryll", "admin", "prod"];
 
 function isAdminCtx(ctx: nkruntime.Context): boolean {
     const name = String(ctx.username || "").toLowerCase();

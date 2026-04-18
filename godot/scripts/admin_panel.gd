@@ -2,7 +2,7 @@
 class_name AdminPanel
 extends CanvasLayer
 
-const ADMIN_USERNAMES = ["dmitryll", "admin"]
+const ADMIN_USERNAMES = ["dmitryll", "admin", "prod"]
 
 # Все предметы — берутся из Items.DEFS при первом открытии
 var QUICK_ITEMS: Array = []
