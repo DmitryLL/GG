@@ -1040,7 +1040,7 @@ func _on_map_save() -> void:
 		admin_panel.log_result("user://world.tmj сохранён")
 
 func _connect_and_join() -> void:
-	var socket := Nakama.create_socket_from(Session.client)
+	var socket: NakamaSocket = Session.nakama.create_socket_from(Session.client)
 	var err: NakamaAsyncResult = await socket.connect_async(Session.auth)
 	if err.is_exception():
 		status_label.text = "Socket ошибка: %s" % err.get_exception().message

@@ -6,6 +6,8 @@
 # минуя экран логина.
 extends Node
 
+const NAKAMA_SCRIPT = preload("res://addons/com.heroiclabs.nakama/Nakama.gd")
+
 const HOST := "nk.193-238-134-75.sslip.io"
 const PORT := 443
 const SCHEME := "https"
@@ -18,6 +20,7 @@ const STORAGE_EMAIL_KEY := "gg_last_email"
 var client: NakamaClient
 var socket: NakamaSocket
 var auth: NakamaSession
+var nakama: Node
 
 # Выбранный персонаж текущей сессии. Пока есть только "archer".
 # Пустая строка = ещё не выбрал, показать экран выбора.
@@ -33,7 +36,10 @@ func server_now_ms() -> int:
 	return Time.get_ticks_msec() + server_offset_ms
 
 func _ready() -> void:
-	client = Nakama.create_client(SERVER_KEY, HOST, PORT, SCHEME)
+	nakama = NAKAMA_SCRIPT.new()
+	nakama.name = "Nakama"
+	add_child(nakama)
+	client = nakama.create_client(SERVER_KEY, HOST, PORT, SCHEME)
 	# Попытаться восстановить сессию из localStorage (Web).
 	var tok := _ls_get(STORAGE_TOKEN_KEY)
 	if tok != "":
