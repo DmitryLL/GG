@@ -1,6 +1,7 @@
 # Скилл 4: Ливень стрел — AoE-зона с падающими стрелами и пуфами.
+const SkillDef = preload("res://scripts/skills/skill_def.gd")
 class_name SkillArrowRain
-extends "res://scripts/skills/skill_def.gd"
+extends SkillDef
 
 func _init() -> void:
 	display_name = "Ливень стрел"
