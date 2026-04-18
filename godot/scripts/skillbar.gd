@@ -217,7 +217,11 @@ func _set_slot_cd(i: int, remaining: float) -> void:
 		dim.visible = false
 		lbl.visible = false
 
+var hotkeys_enabled: bool = true
+
 func _input(event: InputEvent) -> void:
+	if not hotkeys_enabled:
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key: int = event.keycode
 		var idx := -1

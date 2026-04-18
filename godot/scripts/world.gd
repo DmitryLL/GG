@@ -157,6 +157,9 @@ func export_tiles_json() -> String:
 # ═══════════════════ Grid overlay ═══════════════════
 var _grid_overlay: Node2D = null
 
+func is_grid_visible() -> bool:
+	return _grid_overlay != null
+
 func set_grid_visible(on: bool) -> void:
 	if on:
 		if _grid_overlay == null:
