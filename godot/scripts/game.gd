@@ -852,29 +852,40 @@ class _PathDotsOverlay extends Node2D:
 		elif visible:
 			queue_redraw()
 	func _draw() -> void:
-		var pts: PackedVector2Array = game_ref._path_points
+		var pts: PackedVector2Array = game_ref._path_points.duplicate()
 		if pts.size() == 0 or Time.get_ticks_msec() >= game_ref._path_visible_until_ms:
 			return
-		# Точка старта A — позиция игрока сейчас; конец B — последний waypoint.
+		# Если активен ground-скилл — обрезаем хвост пути до точки откуда
+		# скилл реально сработает (в max_cast-радиусе от цели).
+		if game_ref.queued_skill >= 0 and game_ref.queued_ground_pos != Vector2.ZERO:
+			var sk_cfg: Dictionary = game_ref.skillbar.SKILLS[game_ref.queued_skill]
+			if bool(sk_cfg.get("targets_ground", false)):
+				var max_cast: float = game_ref.PLAYER_ATTACK_RANGE - 20.0
+				var gp: Vector2 = game_ref.queued_ground_pos
+				var cut: int = -1
+				for i in range(pts.size()):
+					if pts[i].distance_to(gp) <= max_cast:
+						cut = i
+						break
+				if cut >= 0:
+					pts.resize(cut + 1)
+		# Точка A — позиция игрока сейчас, точка B — последний waypoint.
 		var start: Vector2 = game_ref.me.position if game_ref.me else pts[0]
-		var dot_col := Color(1.0, 0.9, 0.3, 0.85)
-		var line_col := Color(1.0, 0.9, 0.3, 0.35)
-		# «Анимированная» точка: циклический сдвиг фазы.
-		var phase: float = fmod(_t * 40.0, 16.0)
-		# Все сегменты.
+		var dot_col := Color(1.0, 0.9, 0.3, 0.95)
+		var line_col := Color(1.0, 0.9, 0.3, 0.5)
+		# Статические точки на равных интервалах, без анимации фазы.
 		var prev: Vector2 = start
 		for i in range(pts.size()):
 			var p: Vector2 = pts[i]
 			draw_line(prev, p, line_col, 1.5)
-			# Бегущие точки вдоль сегмента.
 			var seg: Vector2 = p - prev
 			var seg_len: float = seg.length()
 			if seg_len > 0.1:
 				var dir: Vector2 = seg / seg_len
-				var d: float = phase
+				var d: float = 8.0
 				while d < seg_len:
-					draw_circle(prev + dir * d, 3.0, dot_col)
-					d += 16.0
+					draw_circle(prev + dir * d, 2.5, dot_col)
+					d += 14.0
 			prev = p
 		# Метка B — кольцо в конце.
 		draw_arc(pts[pts.size() - 1], 8.0, 0, TAU, 20, Color(1, 0.95, 0.4, 1.0), 2.0)
