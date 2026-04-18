@@ -16,6 +16,7 @@ const BAG_SCRIPT := preload("res://scripts/bag_window.gd")
 const LOOT_SCRIPT := preload("res://scripts/loot_window.gd")
 const SKILLBAR_SCRIPT := preload("res://scripts/skillbar.gd")
 const ADMIN_SCRIPT := preload("res://scripts/admin_panel.gd")
+const STATS_SCRIPT := preload("res://scripts/stats_window.gd")
 const BUTTERFLIES_SCRIPT := preload("res://scripts/butterflies.gd")
 
 const OP_POSITIONS    := 1
@@ -111,6 +112,7 @@ var skillbar: SkillBar
 var targeting_skill: int = -1  # -1 = нет таргетинга, иначе индекс скилла в SKILLS
 var _targeting_ring: Sprite2D
 var admin_panel: AdminPanel
+var stats_win: StatsWindow
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -196,6 +198,10 @@ func _ready() -> void:
 	add_child(skillbar)
 	skillbar.skill_activated.connect(_on_skill_activated)
 
+	stats_win = STATS_SCRIPT.new()
+	add_child(stats_win)
+	hud.stats_button_pressed.connect(stats_win.toggle)
+
 	admin_panel = ADMIN_SCRIPT.new()
 	add_child(admin_panel)
 	# Показать значок гаечного ключа в HUD, если текущий юзер — админ.
@@ -237,6 +243,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if pk == KEY_I:
 			character_win.open(last_me) if not character_win.is_open() else character_win.close()
+			return
+		if pk == KEY_P:
+			if stats_win: stats_win.toggle()
 			return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and targeting_skill >= 0:
 		targeting_skill = -1
@@ -1304,6 +1313,8 @@ func _apply_me(body: Dictionary) -> void:
 		character_win.refresh(body)
 	if bag_win:
 		bag_win.refresh(body)
+	if stats_win:
+		stats_win.refresh(body)
 	if minimap:
 		minimap.set_gold(int(body.get("gold", 0)))
 	shop.refresh(body)
