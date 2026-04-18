@@ -11,8 +11,6 @@ signal unequip_requested(slot: String)
 signal equip_requested(inv_index: int, target_slot: String)
 signal closed
 
-const ITEMS_TEX_PATH := "res://assets/sprites/items.png"
-
 const SLOT_LAYOUT := [
 	{ "slot": "head",   "x":   0, "y": -124, "label": "Шлем" },
 	{ "slot": "amulet", "x":  -90, "y":  -82, "label": "Амулет" },
@@ -311,11 +309,8 @@ func _fill_slot(btn: Button, item_id: String, fallback_label: String) -> void:
 		btn.tooltip_text = fallback_label
 		return
 	var def: Dictionary = Items.def(item_id)
-	var at := AtlasTexture.new()
-	at.atlas = load(ITEMS_TEX_PATH)
-	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
 	var icon := TextureRect.new()
-	icon.texture = at
+	icon.texture = Items.icon_texture(item_id)
 	icon.custom_minimum_size = Vector2(36, 36)
 	icon.size = Vector2(36, 36)
 	icon.position = Vector2(7, 7)
@@ -454,10 +449,7 @@ func _make_picker_row(item_id: String, qty: int, hint_text: String, on_take: Cal
 
 	var def: Dictionary = Items.def(item_id)
 	var icon := TextureRect.new()
-	var at := AtlasTexture.new()
-	at.atlas = load(ITEMS_TEX_PATH)
-	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
-	icon.texture = at
+	icon.texture = Items.icon_texture(item_id)
 	icon.custom_minimum_size = Vector2(26, 26)
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

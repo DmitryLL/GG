@@ -3,6 +3,9 @@
 class_name Items
 extends RefCounted
 
+const ITEMS_TEX_PATH := "res://assets/sprites/items.png"
+const ITEM_ICON_SIZE := 16
+
 const DEFS := {
 	"slime_jelly":     { "name": "Слизь",              "icon": 0, "kind": "material" },
 	"wolf_pelt":       { "name": "Шкура волка",        "icon": 0, "kind": "material" },
@@ -20,7 +23,7 @@ const DEFS := {
 
 	"wood_bow":        { "name": "Деревянный лук",    "icon": 6, "slot": "weapon", "damage": 6 },
 	"iron_bow":        { "name": "Железный лук",       "icon": 6, "slot": "weapon", "damage": 12 },
-	"golden_bow":      { "name": "Золотой лук",        "icon": 6, "slot": "weapon", "damage": 20 },
+	"golden_bow":      { "name": "Золотой лук",        "icon": 6, "icon_path": "res://assets/sprites/items/golden_bow.png", "slot": "weapon", "damage": 20 },
 
 	"cloth_armor":     { "name": "Тканая броня",       "icon": 3, "slot": "body", "hp": 12 },
 	"leather_armor":   { "name": "Кожаная броня",      "icon": 3, "slot": "body", "hp": 22 },
@@ -63,6 +66,18 @@ const DEFS := {
 
 static func def(id: String) -> Dictionary:
 	return DEFS.get(id, {})
+
+static func icon_texture(id: String) -> Texture2D:
+	var def_d: Dictionary = DEFS.get(id, {})
+	var custom_path := String(def_d.get("icon_path", ""))
+	if custom_path != "":
+		var custom_tex: Texture2D = load(custom_path)
+		if custom_tex != null:
+			return custom_tex
+	var at := AtlasTexture.new()
+	at.atlas = load(ITEMS_TEX_PATH)
+	at.region = Rect2(int(def_d.get("icon", 0)) * ITEM_ICON_SIZE, 0, ITEM_ICON_SIZE, ITEM_ICON_SIZE)
+	return at
 
 # Компактные строки статов — [{text, color}]. Пустой массив если нечего показать.
 static func stat_lines(id: String) -> Array:
