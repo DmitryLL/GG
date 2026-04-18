@@ -20,7 +20,7 @@
     "lifetimeMs": 10000
   },
   "inventory": {
-    "slots": 25,
+    "slots": 50,
     "stackMax": 99
   },
   "xp": {

@@ -67,18 +67,6 @@ const DEFS := {
 static func def(id: String) -> Dictionary:
 	return DEFS.get(id, {})
 
-static func icon_texture(id: String) -> Texture2D:
-	var def_d: Dictionary = DEFS.get(id, {})
-	var custom_path := String(def_d.get("icon_path", ""))
-	if custom_path != "":
-		var custom_tex: Texture2D = load(custom_path)
-		if custom_tex != null:
-			return custom_tex
-	var at := AtlasTexture.new()
-	at.atlas = load(ITEMS_TEX_PATH)
-	at.region = Rect2(int(def_d.get("icon", 0)) * ITEM_ICON_SIZE, 0, ITEM_ICON_SIZE, ITEM_ICON_SIZE)
-	return at
-
 # Компактные строки статов — [{text, color}]. Пустой массив если нечего показать.
 static func stat_lines(id: String) -> Array:
 	var def_d: Dictionary = DEFS.get(id, {})
@@ -145,4 +133,54 @@ static func kind_name(id: String) -> String:
 	match String(d.get("kind", "")):
 		"consumable": return "Расходник"
 		"material":   return "Материал"
+	return ""
+
+static func icon_texture(id: String) -> Texture2D:
+	var d: Dictionary = DEFS.get(id, {})
+	var custom_path := String(d.get("icon_path", ""))
+	if custom_path != "":
+		var custom_tex: Texture2D = load(custom_path)
+		if custom_tex != null:
+			return custom_tex
+	var at := AtlasTexture.new()
+	at.atlas = load(ITEMS_TEX_PATH)
+	at.region = Rect2(int(d.get("icon", 0)) * ITEM_ICON_SIZE, 0, ITEM_ICON_SIZE, ITEM_ICON_SIZE)
+	return at
+
+static func bag_group(id: String) -> String:
+	var d: Dictionary = DEFS.get(id, {})
+	var slot := String(d.get("slot", ""))
+	if slot == "weapon":
+		return "weapon"
+	if slot in ["body", "head", "boots", "belt", "cloak"]:
+		return "armor"
+	if slot in ["ring", "amulet"]:
+		return "jewelry"
+	match String(d.get("kind", "")):
+		"consumable":
+			return "consumable"
+		"material":
+			return "material"
+	return "other"
+
+static func bag_group_name(group: String) -> String:
+	match group:
+		"weapon":
+			return "Оружие"
+		"armor":
+			return "Броня"
+		"jewelry":
+			return "Украшения"
+		"consumable":
+			return "Расходники"
+		"material":
+			return "Материалы"
+	return "Разное"
+
+static func action_name(id: String) -> String:
+	var d: Dictionary = DEFS.get(id, {})
+	if d.has("slot"):
+		return "Надеть"
+	if String(d.get("kind", "")) == "consumable":
+		return "Использовать"
 	return ""
