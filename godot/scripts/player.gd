@@ -51,6 +51,7 @@ var _remote_target: Vector2 = Vector2.ZERO
 var _remote_has_target: bool = false
 var facing: int = Dir.DOWN
 var moving: bool = false
+var _move_facing_locked: bool = false
 var anim_t: float = 0.0
 var _flash_t: float = 0.0
 var _walk_tex: ImageTexture
@@ -146,13 +147,17 @@ func _process(delta: float) -> void:
 		if dist <= s:
 			position = _remote_target
 			_remote_has_target = false
+			_move_facing_locked = false
 		else:
 			var step := to.normalized() * s
 			position += step
-			_set_facing_from(step)
+			if not _move_facing_locked:
+				_set_facing_from(step)
+				_move_facing_locked = true
 		moving = dist > 0.3
 	else:
 		moving = false
+		_move_facing_locked = false
 	if local:
 		moved.emit(position)
 	_animate(delta)
