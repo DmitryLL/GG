@@ -7,10 +7,12 @@ signal character_button_pressed
 signal bag_button_pressed
 signal logout_button_pressed
 signal admin_button_pressed
+signal stats_button_pressed
 
 const ICON_BAG := preload("res://assets/sprites/icon_bag.png")
 const ICON_CHAR := preload("res://assets/sprites/icon_character.png")
 const ICON_ADMIN := preload("res://assets/sprites/icon_admin.png")
+const ICON_STATS := preload("res://assets/sprites/icon_stats.png")
 
 const BTN_SIZE := 48
 const BTN_GAP := 6
@@ -19,6 +21,7 @@ var character_btn: Button
 var bag_btn: Button
 var logout_btn: Button
 var admin_btn: Button
+var stats_btn: Button
 
 func _ready() -> void:
 	var root := Control.new()
@@ -63,6 +66,18 @@ func _ready() -> void:
 	bag_btn.offset_bottom = y_bottom
 	bag_btn.pressed.connect(func(): bag_button_pressed.emit())
 	root.add_child(bag_btn)
+
+	# «Параметры» — слева от сумки.
+	stats_btn = _make_icon_button(ICON_STATS, "", Color(0.85, 0.95, 1.00), "Параметры (P)")
+	stats_btn.anchor_left = 1.0; stats_btn.anchor_right = 1.0
+	stats_btn.anchor_top = 1.0; stats_btn.anchor_bottom = 1.0
+	var stats_right: int = bag_right - BTN_SIZE - BTN_GAP
+	stats_btn.offset_right = stats_right
+	stats_btn.offset_left = stats_right - BTN_SIZE
+	stats_btn.offset_top = y_top
+	stats_btn.offset_bottom = y_bottom
+	stats_btn.pressed.connect(func(): stats_button_pressed.emit())
+	root.add_child(stats_btn)
 
 	# Админская кнопка — над × (видна только админам).
 	admin_btn = _make_icon_button(ICON_ADMIN, "", Color(0.70, 0.85, 1.00), "Админка (`)")
