@@ -3,11 +3,10 @@
 class_name LootWindow
 extends CanvasLayer
 
+const Items = preload("res://scripts/items.gd")
 signal take_requested(mob_id: String, index: int)
 signal take_all_requested(mob_id: String)
 signal closed
-
-const ITEMS_TEX := preload("res://assets/sprites/items.png")
 
 var overlay: ColorRect
 var card: PanelContainer
@@ -157,10 +156,7 @@ func _make_entry_row(item_id: String, qty: int, on_take: Callable) -> Control:
 
 	var def: Dictionary = Items.def(item_id)
 	var icon := TextureRect.new()
-	var at := AtlasTexture.new()
-	at.atlas = ITEMS_TEX
-	at.region = Rect2(int(def.get("icon", 0)) * 16, 0, 16, 16)
-	icon.texture = at
+	icon.texture = Items.icon_texture(item_id)
 	icon.custom_minimum_size = Vector2(22, 22)
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

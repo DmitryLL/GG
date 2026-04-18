@@ -1,6 +1,6 @@
 # Скилл 5: Призрачный залп — конус из 5 голубых стрел.
 class_name SkillGhostVolley
-extends SkillDef
+extends "res://scripts/skills/skill_def.gd"
 
 func _init() -> void:
 	display_name = "Призрачный залп"

@@ -20,8 +20,6 @@ var target_effects: HBoxContainer
 var server_time_offset_ms: int = 0
 var current_effects: Array = []
 
-const POISON_ICON := preload("res://assets/sprites/skill_4.png")
-
 func _ready() -> void:
 	var root := Control.new()
 	root.anchor_right = 1.0
@@ -54,11 +52,9 @@ func _ready() -> void:
 	top.add_theme_constant_override("separation", 4)
 	v.add_child(top)
 
-	var class_icon := TextureRect.new()
-	class_icon.texture = load("res://assets/sprites/class_archer.png")
-	class_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	class_icon.custom_minimum_size = Vector2(24, 24)
-	class_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var class_icon := ColorRect.new()
+	class_icon.color = Color(0.82, 0.62, 0.24, 1.0)
+	class_icon.custom_minimum_size = Vector2(18, 18)
 	top.add_child(class_icon)
 
 	name_label = Label.new()
@@ -228,13 +224,11 @@ func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(3)
 	wrap.add_theme_stylebox_override("panel", sb)
-	var icon := TextureRect.new()
-	icon.texture = POISON_ICON if eff_type == "poison" else null
-	icon.custom_minimum_size = Vector2(16, 16)
-	icon.position = Vector2(2, 1)
-	icon.size = Vector2(16, 16)
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	var icon := ColorRect.new()
+	icon.color = col if eff_type == "poison" else Color(0.6, 0.6, 0.6, 1.0)
+	icon.custom_minimum_size = Vector2(12, 12)
+	icon.position = Vector2(4, 3)
+	icon.size = Vector2(12, 12)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wrap.add_child(icon)
 	var timer_lbl := Label.new()

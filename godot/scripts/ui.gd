@@ -3,9 +3,7 @@
 class_name UI
 extends RefCounted
 
-const TEX_PANEL  := preload("res://assets/sprites/ui/panel_frame.png")
-const TEX_SLOT   := preload("res://assets/sprites/ui/slot.png")
-
+const Items = preload("res://scripts/items.gd")
 # Бронзово-деревянная палитра — тёплое дерево, бронза, рубин.
 const BG_DEEP        := Color(0.055, 0.040, 0.025, 1.0)  # почти чёрный тёплый
 const BG_PANEL       := Color(0.110, 0.080, 0.050, 1.0)  # тёмное дерево
@@ -28,17 +26,13 @@ const XP_BG          := Color(0.180, 0.100, 0.040, 1.0)
 
 # Основная панель — nine-slice по ассету panel_frame.png (256×256, бронзовые углы ~60).
 static func panel_style(radius: int = 10, border_w: int = 2) -> StyleBox:
-	var sb := StyleBoxTexture.new()
-	sb.texture = TEX_PANEL
-	sb.texture_margin_left = 62
-	sb.texture_margin_right = 62
-	sb.texture_margin_top = 62
-	sb.texture_margin_bottom = 62
-	sb.content_margin_left = 18
-	sb.content_margin_right = 18
-	sb.content_margin_top = 18
-	sb.content_margin_bottom = 18
-	return sb
+	var flat := StyleBoxFlat.new()
+	flat.bg_color = BG_PANEL
+	flat.border_color = BORDER_MID
+	flat.set_border_width_all(border_w)
+	flat.set_corner_radius_all(radius)
+	flat.set_content_margin_all(18)
+	return flat
 
 # Внутренний блок (статы/списки) — пергаментный тёплый фон.
 static func inner_style(radius: int = 8) -> StyleBoxFlat:
@@ -53,23 +47,18 @@ static func inner_style(radius: int = 8) -> StyleBoxFlat:
 # Ячейка инвентаря — nine-slice по slot.png (64×64, бронзовые углы ~16).
 # Редкость передаётся лёгким тинтом; hover — чуть ярче.
 static func slot_style(rarity: int, hover: bool, radius: int = 6) -> StyleBox:
-	var sb := StyleBoxTexture.new()
-	sb.texture = TEX_SLOT
-	sb.texture_margin_left = 16
-	sb.texture_margin_right = 16
-	sb.texture_margin_top = 16
-	sb.texture_margin_bottom = 16
-	sb.content_margin_left = 6
-	sb.content_margin_right = 6
-	sb.content_margin_top = 6
-	sb.content_margin_bottom = 6
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = BG_SLOT_HOVER if hover else BG_SLOT
 	var tint := Color(1, 1, 1, 1)
 	if rarity >= 0:
 		var base: Color = Items.rarity_color(rarity)
 		tint = Color(1, 1, 1).lerp(base, 0.35)
 	if hover:
 		tint = Color(min(tint.r * 1.22, 1.0), min(tint.g * 1.22, 1.0), min(tint.b * 1.22, 1.0), 1.0)
-	sb.modulate_color = tint
+	sb.border_color = tint
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(radius)
+	sb.set_content_margin_all(6)
 	return sb
 
 # Тонкий «рунный» разделитель.

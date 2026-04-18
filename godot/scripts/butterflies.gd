@@ -5,6 +5,8 @@
 class_name Butterflies
 extends Node2D
 
+const World = preload("res://scripts/world.gd")
+const WorldData = preload("res://scripts/world_data.gd")
 const COUNT := 40
 const SPEED_MIN := 18.0
 const SPEED_MAX := 32.0

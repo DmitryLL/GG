@@ -10,8 +10,8 @@ const STYLE_POISON := "poison"
 const STYLE_GHOST := "ghost"
 
 const FLIGHT_S := 0.18
-const ARROW_TEX := preload("res://assets/sprites/arrow.png")
-const ARROW_CRIT_TEX := preload("res://assets/sprites/arrow_crit.png")
+const ARROW_TEX_PATH := "res://assets/sprites/arrow.png"
+const ARROW_CRIT_TEX_PATH := "res://assets/sprites/arrow_crit.png"
 
 func shoot(from: Vector2, to: Vector2, style: String = "normal") -> void:
 	position = from
@@ -21,11 +21,11 @@ func shoot(from: Vector2, to: Vector2, style: String = "normal") -> void:
 	var modulate_color := Color(1, 1, 1, 1)
 	var glow_color := Color(0, 0, 0, 0)
 	var glow_radius := 0.0
-	var texture := ARROW_TEX
+	var texture = load(ARROW_TEX_PATH)
 	var scale_v := Vector2(0.55, 0.55)
 	match style:
 		"crit":
-			texture = ARROW_CRIT_TEX
+			texture = load(ARROW_CRIT_TEX_PATH)
 			scale_v = Vector2(0.75, 0.75)
 			glow_color = Color(1.0, 0.2, 0.15, 0.95)
 			glow_radius = 26.0

@@ -1,6 +1,6 @@
 # Скилл 2: Отравленная стрела — DoT + slow, стакается до 3 раз.
 class_name SkillPoisonArrow
-extends SkillDef
+extends "res://scripts/skills/skill_def.gd"
 
 func _init() -> void:
 	display_name = "Отравленная стрела"
