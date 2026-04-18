@@ -71,9 +71,19 @@ var _brush_preview: TextureRect
 var _brush_preview_name: Label
 var _brushes_def: Array = []
 
+# Пресет-высадка.
+var _preset_count: int = 10
+
+# История версий — контейнер в панели Карта.
+var _history_list_vbox: VBoxContainer
+
 signal map_save_requested              # старая: скачать world.tmj в браузер
 signal map_save_server_requested       # новая: записать в Nakama Storage
 signal map_edit_mode_changed(on: bool) # для сетки-оверлея
+signal mob_preset_spawn(type: String, count: int)
+signal map_history_requested
+signal map_snapshot_requested
+signal map_rollback_requested(ts: int)
 
 func _ready() -> void:
 	layer = 20
@@ -298,6 +308,54 @@ func _ready() -> void:
 	mob_hint.custom_minimum_size = Vector2(280, 0)
 	map_tab.add_child(mob_hint)
 
+	# Пресеты — кнопка «+N», клик в мире высаживает стаю.
+	var preset_label := Label.new()
+	preset_label.text = "Пресеты (клик в мире = высадить стаю):"
+	preset_label.add_theme_font_size_override("font_size", 11)
+	preset_label.add_theme_color_override("font_color", Color(1, 0.8, 0.5))
+	map_tab.add_child(preset_label)
+
+	var preset_row := HBoxContainer.new()
+	preset_row.add_theme_constant_override("separation", 3)
+	map_tab.add_child(preset_row)
+	var preset_count := SpinBox.new()
+	preset_count.min_value = 1; preset_count.max_value = 50; preset_count.value = 10
+	preset_count.custom_minimum_size = Vector2(60, 0)
+	preset_row.add_child(preset_count)
+	for preset in [{"type":"slime","name":"слизней"},{"type":"goblin","name":"гоблинов"},{"type":"dummy","name":"манекенов"}]:
+		var pb := Button.new()
+		pb.text = "+N %s" % preset["name"]
+		var ptype: String = preset["type"]
+		pb.pressed.connect(func():
+			mob_tool = "preset_" + ptype
+			_preset_count = int(preset_count.value)
+			log_result("Пресет активирован: %s × %d, кликай в мире" % [ptype, _preset_count])
+		)
+		preset_row.add_child(pb)
+
+	# История версий.
+	var hist_label := Label.new()
+	hist_label.text = "История версий:"
+	hist_label.add_theme_font_size_override("font_size", 11)
+	hist_label.add_theme_color_override("font_color", Color(1, 0.8, 0.5))
+	map_tab.add_child(hist_label)
+
+	var hist_row := HBoxContainer.new()
+	hist_row.add_theme_constant_override("separation", 3)
+	map_tab.add_child(hist_row)
+	var snap_btn := Button.new()
+	snap_btn.text = "📸 Снимок"
+	snap_btn.pressed.connect(func(): map_snapshot_requested.emit())
+	hist_row.add_child(snap_btn)
+	var hist_btn := Button.new()
+	hist_btn.text = "📜 Показать"
+	hist_btn.pressed.connect(func(): map_history_requested.emit())
+	hist_row.add_child(hist_btn)
+
+	_history_list_vbox = VBoxContainer.new()
+	_history_list_vbox.add_theme_constant_override("separation", 2)
+	map_tab.add_child(_history_list_vbox)
+
 	var save_server_btn := Button.new()
 	save_server_btn.text = "💾 Сохранить на сервере"
 	save_server_btn.pressed.connect(func(): map_save_server_requested.emit())
@@ -465,6 +523,33 @@ func _update_brush_preview() -> void:
 			if int(b["id"]) == map_edit_brush:
 				nm = String(b["name"]); break
 		_brush_preview_name.text = nm
+
+func show_history_list(items: Array) -> void:
+	if _history_list_vbox == null: return
+	for c in _history_list_vbox.get_children():
+		c.queue_free()
+	if items.is_empty():
+		var empty := Label.new()
+		empty.text = "(пусто — сделай снимок)"
+		empty.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		empty.add_theme_font_size_override("font_size", 10)
+		_history_list_vbox.add_child(empty)
+		return
+	for it in items:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 4)
+		_history_list_vbox.add_child(row)
+		var ts: int = int(it.get("ts", 0))
+		var dt := Time.get_datetime_dict_from_unix_time(ts / 1000)
+		var lbl := Label.new()
+		lbl.text = "%04d-%02d-%02d %02d:%02d" % [dt.year, dt.month, dt.day, dt.hour, dt.minute]
+		lbl.add_theme_font_size_override("font_size", 10)
+		lbl.custom_minimum_size = Vector2(150, 0)
+		row.add_child(lbl)
+		var b := Button.new()
+		b.text = "↶ Откатить"
+		b.pressed.connect(func(): map_rollback_requested.emit(ts))
+		row.add_child(b)
 
 func _make_brush_preview_texture(tile_id: int) -> AtlasTexture:
 	# Берём 32×32 регион из tiles.png — такой же как рисуется в мире.

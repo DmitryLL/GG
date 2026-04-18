@@ -51,6 +51,11 @@ const OP_MAP_FULL     := 25
 const OP_MOB_ADD      := 26
 const OP_MOB_MOVE     := 27
 const OP_MOB_DEL      := 28
+const OP_TILE_RECT    := 29
+const OP_MAP_HISTORY  := 30
+const OP_MAP_SNAPSHOT := 31
+const OP_MAP_ROLLBACK := 32
+const OP_EDITOR_CURSOR := 33
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -192,6 +197,9 @@ func _ready() -> void:
 	admin_panel.map_save_requested.connect(_on_map_save)
 	admin_panel.map_save_server_requested.connect(_save_map_on_server)
 	admin_panel.map_edit_mode_changed.connect(_on_map_edit_mode_changed)
+	admin_panel.map_snapshot_requested.connect(_on_map_snapshot_request)
+	admin_panel.map_history_requested.connect(_on_map_history_request)
+	admin_panel.map_rollback_requested.connect(_on_map_rollback_request)
 
 	# Свободная камера для редактора — отдельная, живёт в world_root.
 	editor_camera = Camera2D.new()
@@ -252,17 +260,34 @@ func _unhandled_input(event: InputEvent) -> void:
 		if pk == KEY_G:
 			world.set_grid_visible(not world.is_grid_visible())
 			return
-	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseButton and event.pressed:
+	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseButton:
 		var world_pos_e := get_viewport().get_camera_2d().get_global_mouse_position()
 		# Зум колёсиком.
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+		if event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_editor_zoom(0.9, world_pos_e)
 			return
-		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		if event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_editor_zoom(1.1, world_pos_e)
 			return
 		var c: int = int(world_pos_e.x / WorldData.TILE_SIZE)
 		var r: int = int(world_pos_e.y / WorldData.TILE_SIZE)
+		# Shift+ЛКМ drag → release — прямоугольная заливка.
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed and event.shift_pressed:
+				_rect_drag_start = Vector2i(c, r)
+				_rect_drag_end = Vector2i(c, r)
+				_rect_drag_active = true
+				_ensure_rect_overlay()
+				_rect_overlay.visible = true
+				_rect_overlay.queue_redraw()
+				return
+			if not event.pressed and _rect_drag_active:
+				_rect_drag_active = false
+				if _rect_overlay: _rect_overlay.visible = false
+				_send_tile_rect(_rect_drag_start.x, _rect_drag_start.y, _rect_drag_end.x, _rect_drag_end.y, admin_panel.map_edit_brush)
+				return
+		if not event.pressed:
+			return
 		# Alt+ЛКМ — пипетка (взять тайл в кисть).
 		if event.button_index == MOUSE_BUTTON_LEFT and event.alt_pressed:
 			if c >= 0 and r >= 0 and c < world.data.map_cols and r < world.data.map_rows:
@@ -282,6 +307,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			_map_paint(c, r, WorldData.Tile.GRASS)
 			return
+	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseMotion:
+		var wp := get_viewport().get_camera_2d().get_global_mouse_position()
+		if _rect_drag_active:
+			_rect_drag_end = Vector2i(int(wp.x / WorldData.TILE_SIZE), int(wp.y / WorldData.TILE_SIZE))
+			if _rect_overlay: _rect_overlay.queue_redraw()
 
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var world_pos := get_viewport().get_camera_2d().get_global_mouse_position()
@@ -344,6 +374,7 @@ func _process(delta: float) -> void:
 		if dir != Vector2.ZERO:
 			var cam_speed: float = 600.0 * editor_camera.zoom.x
 			editor_camera.position += dir.normalized() * cam_speed * delta
+		_send_editor_cursor()
 
 	# PvP auto-pursuit — атаковать другого игрока (включая queued skill)
 	if pvp_target != null:
@@ -608,6 +639,20 @@ func _save_map_on_server() -> void:
 	if admin_panel:
 		admin_panel.log_result("Карта сохранена на сервере (тайлы + мобы)")
 
+func _on_map_snapshot_request() -> void:
+	if match_id == "" or Session.socket == null: return
+	Session.socket.send_match_state_async(match_id, OP_MAP_SNAPSHOT, JSON.stringify({}))
+
+func _on_map_history_request() -> void:
+	if match_id == "" or Session.socket == null: return
+	Session.socket.send_match_state_async(match_id, OP_MAP_HISTORY, JSON.stringify({}))
+
+func _on_map_rollback_request(ts: int) -> void:
+	if match_id == "" or Session.socket == null: return
+	Session.socket.send_match_state_async(match_id, OP_MAP_ROLLBACK, JSON.stringify({"ts": ts}))
+	if admin_panel:
+		admin_panel.log_result("Откат к ts=%d запрошен" % ts)
+
 func _on_map_edit_mode_changed(on: bool) -> void:
 	world.set_grid_visible(on)
 	if skillbar:
@@ -621,6 +666,84 @@ func _on_map_edit_mode_changed(on: bool) -> void:
 	else:
 		if camera:
 			camera.make_current()
+		# Очистить курсоры других админов при выходе.
+		for k in _editor_cursors.keys():
+			var n: Node2D = _editor_cursors[k]
+			if is_instance_valid(n): n.queue_free()
+		_editor_cursors.clear()
+
+# ══════════════════ Rect drag-fill (Shift+LMB) ══════════════════
+var _rect_drag_active: bool = false
+var _rect_drag_start: Vector2i = Vector2i.ZERO
+var _rect_drag_end: Vector2i = Vector2i.ZERO
+var _rect_overlay: Node2D = null
+
+func _ensure_rect_overlay() -> void:
+	if _rect_overlay and is_instance_valid(_rect_overlay):
+		return
+	_rect_overlay = _RectOverlay.new(self)
+	_rect_overlay.z_index = 200
+	world_root.add_child(_rect_overlay)
+
+class _RectOverlay extends Node2D:
+	var game_ref
+	func _init(g) -> void:
+		game_ref = g
+	func _draw() -> void:
+		if game_ref == null: return
+		var s: Vector2i = game_ref._rect_drag_start
+		var e: Vector2i = game_ref._rect_drag_end
+		var c1 := min(s.x, e.x); var c2 := max(s.x, e.x)
+		var r1 := min(s.y, e.y); var r2 := max(s.y, e.y)
+		var ts: int = WorldData.TILE_SIZE
+		var rect := Rect2(c1 * ts, r1 * ts, (c2 - c1 + 1) * ts, (r2 - r1 + 1) * ts)
+		draw_rect(rect, Color(1.0, 0.85, 0.2, 0.25), true)
+		draw_rect(rect, Color(1.0, 0.85, 0.2, 1.0), false, 2.0)
+
+func _send_tile_rect(c1: int, r1: int, c2: int, r2: int, id: int) -> void:
+	if match_id == "" or Session.socket == null: return
+	Session.socket.send_match_state_async(match_id, OP_TILE_RECT,
+		JSON.stringify({"c1": c1, "r1": r1, "c2": c2, "r2": r2, "id": id}))
+	if admin_panel:
+		var area: int = (max(c1,c2)-min(c1,c2)+1) * (max(r1,r2)-min(r1,r2)+1)
+		admin_panel.log_result("Прямоугольник: %d тайлов" % area)
+
+# ══════════════════ Мультикурсоры админов ══════════════════
+var _editor_cursors: Dictionary = {}  # sid → Node2D
+var _cursor_send_next_ms: int = 0
+
+func _send_editor_cursor() -> void:
+	if match_id == "" or Session.socket == null: return
+	var now: int = Time.get_ticks_msec()
+	if now < _cursor_send_next_ms: return
+	_cursor_send_next_ms = now + 150  # ~6 Hz
+	var wp := get_viewport().get_camera_2d().get_global_mouse_position()
+	Session.socket.send_match_state_async(match_id, OP_EDITOR_CURSOR,
+		JSON.stringify({"x": wp.x, "y": wp.y}))
+
+func _update_editor_cursor(body: Dictionary) -> void:
+	var sid: String = String(body.get("sid", ""))
+	if sid == "": return
+	var node: Node2D = _editor_cursors.get(sid)
+	if node == null:
+		node = _AdminCursor.new(String(body.get("name", "?")))
+		node.z_index = 400
+		world_root.add_child(node)
+		_editor_cursors[sid] = node
+	node.position = Vector2(float(body.get("x", 0)), float(body.get("y", 0)))
+
+class _AdminCursor extends Node2D:
+	var admin_name: String = ""
+	func _init(nm: String) -> void:
+		admin_name = nm
+	func _draw() -> void:
+		# Крестик + ник.
+		var col := Color(0.6, 1.0, 0.6, 1.0)
+		draw_line(Vector2(-8, 0), Vector2(8, 0), col, 2.0)
+		draw_line(Vector2(0, -8), Vector2(0, 8), col, 2.0)
+		draw_circle(Vector2.ZERO, 3.0, col)
+		var f := ThemeDB.fallback_font
+		draw_string(f, Vector2(10, -4), admin_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
 
 func _editor_zoom(factor: float, focus_world: Vector2) -> void:
 	if editor_camera == null: return
@@ -649,6 +772,17 @@ func _mob_at_any(world_pos: Vector2) -> Mob:
 
 func _handle_mob_tool_click(world_pos: Vector2, tool_id: String) -> void:
 	if match_id == "" or Session.socket == null:
+		return
+	# Пресет-высадка: preset_slime / preset_goblin / preset_dummy.
+	if tool_id.begins_with("preset_"):
+		var ptype := tool_id.substr(7)
+		var n: int = admin_panel._preset_count if admin_panel else 10
+		for i in range(n):
+			var off := Vector2(randf_range(-80, 80), randf_range(-80, 80))
+			Session.socket.send_match_state_async(match_id, OP_MOB_ADD,
+				JSON.stringify({"type": ptype, "x": world_pos.x + off.x, "y": world_pos.y + off.y}))
+		if admin_panel:
+			admin_panel.log_result("Высажено %d × %s" % [n, ptype])
 		return
 	match tool_id:
 		"add_slime", "add_goblin", "add_dummy":
@@ -797,6 +931,19 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 			var arr: Array = body.get("tiles", [])
 			if arr.size() == world.data.map_cols * world.data.map_rows:
 				world.apply_full_tiles(arr)
+		OP_TILE_RECT:
+			var c1 := int(body.get("c1", 0)); var r1 := int(body.get("r1", 0))
+			var c2 := int(body.get("c2", 0)); var r2 := int(body.get("r2", 0))
+			var rid := int(body.get("id", 0))
+			for r in range(r1, r2 + 1):
+				for c in range(c1, c2 + 1):
+					world.set_tile(c, r, rid)
+		OP_MAP_HISTORY:
+			if admin_panel: admin_panel.show_history_list(body.get("list", []))
+		OP_MAP_SNAPSHOT:
+			if admin_panel: admin_panel.log_result("Снимок сохранён (ts=%s)" % str(body.get("ts", 0)))
+		OP_EDITOR_CURSOR:
+			_update_editor_cursor(body)
 
 var _last_intent_ms: int = 0
 

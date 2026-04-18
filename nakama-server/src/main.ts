@@ -137,6 +137,11 @@ const OP_MAP_FULL     = 25; // server→client at join: весь массив ti
 const OP_MOB_ADD      = 26; // admin: client→server {type, x, y}
 const OP_MOB_MOVE     = 27; // admin: client→server {mobId, x, y}
 const OP_MOB_DEL      = 28; // admin: client→server {mobId}
+const OP_TILE_RECT    = 29; // admin: {c1,r1,c2,r2,id} — заливка прямоугольника
+const OP_MAP_HISTORY  = 30; // admin: client→server пусто; server→client {list:[{ts,size}]}
+const OP_MAP_SNAPSHOT = 31; // admin: client→server пусто → создать версию
+const OP_MAP_ROLLBACK = 32; // admin: client→server {ts} → восстановить
+const OP_EDITOR_CURSOR = 33; // admin: client→server {x,y}; server→others {sid,name,x,y}
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -436,6 +441,77 @@ function saveMapToStorage(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: st
         permissionRead: 2,
         permissionWrite: 1,
     }]);
+}
+
+// История версий: отдельные storage-записи с ключами "snap_<timestamp>".
+// Ограничиваем число: после создания новой подрезаем до последних N.
+const MAP_SNAPSHOT_LIMIT = 20;
+const MAP_SNAPSHOT_PREFIX = "snap_";
+
+function createMapSnapshot(nk: nkruntime.Nakama, tiles: number[], mobs: { [id: string]: MatchMob }): number {
+    const ts = Date.now();
+    const mobSpawns: MobSpawn[] = [];
+    for (const k of Object.keys(mobs)) {
+        const m = mobs[k];
+        mobSpawns.push({ x: m.home.x, y: m.home.y, type: m.type });
+    }
+    nk.storageWrite([{
+        collection: MAP_STORAGE_COLLECTION,
+        key: MAP_SNAPSHOT_PREFIX + ts,
+        userId: MAP_STORAGE_USER,
+        value: { tiles: tiles, mobs: mobSpawns, savedAt: ts },
+        version: "",
+        permissionRead: 2,
+        permissionWrite: 1,
+    }]);
+    // Подрезать старые снапшоты.
+    try {
+        const list = nk.storageList(MAP_STORAGE_USER, MAP_STORAGE_COLLECTION, 100);
+        const snaps = (list.objects || []).filter(o => o.key.indexOf(MAP_SNAPSHOT_PREFIX) === 0);
+        snaps.sort((a, b) => a.key < b.key ? 1 : -1); // новые первыми
+        if (snaps.length > MAP_SNAPSHOT_LIMIT) {
+            const toDel = snaps.slice(MAP_SNAPSHOT_LIMIT).map(o => ({
+                collection: MAP_STORAGE_COLLECTION,
+                key: o.key,
+                userId: MAP_STORAGE_USER,
+            }));
+            nk.storageDelete(toDel);
+        }
+    } catch (_e) {}
+    return ts;
+}
+
+function listMapSnapshots(nk: nkruntime.Nakama): { ts: number; key: string }[] {
+    try {
+        const list = nk.storageList(MAP_STORAGE_USER, MAP_STORAGE_COLLECTION, 100);
+        const snaps = (list.objects || []).filter(o => o.key.indexOf(MAP_SNAPSHOT_PREFIX) === 0);
+        const out: { ts: number; key: string }[] = [];
+        for (const o of snaps) {
+            const ts = parseInt(o.key.substring(MAP_SNAPSHOT_PREFIX.length), 10);
+            if (isFinite(ts)) out.push({ ts: ts, key: o.key });
+        }
+        out.sort((a, b) => b.ts - a.ts);
+        return out;
+    } catch (_e) { return []; }
+}
+
+function loadMapSnapshot(nk: nkruntime.Nakama, ts: number): { tiles: number[]; mobs: MobSpawn[] } | null {
+    try {
+        const res = nk.storageRead([{
+            collection: MAP_STORAGE_COLLECTION,
+            key: MAP_SNAPSHOT_PREFIX + ts,
+            userId: MAP_STORAGE_USER,
+        }]);
+        if (res && res.length > 0 && res[0].value) {
+            const v = res[0].value as any;
+            const tiles = Array.isArray(v.tiles) ? v.tiles as number[] : null;
+            const mobs = Array.isArray(v.mobs) ? v.mobs as MobSpawn[] : [];
+            if (tiles && tiles.length === MAP_COLS * MAP_ROWS) {
+                return { tiles: tiles, mobs: mobs };
+            }
+        }
+    } catch (_e) {}
+    return null;
 }
 
 function loadMobsFromStorage(nk: nkruntime.Nakama): MobSpawn[] | null {
@@ -1002,6 +1078,94 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     if (!state.mobs[mobId]) break;
                     delete state.mobs[mobId];
                     dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: [{ id: mobId, removed: true }], full: false }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_TILE_RECT: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { c1?: number; r1?: number; c2?: number; r2?: number; id?: number };
+                    let c1 = Number(body.c1), r1 = Number(body.r1), c2 = Number(body.c2), r2 = Number(body.r2);
+                    const id = Number(body.id);
+                    if (!isFinite(c1) || !isFinite(r1) || !isFinite(c2) || !isFinite(r2) || !isFinite(id)) break;
+                    if (id < 0 || id > 5) break;
+                    if (c1 > c2) { const t = c1; c1 = c2; c2 = t; }
+                    if (r1 > r2) { const t = r1; r1 = r2; r2 = t; }
+                    c1 = Math.max(0, Math.min(MAP_COLS - 1, c1));
+                    c2 = Math.max(0, Math.min(MAP_COLS - 1, c2));
+                    r1 = Math.max(0, Math.min(MAP_ROWS - 1, r1));
+                    r2 = Math.max(0, Math.min(MAP_ROWS - 1, r2));
+                    // Защита от огромных заливок — максимум 5000 клеток за раз.
+                    const area = (c2 - c1 + 1) * (r2 - r1 + 1);
+                    if (area > 5000) break;
+                    for (let r = r1; r <= r2; r++) {
+                        for (let c = c1; c <= c2; c++) {
+                            state.tiles[r * MAP_COLS + c] = id;
+                        }
+                    }
+                    dispatcher.broadcastMessage(OP_TILE_RECT, JSON.stringify({ c1, r1, c2, r2, id }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_MAP_SNAPSHOT: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const ts = createMapSnapshot(nk, state.tiles, state.mobs);
+                    dispatcher.broadcastMessage(OP_MAP_SNAPSHOT, JSON.stringify({ ts: ts }), [player.presence]);
+                } catch (_e) {}
+                break;
+            }
+            case OP_MAP_HISTORY: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const snaps = listMapSnapshots(nk);
+                    dispatcher.broadcastMessage(OP_MAP_HISTORY, JSON.stringify({ list: snaps }), [player.presence]);
+                } catch (_e) {}
+                break;
+            }
+            case OP_MAP_ROLLBACK: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { ts?: number };
+                    const ts = Number(body.ts);
+                    if (!isFinite(ts)) break;
+                    const snap = loadMapSnapshot(nk, ts);
+                    if (!snap) break;
+                    // Применить тайлы.
+                    for (let i = 0; i < snap.tiles.length && i < state.tiles.length; i++) {
+                        state.tiles[i] = snap.tiles[i];
+                    }
+                    // Перезалить мобов: удаляем всех, заспавнить из snapshot.
+                    for (const mk of Object.keys(state.mobs)) delete state.mobs[mk];
+                    for (let i = 0; i < snap.mobs.length; i++) {
+                        const mid = "s_" + ts + "_" + i;
+                        state.mobs[mid] = spawnMob(mid, snap.mobs[i]);
+                    }
+                    // Broadcast: полный набор тайлов + всех мобов.
+                    dispatcher.broadcastMessage(OP_MAP_FULL, JSON.stringify({ tiles: state.tiles }));
+                    dispatcher.broadcastMessage(OP_MOBS, JSON.stringify({ mobs: snapshotMobsAll(state), full: true }));
+                } catch (_e) {}
+                break;
+            }
+            case OP_EDITOR_CURSOR: {
+                try {
+                    if (!isAdminName(player.username)) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { x?: number; y?: number };
+                    const x = Number(body.x), y = Number(body.y);
+                    if (!isFinite(x) || !isFinite(y)) break;
+                    // Шлём всем остальным админам. Находим их список.
+                    const targets: nkruntime.Presence[] = [];
+                    for (const sk of Object.keys(state.players)) {
+                        const sp = state.players[sk];
+                        if (sp.sessionId === player.sessionId) continue;
+                        if (!isAdminName(sp.username)) continue;
+                        targets.push(sp.presence);
+                    }
+                    if (targets.length > 0) {
+                        dispatcher.broadcastMessage(OP_EDITOR_CURSOR, JSON.stringify({
+                            sid: player.sessionId, name: player.username, x: x, y: y,
+                        }), targets);
+                    }
                 } catch (_e) {}
                 break;
             }
