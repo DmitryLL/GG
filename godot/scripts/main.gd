@@ -1,8 +1,32 @@
-# Local demo entry point. Boot straight into Game so the project can be viewed offline.
+# Entry router.
+# - Не логин → Auth
+# - Логин есть, но персонаж не выбран → CharacterSelect
+# - Всё готово → Game
 extends Node
 
+const AUTH_SCENE := preload("res://scenes/Auth.tscn")
+const CHAR_SELECT_SCENE := preload("res://scenes/CharacterSelect.tscn")
 const GAME_SCENE := preload("res://scenes/Game.tscn")
 
 func _ready() -> void:
-	var inst = GAME_SCENE.instantiate()
+	# Session._ready() может делать async refresh токена — дождёмся.
+	await get_tree().process_frame
+	_route()
+
+func _route() -> void:
+	for child in get_children():
+		child.queue_free()
+	var scene: PackedScene
+	if not Session.is_logged_in():
+		scene = AUTH_SCENE
+	elif Session.selected_character == "":
+		scene = CHAR_SELECT_SCENE
+	else:
+		scene = GAME_SCENE
+	var inst = scene.instantiate()
 	add_child(inst)
+	if inst.has_signal("auth_changed"):
+		inst.auth_changed.connect(_on_auth_changed)
+
+func _on_auth_changed() -> void:
+	_route()

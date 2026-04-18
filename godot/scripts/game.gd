@@ -16,24 +16,7 @@ const BAG_SCRIPT := preload("res://scripts/bag_window.gd")
 const LOOT_SCRIPT := preload("res://scripts/loot_window.gd")
 const SKILLBAR_SCRIPT := preload("res://scripts/skillbar.gd")
 const ADMIN_SCRIPT := preload("res://scripts/admin_panel.gd")
-const World = WORLD_SCRIPT
-const Player = PLAYER_SCRIPT
-const Mob = MOB_SCRIPT
-const Hud = HUD_SCRIPT
-const Shop = SHOP_SCRIPT
-const ChatPanel = CHAT_SCRIPT
-const Minimap = MINIMAP_SCRIPT
-const Nameplate = NAMEPLATE_SCRIPT
-const CharacterWindow = CHARACTER_SCRIPT
-const BagWindow = BAG_SCRIPT
-const LootWindow = LOOT_SCRIPT
-const SkillBar = SKILLBAR_SCRIPT
-const AdminPanel = ADMIN_SCRIPT
-const WorldData = preload("res://scripts/world_data.gd")
-const Items = preload("res://scripts/items.gd")
-const SkillRegistry = preload("res://scripts/skills/skill_registry.gd")
-const SkillDef = preload("res://scripts/skills/skill_def.gd")
-const Arrow = preload("res://scripts/arrow.gd")
+const BUTTERFLIES_SCRIPT := preload("res://scripts/butterflies.gd")
 
 const OP_POSITIONS    := 1
 const OP_MOVE_INTENT  := 2
@@ -62,6 +45,22 @@ const OP_LOOT_TAKE_ALL := 19
 const OP_SKILL        := 20
 const OP_SKILL_FX     := 21
 const OP_SKILL_REJECT := 22
+const OP_TILE_UPDATE  := 23
+const OP_MAP_SAVE     := 24
+const OP_MAP_FULL     := 25
+const OP_MOB_ADD      := 26
+const OP_MOB_MOVE     := 27
+const OP_MOB_DEL      := 28
+const OP_TILE_RECT    := 29
+const OP_MAP_HISTORY  := 30
+const OP_MAP_SNAPSHOT := 31
+const OP_MAP_ROLLBACK := 32
+const OP_EDITOR_CURSOR := 33
+const OP_OBJ_ADD      := 34
+const OP_OBJ_DEL      := 35
+const OP_OBJS         := 36
+const OP_OBJ_INTERACT := 37
+const OP_ZONE_SWITCH  := 38
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -72,6 +71,7 @@ const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 var world: World
 var me: Player
 var camera: Camera2D
+var editor_camera: Camera2D
 var hud: Hud
 var shop: Shop
 var chat_panel: ChatPanel
@@ -113,10 +113,15 @@ var _targeting_ring: Sprite2D
 var admin_panel: AdminPanel
 
 func _ready() -> void:
-	var display: String = Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
+	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
 
 	world = WORLD_SCRIPT.new()
 	world_root.add_child(world)
+
+	# Декоративные летающие бабочки/пчёлки над лугами.
+	var butterflies := BUTTERFLIES_SCRIPT.new()
+	butterflies.setup(world)
+	world.add_child(butterflies)
 
 	me = PLAYER_SCRIPT.new()
 	me.setup(world, display, PLAYER_SCRIPT.variant_from(Session.auth.user_id))
@@ -193,22 +198,34 @@ func _ready() -> void:
 
 	admin_panel = ADMIN_SCRIPT.new()
 	add_child(admin_panel)
+	# Показать значок гаечного ключа в HUD, если текущий юзер — админ.
+	hud.set_admin_visible(admin_panel.is_admin())
+	hud.admin_button_pressed.connect(admin_panel.toggle)
 	admin_panel.action_requested.connect(_on_admin_action)
+	admin_panel.map_save_requested.connect(_on_map_save)
+	admin_panel.map_save_server_requested.connect(_save_map_on_server)
+	admin_panel.map_edit_mode_changed.connect(_on_map_edit_mode_changed)
+	admin_panel.map_snapshot_requested.connect(_on_map_snapshot_request)
+	admin_panel.map_history_requested.connect(_on_map_history_request)
+	admin_panel.map_rollback_requested.connect(_on_map_rollback_request)
+
+	# Свободная камера для редактора — отдельная, живёт в world_root.
+	editor_camera = Camera2D.new()
+	editor_camera.limit_left = 0
+	editor_camera.limit_top = 0
+	editor_camera.limit_right = world.data.map_cols * WorldData.TILE_SIZE
+	editor_camera.limit_bottom = world.data.map_rows * WorldData.TILE_SIZE
+	world_root.add_child(editor_camera)
 
 	loot_win = LOOT_SCRIPT.new()
 	add_child(loot_win)
 	loot_win.take_requested.connect(func(mob_id, idx):
-		if Session.socket != null:
-			Session.socket.send_match_state_async(match_id, OP_LOOT_TAKE, JSON.stringify({"mobId": mob_id, "index": idx})))
+		Session.socket.send_match_state_async(match_id, OP_LOOT_TAKE, JSON.stringify({"mobId": mob_id, "index": idx})))
 	loot_win.take_all_requested.connect(func(mob_id):
-		if Session.socket != null:
-			Session.socket.send_match_state_async(match_id, OP_LOOT_TAKE_ALL, JSON.stringify({"mobId": mob_id})))
+		Session.socket.send_match_state_async(match_id, OP_LOOT_TAKE_ALL, JSON.stringify({"mobId": mob_id})))
 
-	if Session.DEMO_MODE:
-		_setup_demo_state()
-	else:
-		status_label.text = "Подключаюсь к real-time…"
-		_connect_and_join()
+	status_label.text = "Подключаюсь к real-time…"
+	_connect_and_join()
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Хоткеи для окон: C/С — сумка, I/Ш — персонаж.
@@ -229,10 +246,95 @@ func _unhandled_input(event: InputEvent) -> void:
 		targeting_skill = -1
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 		return
+	# In-game map editor — клик шлёт OP_TILE_UPDATE на сервер (live-sync).
+	if admin_panel and admin_panel.map_edit_mode and event is InputEventKey and event.pressed and not event.echo:
+		# Esc — выйти из режима редактора.
+		if event.keycode == KEY_ESCAPE:
+			admin_panel.exit_edit_mode()
+			return
+		# Ctrl+Z / Ctrl+Shift+Z — undo / redo.
+		if event.keycode == KEY_Z and event.ctrl_pressed:
+			if event.shift_pressed: _map_redo()
+			else: _map_undo()
+			return
+		# Хоткеи кистей тайлов: 1–6.
+		var pk: int = event.physical_keycode
+		if pk >= KEY_1 and pk <= KEY_6:
+			admin_panel.select_brush_by_index(pk - KEY_1)
+			return
+		if pk == KEY_B:
+			admin_panel.toggle_bucket()
+			return
+		if pk == KEY_G:
+			world.set_grid_visible(not world.is_grid_visible())
+			return
+	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseButton:
+		var world_pos_e := get_viewport().get_camera_2d().get_global_mouse_position()
+		# Зум колёсиком.
+		if event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_editor_zoom(0.9, world_pos_e)
+			return
+		if event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_editor_zoom(1.1, world_pos_e)
+			return
+		var c: int = int(world_pos_e.x / WorldData.TILE_SIZE)
+		var r: int = int(world_pos_e.y / WorldData.TILE_SIZE)
+		# Shift+ЛКМ drag → release — прямоугольная заливка.
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed and event.shift_pressed:
+				_rect_drag_start = Vector2i(c, r)
+				_rect_drag_end = Vector2i(c, r)
+				_rect_drag_active = true
+				_ensure_rect_overlay()
+				_rect_overlay.visible = true
+				_rect_overlay.queue_redraw()
+				return
+			if not event.pressed and _rect_drag_active:
+				_rect_drag_active = false
+				if _rect_overlay: _rect_overlay.visible = false
+				_send_tile_rect(_rect_drag_start.x, _rect_drag_start.y, _rect_drag_end.x, _rect_drag_end.y, admin_panel.map_edit_brush)
+				return
+		if not event.pressed:
+			return
+		# Alt+ЛКМ — пипетка (взять тайл в кисть).
+		if event.button_index == MOUSE_BUTTON_LEFT and event.alt_pressed:
+			if c >= 0 and r >= 0 and c < world.data.map_cols and r < world.data.map_rows:
+				var tid: int = int(world.data.tiles[r * world.data.map_cols + c])
+				admin_panel.select_brush_by_id(tid)
+			return
+		# Инструменты мобов перехватывают ЛКМ раньше рисования.
+		if admin_panel.mob_tool != "" and event.button_index == MOUSE_BUTTON_LEFT:
+			_handle_mob_tool_click(world_pos_e, admin_panel.mob_tool)
+			return
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if admin_panel.bucket_mode:
+				_map_bucket_fill(c, r, admin_panel.map_edit_brush)
+			else:
+				_map_paint(c, r, admin_panel.map_edit_brush)
+			return
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			_map_paint(c, r, WorldData.Tile.GRASS)
+			return
+	if admin_panel and admin_panel.map_edit_mode and event is InputEventMouseMotion:
+		var wp := get_viewport().get_camera_2d().get_global_mouse_position()
+		if _rect_drag_active:
+			_rect_drag_end = Vector2i(int(wp.x / WorldData.TILE_SIZE), int(wp.y / WorldData.TILE_SIZE))
+			if _rect_overlay: _rect_overlay.queue_redraw()
+
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var world_pos := get_viewport().get_camera_2d().get_global_mouse_position()
 		if targeting_skill >= 0:
 			_resolve_targeting_click(targeting_skill, world_pos)
+			return
+		# Сундук (объект карты) — приоритет выше мобов/NPC.
+		var obj_hit := _object_at(world_pos)
+		if obj_hit != "":
+			var node: Node2D = _map_objects.get(obj_hit)
+			if node and node.position.distance_to(me.position) <= 60:
+				Session.socket.send_match_state_async(match_id, OP_OBJ_INTERACT,
+					JSON.stringify({"id": obj_hit}))
+			else:
+				_send_move_intent(node.position if node else world_pos)
 			return
 		# NPC takes priority over mobs/move.
 		var npc := _npc_at(world_pos)
@@ -279,6 +381,18 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if match_id == "" or Session.socket == null:
 		return
+
+	# Свободная камера в режиме редактора: WASD-пан, скорость учитывает zoom.
+	if admin_panel and admin_panel.map_edit_mode and editor_camera and editor_camera.is_current():
+		var dir := Vector2.ZERO
+		if Input.is_key_pressed(KEY_W): dir.y -= 1.0
+		if Input.is_key_pressed(KEY_S): dir.y += 1.0
+		if Input.is_key_pressed(KEY_A): dir.x -= 1.0
+		if Input.is_key_pressed(KEY_D): dir.x += 1.0
+		if dir != Vector2.ZERO:
+			var cam_speed: float = 600.0 * editor_camera.zoom.x
+			editor_camera.position += dir.normalized() * cam_speed * delta
+		_send_editor_cursor()
 
 	# PvP auto-pursuit — атаковать другого игрока (включая queued skill)
 	if pvp_target != null:
@@ -447,51 +561,551 @@ func _on_logout() -> void:
 	Session.logout()
 	auth_changed.emit()
 
-func _setup_demo_state() -> void:
-	match_id = "demo"
-	my_session_id = "demo-local"
-	var now_ms: int = Time.get_ticks_msec()
-	var demo_me := {
-		"username": Session.auth.username,
-		"userId": Session.auth.user_id,
-		"hp": 100,
-		"hpMax": 100,
-		"damage": 12,
-		"lv": 7,
-		"xp": 18,
-		"xpMax": 50,
-		"gold": 275,
-		"eq": {"weapon": "wood_bow", "body": "leather_armor", "head": "leather_helmet", "boots": "leather_boots"},
-		"inv": [
-			{"itemId": "health_potion", "qty": 3},
-			{"itemId": "wood_bow", "qty": 1},
-			{"itemId": "leather_armor", "qty": 1},
-			{"itemId": "wolf_pelt", "qty": 5},
-			{"itemId": "slime_jelly", "qty": 7}
-		],
-		"skillCd": {},
-		"t": now_ms,
-	}
-	_apply_me(demo_me)
-	_apply_mobs({
-		"mobs": [
-			{"id": "slime-1", "t": "slime", "x": world.player_spawn().x + 220.0, "y": world.player_spawn().y + 40.0, "hp": 30, "hpMax": 30, "st": "alive", "loot": []},
-			{"id": "goblin-1", "t": "goblin", "x": world.player_spawn().x + 340.0, "y": world.player_spawn().y - 60.0, "hp": 48, "hpMax": 48, "st": "alive", "loot": []},
-			{"id": "slime-dead", "t": "slime", "x": world.player_spawn().x + 120.0, "y": world.player_spawn().y + 180.0, "hp": 0, "hpMax": 30, "st": "dead", "loot": [{"itemId": "slime_jelly", "qty": 2}, {"itemId": "small_potion", "qty": 1}]}
-		]
-	})
-	_apply_npcs({
-		"npcs": [
-			{"id": "merchant", "name": "Торговец", "x": world.player_spawn().x - 180.0, "y": world.player_spawn().y - 40.0, "stock": ["small_potion", "health_potion", "wood_bow", "leather_armor"]}
-		],
-		"prices": {"small_potion": 8, "health_potion": 20, "wood_bow": 75, "leather_armor": 120}
-	})
-	status_label.text = "Локальный demo-режим: мир и интерфейс доступны без сервера"
+func _send_tile_update(c: int, r: int, id: int) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_TILE_UPDATE, JSON.stringify({"c": c, "r": r, "id": id}))
+
+# ══════════════════ Map editor: undo + brush + bucket ══════════════════
+const _UNDO_MAX := 100
+var _map_undo_stack: Array = []  # [[{c,r,old_id,new_id}, ...], ...]
+var _map_redo_stack: Array = []
+
+func _record_edit(changes: Array) -> void:
+	if changes.is_empty(): return
+	_map_undo_stack.append(changes)
+	if _map_undo_stack.size() > _UNDO_MAX:
+		_map_undo_stack.pop_front()
+	_map_redo_stack.clear()
+
+func _map_paint(c: int, r: int, new_id: int) -> void:
+	var radius: int = (admin_panel.brush_size - 1) / 2
+	var changes: Array = []
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var nc := c + dx
+			var nr := r + dy
+			if nc < 0 or nr < 0 or nc >= world.data.map_cols or nr >= world.data.map_rows:
+				continue
+			var old_id: int = world.data.tiles[nr * world.data.map_cols + nc]
+			if old_id == new_id:
+				continue
+			changes.append({"c": nc, "r": nr, "old_id": old_id, "new_id": new_id})
+			_send_tile_update(nc, nr, new_id)
+	_record_edit(changes)
+
+func _map_bucket_fill(c: int, r: int, new_id: int) -> void:
+	if c < 0 or r < 0 or c >= world.data.map_cols or r >= world.data.map_rows:
+		return
+	var target_id: int = world.data.tiles[r * world.data.map_cols + c]
+	if target_id == new_id:
+		return
+	var visited: Dictionary = {}
+	var queue: Array = [Vector2i(c, r)]
+	var changes: Array = []
+	var limit := 2000
+	while queue.size() > 0 and changes.size() < limit:
+		var p: Vector2i = queue.pop_front()
+		var key := p.y * world.data.map_cols + p.x
+		if visited.has(key): continue
+		visited[key] = true
+		if p.x < 0 or p.y < 0 or p.x >= world.data.map_cols or p.y >= world.data.map_rows:
+			continue
+		var cur: int = world.data.tiles[p.y * world.data.map_cols + p.x]
+		if cur != target_id:
+			continue
+		changes.append({"c": p.x, "r": p.y, "old_id": cur, "new_id": new_id})
+		_send_tile_update(p.x, p.y, new_id)
+		queue.append(Vector2i(p.x + 1, p.y))
+		queue.append(Vector2i(p.x - 1, p.y))
+		queue.append(Vector2i(p.x, p.y + 1))
+		queue.append(Vector2i(p.x, p.y - 1))
+	_record_edit(changes)
+
+func _map_undo() -> void:
+	if _map_undo_stack.is_empty():
+		admin_panel.log_result("Нечего отменять")
+		return
+	var group: Array = _map_undo_stack.pop_back()
+	_map_redo_stack.append(group)
+	for e in group:
+		_send_tile_update(int(e["c"]), int(e["r"]), int(e["old_id"]))
+
+func _map_redo() -> void:
+	if _map_redo_stack.is_empty():
+		admin_panel.log_result("Нечего возвращать")
+		return
+	var group: Array = _map_redo_stack.pop_back()
+	_map_undo_stack.append(group)
+	for e in group:
+		_send_tile_update(int(e["c"]), int(e["r"]), int(e["new_id"]))
+
+func _save_map_on_server() -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_MAP_SAVE, JSON.stringify({}))
+	if admin_panel:
+		admin_panel.log_result("Карта сохранена на сервере (тайлы + мобы)")
+
+func _on_map_snapshot_request() -> void:
+	if match_id == "" or Session.socket == null: return
+	Session.socket.send_match_state_async(match_id, OP_MAP_SNAPSHOT, JSON.stringify({}))
+
+func _on_map_history_request() -> void:
+	if match_id == "" or Session.socket == null: return
+	Session.socket.send_match_state_async(match_id, OP_MAP_HISTORY, JSON.stringify({}))
+
+func _on_map_rollback_request(ts: int) -> void:
+	if match_id == "" or Session.socket == null: return
+	Session.socket.send_match_state_async(match_id, OP_MAP_ROLLBACK, JSON.stringify({"ts": ts}))
+	if admin_panel:
+		admin_panel.log_result("Откат к ts=%d запрошен" % ts)
+
+func _on_map_edit_mode_changed(on: bool) -> void:
+	world.set_grid_visible(on)
+	if skillbar:
+		skillbar.hotkeys_enabled = not on
+	if on:
+		if editor_camera:
+			# Стартуем редактор-камеру с позиции игровой, чтобы не телепортировало.
+			editor_camera.position = camera.get_screen_center_position()
+			editor_camera.zoom = Vector2.ONE
+			editor_camera.make_current()
+	else:
+		if camera:
+			camera.make_current()
+		# Очистить курсоры других админов при выходе.
+		for k in _editor_cursors.keys():
+			var n: Node2D = _editor_cursors[k]
+			if is_instance_valid(n): n.queue_free()
+		_editor_cursors.clear()
+
+# ══════════════════ Rect drag-fill (Shift+LMB) ══════════════════
+var _rect_drag_active: bool = false
+var _rect_drag_start: Vector2i = Vector2i.ZERO
+var _rect_drag_end: Vector2i = Vector2i.ZERO
+var _rect_overlay: Node2D = null
+
+func _ensure_rect_overlay() -> void:
+	if _rect_overlay and is_instance_valid(_rect_overlay):
+		return
+	_rect_overlay = _RectOverlay.new(self)
+	_rect_overlay.z_index = 200
+	world_root.add_child(_rect_overlay)
+
+class _RectOverlay extends Node2D:
+	var game_ref
+	func _init(g) -> void:
+		game_ref = g
+	func _draw() -> void:
+		if game_ref == null: return
+		var s: Vector2i = game_ref._rect_drag_start
+		var e: Vector2i = game_ref._rect_drag_end
+		var c1: int = min(s.x, e.x); var c2: int = max(s.x, e.x)
+		var r1: int = min(s.y, e.y); var r2: int = max(s.y, e.y)
+		var ts: int = WorldData.TILE_SIZE
+		var rect := Rect2(c1 * ts, r1 * ts, (c2 - c1 + 1) * ts, (r2 - r1 + 1) * ts)
+		draw_rect(rect, Color(1.0, 0.85, 0.2, 0.25), true)
+		draw_rect(rect, Color(1.0, 0.85, 0.2, 1.0), false, 2.0)
+
+func _send_tile_rect(c1: int, r1: int, c2: int, r2: int, id: int) -> void:
+	if match_id == "" or Session.socket == null: return
+	Session.socket.send_match_state_async(match_id, OP_TILE_RECT,
+		JSON.stringify({"c1": c1, "r1": r1, "c2": c2, "r2": r2, "id": id}))
+	if admin_panel:
+		var area: int = (max(c1,c2)-min(c1,c2)+1) * (max(r1,r2)-min(r1,r2)+1)
+		admin_panel.log_result("Прямоугольник: %d тайлов" % area)
+
+# ══════════════════ Мультикурсоры админов ══════════════════
+var _editor_cursors: Dictionary = {}  # sid → Node2D
+var _cursor_send_next_ms: int = 0
+
+func _send_editor_cursor() -> void:
+	if match_id == "" or Session.socket == null: return
+	var now: int = Time.get_ticks_msec()
+	if now < _cursor_send_next_ms: return
+	_cursor_send_next_ms = now + 150  # ~6 Hz
+	var wp := get_viewport().get_camera_2d().get_global_mouse_position()
+	Session.socket.send_match_state_async(match_id, OP_EDITOR_CURSOR,
+		JSON.stringify({"x": wp.x, "y": wp.y}))
+
+func _update_editor_cursor(body: Dictionary) -> void:
+	var sid: String = String(body.get("sid", ""))
+	if sid == "": return
+	var node: Node2D = _editor_cursors.get(sid)
+	if node == null:
+		node = _AdminCursor.new(String(body.get("name", "?")))
+		node.z_index = 400
+		world_root.add_child(node)
+		_editor_cursors[sid] = node
+	node.position = Vector2(float(body.get("x", 0)), float(body.get("y", 0)))
+
+class _AdminCursor extends Node2D:
+	var admin_name: String = ""
+	func _init(nm: String) -> void:
+		admin_name = nm
+	func _draw() -> void:
+		# Крестик + ник.
+		var col := Color(0.6, 1.0, 0.6, 1.0)
+		draw_line(Vector2(-8, 0), Vector2(8, 0), col, 2.0)
+		draw_line(Vector2(0, -8), Vector2(0, 8), col, 2.0)
+		draw_circle(Vector2.ZERO, 3.0, col)
+		var f := ThemeDB.fallback_font
+		draw_string(f, Vector2(10, -4), admin_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
+
+# ══════════════════ Объекты карты (порталы, сундуки) ══════════════════
+var _map_objects: Dictionary = {}       # id → Node2D
+var _portal_pair_source: Dictionary = {} # {x, y} при первом клике в режиме portal
+
+func _apply_objects(body: Dictionary) -> void:
+	for o in body.get("objects", []):
+		var oid: String = String(o.get("id", ""))
+		if oid == "":
+			continue
+		if bool(o.get("removed", false)):
+			var nd: Node2D = _map_objects.get(oid)
+			if nd: nd.queue_free()
+			_map_objects.erase(oid)
+			continue
+		var node: Node2D = _map_objects.get(oid)
+		if node == null:
+			node = _MapObjectNode.new(oid, String(o.get("kind", "")), o.get("data", {}))
+			node.z_index = 40
+			entities.add_child(node)
+			_map_objects[oid] = node
+		node.position = Vector2(float(o.get("x", 0)), float(o.get("y", 0)))
+		node.update_data(o.get("data", {}))
+
+class _MapObjectNode extends Node2D:
+	var obj_id: String = ""
+	var kind: String = ""
+	var data: Dictionary = {}
+	var _t: float = 0.0
+	func _init(id: String, k: String, d) -> void:
+		obj_id = id; kind = k; data = d if d is Dictionary else {}
+	func _process(delta: float) -> void:
+		_t += delta
+		queue_redraw()
+	func update_data(d) -> void:
+		data = d if d is Dictionary else {}
+		queue_redraw()
+	func _draw() -> void:
+		match kind:
+			"portal":
+				var base_r: float = 14.0
+				var pulse: float = base_r + sin(_t * 3.0) * 3.0
+				draw_circle(Vector2.ZERO, pulse + 2, Color(0.4, 0.8, 1.0, 0.25))
+				draw_circle(Vector2.ZERO, pulse, Color(0.3, 0.6, 1.0, 0.55))
+				draw_arc(Vector2.ZERO, pulse + 6, 0, TAU, 32, Color(0.7, 0.9, 1.0, 0.8), 2.0)
+			"chest":
+				var opened: bool = bool(data.get("opened", false))
+				var col: Color = Color(0.5, 0.3, 0.1) if opened else Color(0.85, 0.6, 0.2)
+				var rect := Rect2(Vector2(-10, -8), Vector2(20, 16))
+				draw_rect(rect, col, true)
+				draw_rect(rect, Color(0.3, 0.15, 0.05), false, 1.5)
+				if not opened:
+					draw_rect(Rect2(Vector2(-2, -2), Vector2(4, 6)), Color(0.3, 0.15, 0.05), true)
+			"spawn":
+				var r2: int = int(data.get("radius", 60))
+				draw_arc(Vector2.ZERO, r2, 0, TAU, 24, Color(1, 0.3, 0.3, 0.6), 1.5)
+
+# ══════════════════ Подсветка пути игрока (точки A→B) ══════════════════
+var _path_overlay: Node2D = null
+var _path_points: PackedVector2Array = PackedVector2Array()
+var _path_target: Vector2 = Vector2.ZERO
+var _path_visible_until_ms: int = 0
+
+func _ensure_path_overlay() -> void:
+	if _path_overlay and is_instance_valid(_path_overlay):
+		return
+	_path_overlay = _PathDotsOverlay.new(self)
+	_path_overlay.z_index = 45
+	world_root.add_child(_path_overlay)
+
+func _update_path_dots(waypoints: PackedVector2Array) -> void:
+	_path_points = waypoints
+	_path_target = waypoints[waypoints.size() - 1] if waypoints.size() > 0 else Vector2.ZERO
+	_path_visible_until_ms = Time.get_ticks_msec() + 8000  # авто-скрытие через 8с
+	_ensure_path_overlay()
+	_path_overlay.queue_redraw()
+
+class _PathDotsOverlay extends Node2D:
+	var game_ref
+	var _t: float = 0.0
+	func _init(g) -> void:
+		game_ref = g
+	func _process(delta: float) -> void:
+		_t += delta
+		var should_show: bool = game_ref._path_points.size() > 0 and Time.get_ticks_msec() < game_ref._path_visible_until_ms
+		if should_show and game_ref.me:
+			# Убираем из начала пути точки, которые игрок уже прошёл — путь
+			# всегда отображается от ТЕКУЩЕЙ позиции игрока (A) до цели (B).
+			while game_ref._path_points.size() > 1 and game_ref.me.position.distance_to(game_ref._path_points[0]) < 18.0:
+				game_ref._path_points.remove_at(0)
+			# Автоскрытие когда игрок близко к финальной цели.
+			if game_ref.me.position.distance_to(game_ref._path_target) < 12.0:
+				game_ref._path_points = PackedVector2Array()
+			queue_redraw()
+		elif visible:
+			queue_redraw()
+	func _draw() -> void:
+		var pts: PackedVector2Array = game_ref._path_points
+		if pts.size() == 0 or Time.get_ticks_msec() >= game_ref._path_visible_until_ms:
+			return
+		# Точка старта A — позиция игрока сейчас; конец B — последний waypoint.
+		var start: Vector2 = game_ref.me.position if game_ref.me else pts[0]
+		var dot_col := Color(1.0, 0.9, 0.3, 0.85)
+		var line_col := Color(1.0, 0.9, 0.3, 0.35)
+		# «Анимированная» точка: циклический сдвиг фазы.
+		var phase: float = fmod(_t * 40.0, 16.0)
+		# Все сегменты.
+		var prev: Vector2 = start
+		for i in range(pts.size()):
+			var p: Vector2 = pts[i]
+			draw_line(prev, p, line_col, 1.5)
+			# Бегущие точки вдоль сегмента.
+			var seg: Vector2 = p - prev
+			var seg_len: float = seg.length()
+			if seg_len > 0.1:
+				var dir: Vector2 = seg / seg_len
+				var d: float = phase
+				while d < seg_len:
+					draw_circle(prev + dir * d, 3.0, dot_col)
+					d += 16.0
+			prev = p
+		# Метка B — кольцо в конце.
+		draw_arc(pts[pts.size() - 1], 8.0, 0, TAU, 20, Color(1, 0.95, 0.4, 1.0), 2.0)
+
+func _editor_zoom(factor: float, focus_world: Vector2) -> void:
+	if editor_camera == null: return
+	var old_zoom: Vector2 = editor_camera.zoom
+	var new_zoom: Vector2 = (old_zoom * factor).clamp(Vector2(0.25, 0.25), Vector2(3.0, 3.0))
+	if new_zoom == old_zoom: return
+	# Сохраняем точку под курсором на месте: сдвигаем камеру так, чтобы focus_world остался там же на экране.
+	var delta_zoom: Vector2 = new_zoom - old_zoom
+	editor_camera.position += (focus_world - editor_camera.position) * (delta_zoom / new_zoom)
+	editor_camera.zoom = new_zoom
+
+# ══════════════════ Редактор мобов ══════════════════
+# "Выбран" моб для перемещения (второй клик задаёт новую позицию).
+var _mob_move_selected: String = ""
+
+func _object_at(world_pos: Vector2) -> String:
+	# Кликаем ТОЛЬКО по сундукам (порталы проходятся ногами).
+	var best := ""
+	var best_d: float = 28.0
+	for id in _map_objects.keys():
+		var n: Node2D = _map_objects.get(id)
+		if n == null: continue
+		if String(n.kind) != "chest": continue
+		var d: float = n.position.distance_to(world_pos)
+		if d < best_d:
+			best_d = d; best = id
+	return best
+
+func _mob_at_any(world_pos: Vector2) -> Mob:
+	var best: Mob = null
+	var best_d: float = 9999.0
+	for mob_v in mobs.values():
+		var mob: Mob = mob_v
+		var d: float = mob.position.distance_to(world_pos)
+		if d < CLICK_MOB_RADIUS and d < best_d:
+			best = mob
+			best_d = d
+	return best
+
+func _handle_mob_tool_click(world_pos: Vector2, tool_id: String) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	# Объекты карты.
+	if tool_id == "portal_pair":
+		# Первый клик — источник, второй — назначение, шлём OP_OBJ_ADD portal.
+		# Если в admin_panel выбрана целевая зона — добавляем targetZone (межзонный портал).
+		if _portal_pair_source.is_empty():
+			_portal_pair_source = {"x": world_pos.x, "y": world_pos.y}
+			if admin_panel: admin_panel.log_result("Источник портала — клик назначения")
+		else:
+			var src: Dictionary = _portal_pair_source
+			var portal_data := {"tx": world_pos.x, "ty": world_pos.y}
+			if admin_panel and admin_panel.portal_target_zone != "":
+				portal_data["targetZone"] = admin_panel.portal_target_zone
+			Session.socket.send_match_state_async(match_id, OP_OBJ_ADD,
+				JSON.stringify({"kind": "portal", "x": src["x"], "y": src["y"], "data": portal_data}))
+			_portal_pair_source = {}
+			if admin_panel:
+				var where: String = admin_panel.portal_target_zone if admin_panel.portal_target_zone != "" else "локально"
+				admin_panel.log_result("Портал создан → " + where)
+		return
+	if tool_id == "chest":
+		# Стандартный сундук с рандомным набором материалов.
+		var loot := [{"itemId": "slime_jelly", "qty": 3}, {"itemId": "leather", "qty": 1}]
+		Session.socket.send_match_state_async(match_id, OP_OBJ_ADD,
+			JSON.stringify({"kind": "chest", "x": world_pos.x, "y": world_pos.y,
+				"data": {"loot": loot, "respawnMs": 60000}}))
+		if admin_panel: admin_panel.log_result("Сундук размещён")
+		return
+	if tool_id == "obj_delete":
+		# Найти ближайший объект и удалить.
+		var nearest_id := ""
+		var best_d: float = 40.0
+		for id in _map_objects.keys():
+			var n: Node2D = _map_objects[id]
+			if n == null: continue
+			var d: float = n.position.distance_to(world_pos)
+			if d < best_d:
+				best_d = d; nearest_id = id
+		if nearest_id != "":
+			Session.socket.send_match_state_async(match_id, OP_OBJ_DEL, JSON.stringify({"id": nearest_id}))
+			if admin_panel: admin_panel.log_result("Удалён объект: %s" % nearest_id)
+		return
+	# Пресет-высадка: preset_slime / preset_goblin / preset_dummy.
+	if tool_id.begins_with("preset_"):
+		var ptype := tool_id.substr(7)
+		var n: int = admin_panel._preset_count if admin_panel else 10
+		for i in range(n):
+			var off := Vector2(randf_range(-80, 80), randf_range(-80, 80))
+			Session.socket.send_match_state_async(match_id, OP_MOB_ADD,
+				JSON.stringify({"type": ptype, "x": world_pos.x + off.x, "y": world_pos.y + off.y}))
+		if admin_panel:
+			admin_panel.log_result("Высажено %d × %s" % [n, ptype])
+		return
+	match tool_id:
+		"add_slime", "add_goblin", "add_dummy":
+			var mob_type := tool_id.substr(4)  # "slime" / "goblin" / "dummy"
+			Session.socket.send_match_state_async(match_id, OP_MOB_ADD,
+				JSON.stringify({"type": mob_type, "x": world_pos.x, "y": world_pos.y}))
+			if admin_panel:
+				admin_panel.log_result("Моб добавлен: %s" % mob_type)
+		"move":
+			if _mob_move_selected == "":
+				var picked := _mob_at_any(world_pos)
+				if picked == null:
+					if admin_panel: admin_panel.log_result("Клик не попал в моба")
+					return
+				_mob_move_selected = picked.mob_id
+				if admin_panel: admin_panel.log_result("Двигаем: %s — кликни цель" % _mob_move_selected)
+			else:
+				Session.socket.send_match_state_async(match_id, OP_MOB_MOVE,
+					JSON.stringify({"mobId": _mob_move_selected, "x": world_pos.x, "y": world_pos.y}))
+				if admin_panel: admin_panel.log_result("Моб перемещён: %s" % _mob_move_selected)
+				_mob_move_selected = ""
+		"delete":
+			var target := _mob_at_any(world_pos)
+			if target == null:
+				if admin_panel: admin_panel.log_result("Клик не попал в моба")
+				return
+			Session.socket.send_match_state_async(match_id, OP_MOB_DEL,
+				JSON.stringify({"mobId": target.mob_id}))
+			if admin_panel: admin_panel.log_result("Моб удалён: %s" % target.mob_id)
+
+func _on_map_save() -> void:
+	# Собираем TMJ с текущими тайлами + исходными Mobs/NPCs из оригинального world.tmj.
+	var src := FileAccess.open("res://assets/world.tmj", FileAccess.READ)
+	if src == null:
+		admin_panel.log_result("world.tmj не найден")
+		return
+	var src_json: Dictionary = JSON.parse_string(src.get_as_text())
+	# Заменяем data слоя Tiles на текущее состояние.
+	for layer in src_json.get("layers", []):
+		if String(layer.get("name", "")) == "Tiles":
+			var gids: Array = []
+			for t in world.data.tiles:
+				gids.append(int(t) + 1)
+			layer["data"] = gids
+			break
+	var full_json: String = JSON.stringify(src_json, "\t")
+	# Триггерим скачивание через JS Blob → <a download>.
+	if OS.has_feature("web"):
+		var escaped := full_json.replace("\\", "\\\\").replace("`", "\\`")
+		JavaScriptBridge.eval("""
+		(function(){
+			var data = `%s`;
+			var blob = new Blob([data], {type: 'application/json'});
+			var url = URL.createObjectURL(blob);
+			var a = document.createElement('a');
+			a.href = url;
+			a.download = 'world.tmj';
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		})();
+		""" % escaped, true)
+		admin_panel.log_result("world.tmj скачан. Положи в data/maps/")
+	else:
+		# Desktop — сохраняем рядом с exe
+		var out := FileAccess.open("user://world.tmj", FileAccess.WRITE)
+		out.store_string(full_json)
+		out.close()
+		admin_panel.log_result("user://world.tmj сохранён")
 
 func _connect_and_join() -> void:
-	status_label.text = "Сетевой режим отключен в локальном preview"
+	var socket := Nakama.create_socket_from(Session.client)
+	var err: NakamaAsyncResult = await socket.connect_async(Session.auth)
+	if err.is_exception():
+		status_label.text = "Socket ошибка: %s" % err.get_exception().message
+		return
+	Session.socket = socket
+	socket.received_match_state.connect(_on_match_state)
+	socket.received_match_presence.connect(_on_presence)
 
-func _on_match_state(state) -> void:
+	var payload := JSON.stringify({"zone": Session.current_zone})
+	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "get_world_match", payload)
+	if rpc_res.is_exception():
+		status_label.text = "RPC ошибка: %s" % rpc_res.get_exception().message
+		return
+	var data: Dictionary = JSON.parse_string(rpc_res.payload)
+	var requested_id: String = data.get("match_id", "")
+	if requested_id == "":
+		status_label.text = "Пустой match_id"
+		return
+
+	var joined: NakamaRTAPI.Match = await socket.join_match_async(requested_id)
+	if joined.is_exception():
+		status_label.text = "Join ошибка: %s" % joined.get_exception().message
+		return
+	match_id = joined.match_id
+	my_session_id = joined.self_user.session_id
+	status_label.text = "Зона: %s · игроков: %d" % [Session.current_zone, joined.presences.size() + 1]
+
+func _handle_zone_switch(body: Dictionary) -> void:
+	var new_zone: String = String(body.get("zone", ""))
+	var new_match_id: String = String(body.get("matchId", ""))
+	if new_zone == "" or new_match_id == "":
+		return
+	status_label.text = "Переход в зону: %s…" % new_zone
+	# Чистый уход из текущего матча + всех локальных объектов; затем join в новый.
+	if Session.socket and match_id != "":
+		await Session.socket.leave_match_async(match_id)
+	match_id = ""
+	Session.current_zone = new_zone
+	# Очистить визуальные сущности — их пришлют заново в OP_MOBS/OP_OBJS/OP_MAP_FULL.
+	for mid in mobs.keys():
+		var mn: Mob = mobs[mid]
+		if is_instance_valid(mn): mn.queue_free()
+	mobs.clear()
+	for oid in _map_objects.keys():
+		var on: Node2D = _map_objects[oid]
+		if is_instance_valid(on): on.queue_free()
+	_map_objects.clear()
+	for k in remotes.keys():
+		var rm: Node2D = remotes[k]
+		if is_instance_valid(rm): rm.queue_free()
+	remotes.clear()
+	for nn in npcs:
+		pass  # NPC нарисованы напрямую как Node2D — их обновим заново через OP_NPCS
+	# Перейти на новый матч.
+	var joined: NakamaRTAPI.Match = await Session.socket.join_match_async(new_match_id)
+	if joined.is_exception():
+		status_label.text = "Join zone ошибка: %s" % joined.get_exception().message
+		return
+	match_id = joined.match_id
+	my_session_id = joined.self_user.session_id
+	# Поставить игрока на позицию, присланную сервером (сервер тоже сам запомнил).
+	me.position = Vector2(float(body.get("x", 0)), float(body.get("y", 0)))
+	status_label.text = "Зона: %s" % new_zone
+
+func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 	var body = JSON.parse_string(state.data)
 	if typeof(body) != TYPE_DICTIONARY:
 		return
@@ -531,6 +1145,32 @@ func _on_match_state(state) -> void:
 		OP_NPCS:       _apply_npcs(body)
 		OP_ARROW:      _spawn_arrow(body)
 		OP_CHAT_RELAY: _apply_chat(body)
+		OP_TILE_UPDATE:
+			var c := int(body.get("c", 0))
+			var r := int(body.get("r", 0))
+			var id := int(body.get("id", 0))
+			world.set_tile(c, r, id)
+		OP_MAP_FULL:
+			var arr: Array = body.get("tiles", [])
+			if arr.size() == world.data.map_cols * world.data.map_rows:
+				world.apply_full_tiles(arr)
+		OP_TILE_RECT:
+			var c1 := int(body.get("c1", 0)); var r1 := int(body.get("r1", 0))
+			var c2 := int(body.get("c2", 0)); var r2 := int(body.get("r2", 0))
+			var rid := int(body.get("id", 0))
+			for r in range(r1, r2 + 1):
+				for c in range(c1, c2 + 1):
+					world.set_tile(c, r, rid)
+		OP_MAP_HISTORY:
+			if admin_panel: admin_panel.show_history_list(body.get("list", []))
+		OP_MAP_SNAPSHOT:
+			if admin_panel: admin_panel.log_result("Снимок сохранён (ts=%s)" % str(body.get("ts", 0)))
+		OP_EDITOR_CURSOR:
+			_update_editor_cursor(body)
+		OP_OBJS:
+			_apply_objects(body)
+		OP_ZONE_SWITCH:
+			_handle_zone_switch(body)
 
 var _last_intent_ms: int = 0
 
@@ -538,27 +1178,33 @@ func server_now_ms() -> int:
 	return Session.server_now_ms()
 
 func _send_move_intent(target: Vector2) -> void:
-	# Server-authoritative: клиент считает путь и шлёт waypoints.
-	# Если цель почти та же, не спамим повторной отправкой — иначе сервер
-	# постоянно сбрасывает маршрут и движение выглядит дёрганым.
-	if Session.DEMO_MODE:
-		me.remote_update(target)
-		return
+	# Server-authoritative: клиент считает A*-путь и шлёт полный массив
+	# waypoints. Сервер сам шагает от одного к другому со скоростью PLAYER_SPEED.
+	# Throttle: если цель почти та же что ранее (±24px) — НЕ пересылаем вообще
+	# пока идём к ней. Иначе при спаме клика одну и ту же точку сервер каждый
+	# раз сбрасывал путь, рисуя «рывок назад» к центру текущей клетки.
 	if match_id == "" or Session.socket == null:
 		return
 	var now_ms: int = Time.get_ticks_msec()
 	if last_sent_pos.distance_to(target) < 24.0 and now_ms - _last_intent_ms < 600:
 		return
 	var path: PackedVector2Array = world.find_path(me.position, target)
+	# Первая точка пути — центр текущей клетки игрока; она почти совпадает с
+	# позицией игрока и отправка её сервером = рывок назад на суб-пиксель.
+	# Отбрасываем первый waypoint, если он ближе 0.6 тайла от игрока.
 	if path.size() > 1 and me.position.distance_to(path[0]) < WorldData.TILE_SIZE * 0.6:
 		path.remove_at(0)
 	if path.size() == 0:
-		Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": target.x, "y": target.y}))
+		# Путь не найден или цель в той же клетке — шлём одну точку.
+		Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT,
+			JSON.stringify({"x": target.x, "y": target.y}))
 	else:
 		var arr: Array = []
 		for p in path:
 			arr.append({"x": p.x, "y": p.y})
-		Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"path": arr}))
+		Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT,
+			JSON.stringify({"path": arr}))
+		_update_path_dots(path)
 	last_sent_pos = target
 	_last_intent_ms = now_ms
 
@@ -598,6 +1244,13 @@ func _apply_mobs(body: Dictionary) -> void:
 	for m in body.get("mobs", []):
 		var mid: String = String(m.get("id", ""))
 		if mid == "":
+			continue
+		# Удаление моба админом — сервер шлёт {id, removed:true}.
+		if bool(m.get("removed", false)):
+			var dead_node: Mob = mobs.get(mid)
+			if dead_node:
+				dead_node.queue_free()
+				mobs.erase(mid)
 			continue
 		var kind: String = String(m.get("t", "slime"))
 		var ms: Mob = mobs.get(mid)
@@ -664,10 +1317,10 @@ func _apply_npcs(body: Dictionary) -> void:
 		npcs.append(entry)
 		var npc_root := Node2D.new()
 		npc_root.position = Vector2(float(entry.get("x", 0)), float(entry.get("y", 0)))
-		var sprite := ColorRect.new()
-		sprite.color = Color(0.90, 0.80, 0.48, 1.0)
-		sprite.size = Vector2(18, 26)
-		sprite.position = Vector2(-9, -26)
+		var sprite := Sprite2D.new()
+		sprite.texture = load("res://assets/sprites/npc.png")
+		sprite.scale = Vector2(1.2, 1.2)
+		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		npc_root.add_child(sprite)
 		var label := Label.new()
 		label.text = String(entry.get("name", "?"))
@@ -681,7 +1334,7 @@ func _apply_npcs(body: Dictionary) -> void:
 		entities.add_child(npc_root)
 		npc_nodes.append(npc_root)
 
-func _on_presence(ev) -> void:
+func _on_presence(ev: NakamaRTAPI.MatchPresenceEvent) -> void:
 	for p in ev.leaves:
 		var sid: String = p.session_id
 		# Если меня кикнуло (заход с другого устройства) — показать сообщение
@@ -967,7 +1620,7 @@ func _on_admin_action(action: String, extra: Dictionary = {}) -> void:
 			payload = {"op": "set_level", "target": extra.get("target", ""), "level": 50 + d}  # TODO: точное значение
 		_:
 			return
-	var rpc_res = await Session.client.rpc_async(Session.auth, "admin", JSON.stringify(payload))
+	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "admin", JSON.stringify(payload))
 	if rpc_res.is_exception():
 		admin_panel.log_result("ERR: " + rpc_res.get_exception().message)
 		return
@@ -1093,7 +1746,7 @@ func _cast_instant(index: int) -> void:
 func _send_skill(index: int, payload: Dictionary) -> void:
 	Session.socket.send_match_state_async(match_id, OP_SKILL, JSON.stringify(payload))
 	skillbar.trigger_cooldown(index)
-	var sk_def = SkillRegistry.by_index(index)
+	var sk_def := SkillRegistry.by_index(index)
 	if sk_def:
 		sk_def.on_send(self)
 
