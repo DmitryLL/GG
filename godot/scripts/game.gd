@@ -819,6 +819,72 @@ class _MapObjectNode extends Node2D:
 				var r2: int = int(data.get("radius", 60))
 				draw_arc(Vector2.ZERO, r2, 0, TAU, 24, Color(1, 0.3, 0.3, 0.6), 1.5)
 
+# ══════════════════ Подсветка пути игрока (точки A→B) ══════════════════
+var _path_overlay: Node2D = null
+var _path_points: PackedVector2Array = PackedVector2Array()
+var _path_target: Vector2 = Vector2.ZERO
+var _path_visible_until_ms: int = 0
+
+func _ensure_path_overlay() -> void:
+	if _path_overlay and is_instance_valid(_path_overlay):
+		return
+	_path_overlay = _PathDotsOverlay.new(self)
+	_path_overlay.z_index = 45
+	world_root.add_child(_path_overlay)
+
+func _update_path_dots(waypoints: PackedVector2Array) -> void:
+	_path_points = waypoints
+	_path_target = waypoints[waypoints.size() - 1] if waypoints.size() > 0 else Vector2.ZERO
+	_path_visible_until_ms = Time.get_ticks_msec() + 8000  # авто-скрытие через 8с
+	_ensure_path_overlay()
+	_path_overlay.queue_redraw()
+
+class _PathDotsOverlay extends Node2D:
+	var game_ref
+	var _t: float = 0.0
+	func _init(g) -> void:
+		game_ref = g
+	func _process(delta: float) -> void:
+		_t += delta
+		# Перерисовываем часто чтобы точка бежала по линии + скрывали когда игрок дошёл.
+		var should_show: bool = game_ref._path_points.size() > 0 and Time.get_ticks_msec() < game_ref._path_visible_until_ms
+		if should_show and game_ref.me:
+			# Автоскрытие когда игрок близко к цели.
+			if game_ref.me.position.distance_to(game_ref._path_target) < 12.0:
+				game_ref._path_points = PackedVector2Array()
+				queue_redraw()
+			else:
+				queue_redraw()
+		elif visible:
+			queue_redraw()
+	func _draw() -> void:
+		var pts: PackedVector2Array = game_ref._path_points
+		if pts.size() == 0 or Time.get_ticks_msec() >= game_ref._path_visible_until_ms:
+			return
+		# Точка старта A — позиция игрока сейчас; конец B — последний waypoint.
+		var start: Vector2 = game_ref.me.position if game_ref.me else pts[0]
+		var dot_col := Color(1.0, 0.9, 0.3, 0.85)
+		var line_col := Color(1.0, 0.9, 0.3, 0.35)
+		# «Анимированная» точка: циклический сдвиг фазы.
+		var phase: float = fmod(_t * 40.0, 16.0)
+		# Все сегменты.
+		var prev: Vector2 = start
+		for i in range(pts.size()):
+			var p: Vector2 = pts[i]
+			draw_line(prev, p, line_col, 1.5)
+			# Бегущие точки вдоль сегмента.
+			var seg: Vector2 = p - prev
+			var seg_len: float = seg.length()
+			if seg_len > 0.1:
+				var dir: Vector2 = seg / seg_len
+				var d: float = phase
+				while d < seg_len:
+					draw_circle(prev + dir * d, 3.0, dot_col)
+					d += 16.0
+			prev = p
+		# Метка B — кольцо в конце.
+		draw_arc(pts[pts.size() - 1], 8.0, 0, TAU, 20, Color(1, 0.95, 0.4, 1.0), 2.0)
+
 func _editor_zoom(factor: float, focus_world: Vector2) -> void:
 	if editor_camera == null: return
 	var old_zoom: Vector2 = editor_camera.zoom
@@ -1121,15 +1187,27 @@ func server_now_ms() -> int:
 	return Session.server_now_ms()
 
 func _send_move_intent(target: Vector2) -> void:
-	# Server-authoritative: клиент сообщает цель, сервер сам шагает.
-	# Throttle: один и тот же target не пересылаем чаще 4 раз/сек;
-	# новую цель шлём только если отличается > 8px от предыдущей.
+	# Server-authoritative: клиент считает A*-путь и шлёт полный массив
+	# waypoints. Сервер сам шагает от одного к другому со скоростью PLAYER_SPEED.
+	# Throttle: одинаковая цель не чаще 4 раз/сек; новая цель — если > 8px.
 	if match_id == "" or Session.socket == null:
 		return
 	var now_ms: int = Time.get_ticks_msec()
 	if last_sent_pos.distance_to(target) < 8.0 and now_ms - _last_intent_ms < 250:
 		return
-	Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT, JSON.stringify({"x": target.x, "y": target.y}))
+	var path: PackedVector2Array = world.find_path(me.position, target)
+	if path.size() == 0:
+		# Путь не найден (цель в стене или вне карты) — шлём одну точку;
+		# сервер сам разрулит (ещё раз проверит walkable и не сдвинет в стену).
+		Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT,
+			JSON.stringify({"x": target.x, "y": target.y}))
+	else:
+		var arr: Array = []
+		for p in path:
+			arr.append({"x": p.x, "y": p.y})
+		Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT,
+			JSON.stringify({"path": arr}))
+		_update_path_dots(path)
 	last_sent_pos = target
 	_last_intent_ms = now_ms
 

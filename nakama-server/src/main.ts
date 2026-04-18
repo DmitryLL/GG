@@ -169,7 +169,8 @@ interface MatchPlayer {
     username: string;
     presence: nkruntime.Presence;
     pos: Vec2;
-    moveTarget: Vec2 | null;  // server-authoritative движение
+    moveTarget: Vec2 | null;  // server-authoritative движение (текущий waypoint)
+    movePath: Vec2[];         // очередь waypoints (A* путь); шагает по одному
     hp: number;
     hpMax: number;
     level: number;
@@ -656,6 +657,7 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             preciseShotReady: false,
             effects: [],
             moveTarget: null,
+            movePath: [],
         };
         player.hpMax = computeHpMax(player);
         player.hp = player.hpMax;
@@ -827,12 +829,30 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             case OP_MOVE_INTENT: {
                 try {
                     if (player.hp <= 0) break;
-                    const body = JSON.parse(nk.binaryToString(msg.data)) as { x?: number; y?: number };
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { x?: number; y?: number; path?: { x: number; y: number }[] };
+                    // Вариант 1: клиент прислал полный путь A* как массив waypoints.
+                    if (Array.isArray(body.path) && body.path.length > 0) {
+                        const path: Vec2[] = [];
+                        // Защита от мусора: не более 200 точек, все в пределах карты.
+                        for (let i = 0; i < body.path.length && i < 200; i++) {
+                            const p = body.path[i];
+                            const px = Number(p.x), py = Number(p.y);
+                            if (!isFinite(px) || !isFinite(py)) continue;
+                            if (px < 0 || px > MAP_WIDTH || py < 0 || py > MAP_HEIGHT) continue;
+                            path.push({ x: px, y: py });
+                        }
+                        if (path.length > 0) {
+                            player.movePath = path;
+                            player.moveTarget = path.shift() || null;
+                        }
+                        break;
+                    }
+                    // Вариант 2: одиночная точка (совместимость).
                     const x = Number(body.x); const y = Number(body.y);
                     if (!isFinite(x) || !isFinite(y)) break;
                     if (x < 0 || x > MAP_WIDTH || y < 0 || y > MAP_HEIGHT) break;
-                    // Target-based: клиент указывает КУДА идти, сервер сам шагает.
                     player.moveTarget = { x, y };
+                    player.movePath = [];
                 } catch (_e) {}
                 break;
             }
@@ -1343,36 +1363,43 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             pl.pos.x = WORLD.playerSpawn.x; pl.pos.y = WORLD.playerSpawn.y;
             pl.hp = pl.hpMax; pl.lastTouchedByMob = {};
             pl.effects = [];
-            pl.moveTarget = null;
+            pl.moveTarget = null; pl.movePath = [];
             pl.dirtyPos = true; markMe(pl);
         }
     }
 
     // --- server-authoritative player movement ---
-    // Клиент шлёт moveTarget, сервер сам шагает к нему со PLAYER_SPEED.
-    // Axis-separated collision — чтобы не залипать в углах тайлов.
+    // Клиент шлёт moveTarget или путь A* (movePath). Сервер шагает от waypoint
+    // к waypoint с PLAYER_SPEED. Axis-separated collision страхует от застревания.
     for (const sk of Object.keys(state.players)) {
         const pl = state.players[sk];
         if (pl.hp <= 0 || !pl.moveTarget) continue;
-        const dx = pl.moveTarget.x - pl.pos.x;
-        const dy = pl.moveTarget.y - pl.pos.y;
-        const distTarget = Math.sqrt(dx * dx + dy * dy);
-        const step = PLAYER_SPEED * TICK_DT;
-        if (distTarget <= step) {
-            if (isWalkableAt(currentTiles(state), pl.moveTarget.x, pl.moveTarget.y)) {
-                pl.pos.x = pl.moveTarget.x;
-                pl.pos.y = pl.moveTarget.y;
+        let stepLeft = PLAYER_SPEED * TICK_DT;
+        // Крутим цикл пока не израсходуем все шаги или не кончится путь —
+        // чтобы на тике можно было перейти через несколько коротких waypoint-ов.
+        while (stepLeft > 0 && pl.moveTarget) {
+            const dx = pl.moveTarget.x - pl.pos.x;
+            const dy = pl.moveTarget.y - pl.pos.y;
+            const distTarget = Math.sqrt(dx * dx + dy * dy);
+            if (distTarget <= stepLeft) {
+                if (isWalkableAt(currentTiles(state), pl.moveTarget.x, pl.moveTarget.y)) {
+                    pl.pos.x = pl.moveTarget.x;
+                    pl.pos.y = pl.moveTarget.y;
+                }
+                stepLeft -= distTarget;
+                // Следующий waypoint или конец.
+                pl.moveTarget = pl.movePath.length > 0 ? (pl.movePath.shift() || null) : null;
+                pl.dirtyPos = true;
+            } else {
+                const dirX = dx / distTarget;
+                const dirY = dy / distTarget;
+                const nx = pl.pos.x + dirX * stepLeft;
+                if (isWalkableAt(currentTiles(state), nx, pl.pos.y)) pl.pos.x = nx;
+                const ny = pl.pos.y + dirY * stepLeft;
+                if (isWalkableAt(currentTiles(state), pl.pos.x, ny)) pl.pos.y = ny;
+                pl.dirtyPos = true;
+                stepLeft = 0;
             }
-            pl.moveTarget = null;
-            pl.dirtyPos = true;
-        } else {
-            const dirX = dx / distTarget;
-            const dirY = dy / distTarget;
-            const nx = pl.pos.x + dirX * step;
-            if (isWalkableAt(currentTiles(state), nx, pl.pos.y)) pl.pos.x = nx;
-            const ny = pl.pos.y + dirY * step;
-            if (isWalkableAt(currentTiles(state), pl.pos.x, ny)) pl.pos.y = ny;
-            pl.dirtyPos = true;
         }
     }
 
@@ -1407,7 +1434,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             } else {
                 // Обычный локальный телепорт внутри зоны.
                 pl.pos.x = tx; pl.pos.y = ty;
-                pl.moveTarget = null;
+                pl.moveTarget = null; pl.movePath = [];
                 pl.dirtyPos = true;
                 markMe(pl);
             }
