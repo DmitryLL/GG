@@ -409,6 +409,7 @@ func _process(delta: float) -> void:
 				if d_pvp > atk_range_pvp:
 					_send_move_intent(pvp_target.position)
 					return
+				_send_stop_move()
 				me.has_target = false
 				me.face_toward(pvp_target.position)
 				if skillbar.cooldowns[queued_skill] <= 0.0:
@@ -418,6 +419,7 @@ func _process(delta: float) -> void:
 				return
 
 			if d_pvp <= atk_range_pvp:
+				_send_stop_move()
 				me.has_target = false
 				me.face_toward(pvp_target.position)
 				if _attack_ready():
@@ -440,6 +442,7 @@ func _process(delta: float) -> void:
 				var d_now: float = me.position.distance_to(queued_ground_pos)
 				var max_cast: float = PLAYER_ATTACK_RANGE - 20.0
 				if d_now <= max_cast:
+					_send_stop_move()
 					me.has_target = false
 					me.face_toward(queued_ground_pos)
 					_send_skill(queued_skill, {"skill": queued_skill + 1, "x": queued_ground_pos.x, "y": queued_ground_pos.y})
@@ -466,6 +469,7 @@ func _process(delta: float) -> void:
 				if q_d > q_range:
 					_send_move_intent(attack_target.position)
 					return
+				_send_stop_move()
 				me.has_target = false
 				me.face_toward(attack_target.position)
 				if skillbar.cooldowns[queued_skill] <= 0.0:
@@ -476,6 +480,7 @@ func _process(delta: float) -> void:
 			if has_bow:
 				var d_bow: float = me.position.distance_to(attack_target.position)
 				if d_bow <= PLAYER_ATTACK_RANGE:
+					_send_stop_move()
 					me.has_target = false
 					me.face_toward(attack_target.position)
 					if _attack_ready():
@@ -487,11 +492,10 @@ func _process(delta: float) -> void:
 			else:
 				# Melee без оружия: бьём если в радиусе PLAYER_MELEE_RANGE от моба.
 				# Сервер принимает атаку при dist <= 36px (см. main.ts: atkRange = 36).
-				# Идём не в «кардинальную точку» (её A*-сетка точно не достигает),
-				# а прямо к мобу — как только окажемся в радиусе, бьём.
 				const MELEE_RANGE := 30.0
 				var d_melee: float = me.position.distance_to(attack_target.position)
 				if d_melee <= MELEE_RANGE:
+					_send_stop_move()
 					me.has_target = false
 					me.face_toward(attack_target.position)
 					if _attack_ready():
@@ -1175,6 +1179,19 @@ var _last_intent_ms: int = 0
 
 func server_now_ms() -> int:
 	return Session.server_now_ms()
+
+func _send_stop_move() -> void:
+	# Обнулить moveTarget/movePath на сервере: сервер получит {x,y} в текущей
+	# позиции игрока → distTarget <= step → moveTarget = null → игрок стоит.
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_MOVE_INTENT,
+		JSON.stringify({"x": me.position.x, "y": me.position.y}))
+	# Сбрасываем throttle-цель, чтобы следующий настоящий клик сразу улетел.
+	last_sent_pos = me.position
+	_last_intent_ms = Time.get_ticks_msec()
+	# Скрываем визуализацию пути.
+	_path_points = PackedVector2Array()
 
 func _send_move_intent(target: Vector2) -> void:
 	# Server-authoritative: клиент считает A*-путь и шлёт полный массив
