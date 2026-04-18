@@ -1,7 +1,7 @@
 {
   "_comment": "Глобальные балансные параметры.",
   "player": {
-    "hpBase": 100,
+    "hpBase": 350,
     "perLevelHpBonus": 10,
     "perLevelDamageBonus": 2,
     "attackDamage": 3,
