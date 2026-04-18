@@ -34,7 +34,7 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0, 0, 0, 0.35)
+color = Color(0, 0, 0, 0.12)
 
 [node name="Card" type="PanelContainer" parent="."]
 layout_mode = 1
