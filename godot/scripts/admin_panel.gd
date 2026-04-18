@@ -81,6 +81,9 @@ var _preset_count: int = 10
 # История версий — контейнер в панели Карта.
 var _history_list_vbox: VBoxContainer
 
+# Оверлей «× выйти из режима редактора» — справа наверху экрана.
+var _edit_exit_btn: Button
+
 signal map_save_requested              # старая: скачать world.tmj в браузер
 signal map_save_server_requested       # новая: записать в Nakama Storage
 signal map_edit_mode_changed(on: bool) # для сетки-оверлея
@@ -132,6 +135,17 @@ func _ready() -> void:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	header.add_child(title)
+
+	# «?» — показать подсказки во всплывающем окне.
+	var help_btn := Button.new()
+	help_btn.text = "?"
+	help_btn.tooltip_text = "Показать подсказки"
+	help_btn.focus_mode = Control.FOCUS_NONE
+	help_btn.custom_minimum_size = Vector2(26, 26)
+	help_btn.add_theme_font_size_override("font_size", 14)
+	help_btn.add_theme_color_override("font_color", Color(0.75, 0.9, 1.0))
+	help_btn.pressed.connect(_show_help_dialog)
+	header.add_child(help_btn)
 
 	var close_btn := Button.new()
 	close_btn.text = "×"
@@ -207,11 +221,7 @@ func _ready() -> void:
 	_edit_toggle_btn.pressed.connect(_toggle_map_edit)
 	map_tab.add_child(_edit_toggle_btn)
 
-	var hint := Label.new()
-	hint.text = "ЛКМ — поставить выбранный тайл\nПКМ — заменить на траву\nAlt+ЛКМ — пипетка  /  WASD — двигать камеру  /  колесо — zoom\n1–6 — кисть  /  G — сетка  /  B — ведро  /  Esc — выйти"
-	hint.add_theme_font_size_override("font_size", 10)
-	hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
-	map_tab.add_child(hint)
+	# Подсказки убраны в диалог по «?» в шапке.
 
 	var brush_row := HBoxContainer.new()
 	brush_row.add_theme_constant_override("separation", 6)
@@ -289,11 +299,6 @@ func _ready() -> void:
 	_bucket_btn.pressed.connect(_toggle_bucket)
 	tools_row.add_child(_bucket_btn)
 
-	var undo_hint := Label.new()
-	undo_hint.text = "Ctrl+Z — отменить  /  Ctrl+Shift+Z — вернуть"
-	undo_hint.add_theme_font_size_override("font_size", 9)
-	undo_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	map_tab.add_child(undo_hint)
 
 	var mob_label := Label.new()
 	mob_label.text = "Мобы (клик → действие):"
@@ -326,13 +331,6 @@ func _ready() -> void:
 		mob_grid.add_child(mbt)
 		_mob_tool_btns.append({"btn": mbt, "id": tid})
 
-	var mob_hint := Label.new()
-	mob_hint.text = "Двигать: 1-й клик — выбрать моба, 2-й — новая позиция. Удалить: клик по мобу."
-	mob_hint.add_theme_font_size_override("font_size", 9)
-	mob_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	mob_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	mob_hint.custom_minimum_size = Vector2(280, 0)
-	map_tab.add_child(mob_hint)
 
 	# Выбор целевой зоны для следующего портала.
 	var zone_row := HBoxContainer.new()
@@ -408,26 +406,12 @@ func _ready() -> void:
 	save_server_btn.pressed.connect(func(): map_save_server_requested.emit())
 	map_tab.add_child(save_server_btn)
 
-	var save_server_hint := Label.new()
-	save_server_hint.text = "Запишет карту в Nakama Storage — все игроки увидят изменения при следующем заходе, правки летят всем онлайн мгновенно."
-	save_server_hint.add_theme_font_size_override("font_size", 9)
-	save_server_hint.add_theme_color_override("font_color", Color(0.7, 0.85, 0.7))
-	save_server_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	save_server_hint.custom_minimum_size = Vector2(280, 0)
-	map_tab.add_child(save_server_hint)
 
 	var save_btn := Button.new()
 	save_btn.text = "⬇ Скачать world.tmj (локально)"
 	save_btn.pressed.connect(func(): map_save_requested.emit())
 	map_tab.add_child(save_btn)
 
-	var save_hint := Label.new()
-	save_hint.text = "Только для бэкапа/коммита в репо"
-	save_hint.add_theme_font_size_override("font_size", 9)
-	save_hint.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	save_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	save_hint.custom_minimum_size = Vector2(280, 0)
-	map_tab.add_child(save_hint)
 
 	log_label = Label.new()
 	log_label.text = ""
@@ -538,9 +522,43 @@ func _toggle_map_edit() -> void:
 	_edit_toggle_btn.text = "Редактировать карту: ВКЛ" if map_edit_mode else "Редактировать карту: ВЫКЛ"
 	if map_edit_mode:
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+		_ensure_edit_exit_button()
+		_edit_exit_btn.visible = true
 	else:
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+		if _edit_exit_btn:
+			_edit_exit_btn.visible = false
 	map_edit_mode_changed.emit(map_edit_mode)
+
+func _ensure_edit_exit_button() -> void:
+	if _edit_exit_btn and is_instance_valid(_edit_exit_btn):
+		return
+	_edit_exit_btn = Button.new()
+	_edit_exit_btn.text = "× выйти из редактора"
+	_edit_exit_btn.tooltip_text = "Выйти из режима редактирования карты"
+	_edit_exit_btn.focus_mode = Control.FOCUS_NONE
+	_edit_exit_btn.anchor_left = 1.0; _edit_exit_btn.anchor_right = 1.0
+	_edit_exit_btn.anchor_top = 0.0; _edit_exit_btn.anchor_bottom = 0.0
+	_edit_exit_btn.offset_right = -10
+	_edit_exit_btn.offset_left = -210
+	_edit_exit_btn.offset_top = 10
+	_edit_exit_btn.offset_bottom = 44
+	_edit_exit_btn.add_theme_font_size_override("font_size", 14)
+	_edit_exit_btn.add_theme_color_override("font_color", Color(1, 0.85, 0.6))
+	var sbn := StyleBoxFlat.new()
+	sbn.bg_color = Color(0.20, 0.08, 0.08, 0.95)
+	sbn.border_color = Color(0.90, 0.50, 0.30, 1)
+	sbn.set_border_width_all(2)
+	sbn.set_corner_radius_all(6)
+	sbn.set_content_margin_all(6)
+	var sbh := sbn.duplicate() as StyleBoxFlat
+	sbh.bg_color = Color(0.32, 0.14, 0.14, 1)
+	sbh.border_color = Color(1, 0.75, 0.35, 1)
+	_edit_exit_btn.add_theme_stylebox_override("normal", sbn)
+	_edit_exit_btn.add_theme_stylebox_override("hover", sbh)
+	_edit_exit_btn.add_theme_stylebox_override("pressed", sbh)
+	_edit_exit_btn.pressed.connect(exit_edit_mode)
+	root_ctrl.add_child(_edit_exit_btn)
 
 func _select_brush(tile_id: int, btn: Button) -> void:
 	map_edit_brush = tile_id
@@ -611,6 +629,37 @@ func show_history_list(items: Array) -> void:
 		b.text = "↶ Откатить"
 		b.pressed.connect(func(): map_rollback_requested.emit(ts))
 		row.add_child(b)
+
+func _show_help_dialog() -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = "Подсказки редактора карт"
+	dlg.dialog_text = """ЛКМ — поставить выбранный тайл в клетку
+ПКМ — заменить клетку на траву
+Shift+ЛКМ drag — прямоугольная заливка
+Alt+ЛКМ — пипетка (взять тайл под курсором в кисть)
+
+WASD — двигать камеру
+Колесо мыши — zoom (приближение/отдаление)
+
+Хоткеи:
+  1–6  выбор кисти (Трава/Песок/Вода/Дерево/Камень/Тропинка)
+  G    сетка вкл/выкл
+  B    ведро (flood fill)
+  Ctrl+Z / Ctrl+Shift+Z  отменить / вернуть
+  Esc  выход из режима редактора
+
+Мобы:
+  «Двигать» — 1-й клик: выбрать моба, 2-й клик: новая позиция
+  «Удалить моба» — клик по мобу
+
+Сохранение:
+  💾 Сохранить на сервере — запишет в Nakama Storage, все увидят при следующем заходе.
+     Правки летят всем онлайн мгновенно даже без сохранения.
+  ⬇ Скачать world.tmj — локальный бэкап для коммита в репо."""
+	add_child(dlg)
+	dlg.popup_centered(Vector2i(560, 440))
+	dlg.confirmed.connect(func(): dlg.queue_free())
+	dlg.canceled.connect(func(): dlg.queue_free())
 
 func _make_brush_preview_texture(tile_id: int) -> AtlasTexture:
 	# Берём 32×32 регион из tiles.png — такой же как рисуется в мире.
