@@ -1169,6 +1169,8 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
     const nowT = now();
     const critActive = p.critBuffUntil && nowT < p.critBuffUntil;
     const pierceActive = p.pierceBuffUntil && nowT < p.pierceBuffUntil;
+    const sprintActive = p.sprintUntil && nowT < p.sprintUntil;
+    const effSpeed = sprintActive ? PLAYER_SPEED + 50 : PLAYER_SPEED;
     const payload = {
         hp: p.hp, hpMax: p.hpMax,
         level: p.level, xp: p.xp, xpNeed: XP_FOR_LEVEL(p.level),
@@ -1186,6 +1188,7 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         critChance: critActive ? Math.round((p.critBonus || 0) * 100) : 0,
         critPower: 100,  // базовый крит = ×2 урон, то есть +100%
         penetration: pierceActive ? Math.round((p.pierceBonus || 0) * 100) : 0,
+        moveSpeed: effSpeed,  // px/sec, с учётом активного sprint
         t: nowT,
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
