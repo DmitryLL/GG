@@ -458,7 +458,7 @@ func _process(delta: float) -> void:
 				me.has_target = false
 				me.face_toward(pvp_target.position)
 				if skillbar.cooldowns[queued_skill] <= 0.0:
-					_send_skill(queued_skill, {"skill": queued_skill + 1, "sid": pvp_target_sid})
+					_send_skill(queued_skill, {"skill": _server_id_for_slot(queued_skill), "sid": pvp_target_sid})
 					_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 					queued_skill = -1
 				return
@@ -490,7 +490,7 @@ func _process(delta: float) -> void:
 					_send_stop_move()
 					me.has_target = false
 					me.face_toward(queued_ground_pos)
-					_send_skill(queued_skill, {"skill": queued_skill + 1, "x": queued_ground_pos.x, "y": queued_ground_pos.y})
+					_send_skill(queued_skill, {"skill": _server_id_for_slot(queued_skill), "x": queued_ground_pos.x, "y": queued_ground_pos.y})
 					_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 					queued_skill = -1
 					return
@@ -520,7 +520,7 @@ func _process(delta: float) -> void:
 				me.has_target = false
 				me.face_toward(attack_target.position)
 				if skillbar.cooldowns[queued_skill] <= 0.0:
-					_send_skill(queued_skill, {"skill": queued_skill + 1, "mobId": attack_target.mob_id})
+					_send_skill(queued_skill, {"skill": _server_id_for_slot(queued_skill), "mobId": attack_target.mob_id})
 					_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 					queued_skill = -1
 				return
@@ -1169,10 +1169,14 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_SKILL_FX:
 			_handle_skill_fx(body)
 		OP_SKILL_REJECT:
-			# Сервер отверг скилл — сбрасываем локальный кулдаун
-			var rej_skill := int(body.get("skill", 0)) - 1
-			if rej_skill >= 0 and rej_skill < skillbar.cooldowns.size():
-				skillbar.cooldowns[rej_skill] = 0.0
+			# Сервер отверг скилл — сбрасываем локальный кулдаун слота,
+			# в котором стоит этот скилл. Server.skill = server_id.
+			var rej_sid := int(body.get("skill", 0))
+			var rej_def := SkillRegistry.by_server_id(rej_sid)
+			if rej_def:
+				var slot_i := SkillRegistry.all().find(rej_def)
+				if slot_i >= 0 and slot_i < skillbar.cooldowns.size():
+					skillbar.cooldowns[slot_i] = 0.0
 		OP_HIT_FLASH:
 			var mid: String = String(body.get("mobId", ""))
 			var m: Mob = mobs.get(mid)
@@ -1342,11 +1346,12 @@ func _apply_mobs(body: Dictionary) -> void:
 			ms.setup(mid, kind)
 			entities.add_child(ms)
 			mobs[mid] = ms
-		ms.position = Vector2(float(m.get("x", 0)), float(m.get("y", 0)))
+		ms.set_server_pos(Vector2(float(m.get("x", 0)), float(m.get("y", 0))))
 		ms.set_hp(float(m.get("hp", 0)), float(m.get("hpMax", 30)))
 		ms.set_alive(String(m.get("st", "alive")) == "alive")
 		ms.set_loot(m.get("loot", []))
 		ms.set_debuff(m.get("debuff"), int(m.get("now", 0)))
+		ms.set_buffs(m.get("buffs", []))
 		# Если открыто окно лута именно этого моба — обновим список.
 		if loot_win and loot_win.is_open():
 			loot_win.update_loot(mid, ms.loot)
@@ -1872,10 +1877,10 @@ func _has_valid_target() -> bool:
 
 func _cast_instant(index: int) -> void:
 	# Сам skill-handler на сервере очищает moveTarget/movePath при телепорте
-	# (см. skill_3_dodge.ts). Клиенту НЕ нужно делать stop_move — иначе
+	# (см. skill_escape.ts). Клиенту НЕ нужно делать stop_move — иначе
 	# сервер получит moveTarget=текущая позиция ДО Dodge и после телепорта
 	# потянет игрока назад.
-	var payload := {"skill": index + 1}
+	var payload := {"skill": _server_id_for_slot(index)}
 	var fdir: Vector2 = me.facing_vector()
 	payload["dx"] = fdir.x
 	payload["dy"] = fdir.y
@@ -1891,6 +1896,13 @@ func _send_skill(index: int, payload: Dictionary) -> void:
 	var sk_def := SkillRegistry.by_index(index)
 	if sk_def:
 		sk_def.on_send(self)
+
+# Server id скилла в данном слоте hotbar. Пока hotbar = SkillRegistry.all()
+# 1:1, но когда игрок сможет раскладывать скиллы по слотам — эта
+# функция станет точкой маппинга.
+func _server_id_for_slot(slot_index: int) -> int:
+	var d := SkillRegistry.by_index(slot_index)
+	return d.server_id if d else (slot_index + 1)
 
 func _spawn_damage_label(pos: Vector2, dmg: int, is_crit: bool = false, is_poison: bool = false, is_ghost: bool = false) -> void:
 	var lbl := Label.new()

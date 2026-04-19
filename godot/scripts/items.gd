@@ -12,21 +12,21 @@ const DEFS := {
 	"health_potion":   { "name": "Зелье лечения",      "icon": 5, "kind": "consumable", "heal": 50 },
 	"great_potion":    { "name": "Большое зелье",      "icon": 5, "kind": "consumable", "heal": 120 },
 
-	"wood_sword":      { "name": "Деревянный меч",     "icon": 1, "slot": "weapon", "damage": 4 },
-	"bronze_sword":    { "name": "Бронзовый меч",      "icon": 1, "slot": "weapon", "damage": 7 },
-	"iron_sword":      { "name": "Железный меч",       "icon": 2, "slot": "weapon", "damage": 10 },
-	"steel_sword":     { "name": "Стальной меч",       "icon": 2, "slot": "weapon", "damage": 15 },
-	"golden_sword":    { "name": "Золотой меч",        "icon": 2, "slot": "weapon", "damage": 22 },
+	"wood_sword":      { "name": "Деревянный меч",     "icon": 1, "slot": "weapon", "physDmg": 4 },
+	"bronze_sword":    { "name": "Бронзовый меч",      "icon": 1, "slot": "weapon", "physDmg": 7 },
+	"iron_sword":      { "name": "Железный меч",       "icon": 2, "slot": "weapon", "physDmg": 10 },
+	"steel_sword":     { "name": "Стальной меч",       "icon": 2, "slot": "weapon", "physDmg": 15 },
+	"golden_sword":    { "name": "Золотой меч",        "icon": 2, "slot": "weapon", "physDmg": 22 },
 
-	"wood_bow":        { "name": "Деревянный лук",    "icon": 6, "slot": "weapon", "damage": 6 },
-	"iron_bow":        { "name": "Железный лук",       "icon": 6, "slot": "weapon", "damage": 12 },
-	"golden_bow":      { "name": "Золотой лук",        "icon": 6, "slot": "weapon", "damage": 20 },
+	"wood_bow":        { "name": "Деревянный лук",    "icon": 6, "slot": "weapon", "physDmg": 6 },
+	"iron_bow":        { "name": "Железный лук",       "icon": 6, "slot": "weapon", "physDmg": 12 },
+	"golden_bow":      { "name": "Золотой лук",        "icon": 6, "slot": "weapon", "physDmg": 20 },
 
-	"apprentice_tome": { "name": "Книга подмастерья",  "icon": 7, "slot": "weapon", "damage": 5 },
-	"mystic_tome":     { "name": "Мистическая книга",  "icon": 7, "slot": "weapon", "damage": 9 },
-	"arcane_tome":     { "name": "Тайная книга",       "icon": 7, "slot": "weapon", "damage": 14 },
-	"eldritch_tome":   { "name": "Древняя книга",      "icon": 7, "slot": "weapon", "damage": 20 },
-	"celestial_tome":  { "name": "Небесная книга",     "icon": 7, "slot": "weapon", "damage": 28 },
+	"apprentice_tome": { "name": "Книга подмастерья",  "icon": 7, "slot": "weapon", "magDmg": 5 },
+	"mystic_tome":     { "name": "Мистическая книга",  "icon": 7, "slot": "weapon", "magDmg": 9 },
+	"arcane_tome":     { "name": "Тайная книга",       "icon": 7, "slot": "weapon", "magDmg": 14 },
+	"eldritch_tome":   { "name": "Древняя книга",      "icon": 7, "slot": "weapon", "magDmg": 20 },
+	"celestial_tome":  { "name": "Небесная книга",     "icon": 7, "slot": "weapon", "magDmg": 28 },
 
 	"cloth_armor":     { "name": "Тканая броня",       "icon": 3, "slot": "body", "hp": 12 },
 	"leather_armor":   { "name": "Кожаная броня",      "icon": 3, "slot": "body", "hp": 22 },
@@ -74,7 +74,11 @@ static func def(id: String) -> Dictionary:
 static func stat_lines(id: String) -> Array:
 	var def_d: Dictionary = DEFS.get(id, {})
 	var out: Array = []
-	if def_d.has("damage"):
+	if def_d.has("physDmg"):
+		out.append({ "text": "Физ. урон +%d" % int(def_d["physDmg"]), "color": Color(0.98, 0.55, 0.40) })
+	if def_d.has("magDmg"):
+		out.append({ "text": "Маг. урон +%d" % int(def_d["magDmg"]), "color": Color(0.65, 0.55, 1.00) })
+	if def_d.has("damage"):  # legacy generic: украшения
 		out.append({ "text": "Урон +%d" % int(def_d["damage"]), "color": Color(0.98, 0.55, 0.40) })
 	if def_d.has("hp"):
 		out.append({ "text": "Здоровье +%d" % int(def_d["hp"]), "color": Color(0.55, 0.85, 0.45) })
@@ -86,6 +90,10 @@ static func stat_lines(id: String) -> Array:
 static func stat_inline(id: String) -> String:
 	var def_d: Dictionary = DEFS.get(id, {})
 	var parts: Array = []
+	if def_d.has("physDmg"):
+		parts.append("+%d физ." % int(def_d["physDmg"]))
+	if def_d.has("magDmg"):
+		parts.append("+%d маг." % int(def_d["magDmg"]))
 	if def_d.has("damage"):
 		parts.append("+%d урон" % int(def_d["damage"]))
 	if def_d.has("hp"):

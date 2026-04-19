@@ -206,6 +206,21 @@ func update_target(target) -> void:
 		if target.has_method("poison_active") and target.poison_active():
 			var remain_ms: int = target.poison_remaining_ms()
 			target_effects.add_child(_make_target_effect_icon("poison", remain_ms))
+		if target.has_method("stun_active") and target.stun_active():
+			var stun_ms: int = target.stun_remaining_ms()
+			target_effects.add_child(_make_target_effect_icon("stun", stun_ms))
+		if target.has_method("fire_active") and target.fire_active():
+			var fire_ms: int = target.fire_remaining_ms()
+			target_effects.add_child(_make_target_effect_icon("fire", fire_ms))
+		# Положительные баффы на мобе (haste/regen/shield и т.п.).
+		if "buffs" in target:
+			for b in target.buffs:
+				var btype := String(b.get("type", ""))
+				if btype == "":
+					continue
+				var end_at := int(b.get("endAt", 0))
+				var rem := max(0, end_at - int(Time.get_unix_time_from_system() * 1000.0))
+				target_effects.add_child(_make_target_effect_icon("buff_" + btype, rem))
 	elif "display_name" in target:
 		# Player (PvP)
 		target_name.text = target.display_name
@@ -220,7 +235,13 @@ func _clear_target_effects() -> void:
 		c.queue_free()
 
 func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
-	var col := Color(0.95, 0.30, 0.28, 1.0)  # debuff red
+	var col := Color(0.95, 0.30, 0.28, 1.0)  # debuff red по умолчанию
+	if eff_type == "stun":
+		col = Color(1.0, 0.95, 0.4, 1.0)  # жёлтый для стана
+	elif eff_type == "fire":
+		col = Color(1.0, 0.5, 0.15, 1.0)  # оранжевый для огня
+	elif eff_type.begins_with("buff_"):
+		col = Color(0.45, 0.9, 0.5, 1.0)  # зелёный для положительных
 	var wrap := Panel.new()
 	wrap.custom_minimum_size = Vector2(20, 26)
 	var sb := StyleBoxFlat.new()
@@ -229,26 +250,52 @@ func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(3)
 	wrap.add_theme_stylebox_override("panel", sb)
-	var icon := TextureRect.new()
-	icon.texture = POISON_ICON if eff_type == "poison" else null
-	icon.custom_minimum_size = Vector2(16, 16)
-	icon.position = Vector2(2, 1)
-	icon.size = Vector2(16, 16)
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	wrap.add_child(icon)
-	var timer_lbl := Label.new()
-	timer_lbl.text = ("%.1fс" % (remain_ms / 1000.0)) if remain_ms < 10000 else ("%dс" % int(remain_ms / 1000))
-	timer_lbl.add_theme_font_size_override("font_size", 7)
-	timer_lbl.add_theme_color_override("font_color", col)
-	timer_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	timer_lbl.add_theme_constant_override("outline_size", 2)
-	timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	timer_lbl.position = Vector2(0, 17)
-	timer_lbl.size = Vector2(20, 9)
-	timer_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	wrap.add_child(timer_lbl)
+	var sym_text := ""
+	if eff_type == "stun":
+		sym_text = "✦"
+	elif eff_type == "fire":
+		sym_text = "✶"
+	elif eff_type == "buff_haste":
+		sym_text = "»"  # стрелка — скорость
+	elif eff_type == "buff_regen":
+		sym_text = "+"  # плюс — регенерация
+	elif eff_type == "buff_shield":
+		sym_text = "▲"  # щит
+	elif eff_type.begins_with("buff_"):
+		sym_text = "★"  # дефолтная звезда для неизвестных баффов
+	if sym_text != "":
+		var sym := Label.new()
+		sym.text = sym_text
+		sym.add_theme_font_size_override("font_size", 16)
+		sym.add_theme_color_override("font_color", col)
+		sym.position = Vector2(3, -3)
+		sym.size = Vector2(16, 20)
+		sym.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sym.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		wrap.add_child(sym)
+	else:
+		var icon := TextureRect.new()
+		icon.texture = POISON_ICON if eff_type == "poison" else null
+		icon.custom_minimum_size = Vector2(16, 16)
+		icon.position = Vector2(2, 1)
+		icon.size = Vector2(16, 16)
+		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		wrap.add_child(icon)
+	# Таймер: скрываем если осталось больше минуты (фактически бесконечный)
+	if remain_ms > 0 and remain_ms <= 60_000:
+		var timer_lbl := Label.new()
+		timer_lbl.text = ("%.1fс" % (remain_ms / 1000.0)) if remain_ms < 10000 else ("%dс" % int(remain_ms / 1000))
+		timer_lbl.add_theme_font_size_override("font_size", 7)
+		timer_lbl.add_theme_color_override("font_color", col)
+		timer_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+		timer_lbl.add_theme_constant_override("outline_size", 2)
+		timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		timer_lbl.position = Vector2(0, 17)
+		timer_lbl.size = Vector2(20, 9)
+		timer_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		wrap.add_child(timer_lbl)
 	return wrap
 
 func set_player_name(n: String) -> void:

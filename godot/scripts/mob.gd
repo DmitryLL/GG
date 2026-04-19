@@ -22,12 +22,16 @@ var hp_fill: ColorRect
 var glow: Sprite2D
 var _poison_end_ms: int = 0
 var _server_offset_ms: int = 0
+var buffs: Array = []  # [{type, endAt}] — положительные эффекты
 var _anim_t := 0.0
 var _flash_t := 0.0
 var _glow_t := 0.0
 var _highlight := false
 var _highlight_ring: Sprite2D
 var _stun_end_ms: int = 0
+var _target_pos: Vector2 = Vector2.ZERO
+var _has_target_pos: bool = false
+const POS_LERP_SPEED := 500.0  # px/sec, «догоняющая» скорость интерполяции
 var _stun_label: Label
 var _fire_end_ms: int = 0
 var _fire_label: Label
@@ -177,6 +181,17 @@ func set_debuff(d, server_now_ms: int) -> void:
 	if server_now_ms > 0:
 		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
 
+# Серверная цель позиции. Клиент сам плавно её догоняет — даёт
+# плавный knockback, плавное патрулирование и т.п.
+func set_server_pos(p: Vector2) -> void:
+	# При большом скачке (респаун или телепорт) — просто ставим позицию.
+	if not _has_target_pos or position.distance_to(p) > 180.0:
+		position = p
+		_target_pos = p
+		_has_target_pos = true
+		return
+	_target_pos = p
+
 func apply_stun(duration_ms: int) -> void:
 	# Используем локальный таймер (не зависим от server_offset): сервер
 	# шлёт продолжительность, клиент сам меряет от текущего момента.
@@ -202,6 +217,11 @@ func stun_active() -> bool:
 		return false
 	return _stun_end_ms > Time.get_ticks_msec()
 
+func stun_remaining_ms() -> int:
+	if _stun_end_ms <= 0:
+		return 0
+	return max(0, _stun_end_ms - Time.get_ticks_msec())
+
 func apply_fire(duration_ms: int) -> void:
 	_fire_end_ms = Time.get_ticks_msec() + maxi(500, duration_ms)
 	_show_fire_icon()
@@ -224,6 +244,14 @@ func fire_active() -> bool:
 	if _fire_end_ms <= 0:
 		return false
 	return _fire_end_ms > Time.get_ticks_msec()
+
+func fire_remaining_ms() -> int:
+	if _fire_end_ms <= 0:
+		return 0
+	return max(0, _fire_end_ms - Time.get_ticks_msec())
+
+func set_buffs(arr: Array) -> void:
+	buffs = arr if arr else []
 
 # Краткая вспышка диспелла — голубой flash поверх спрайта.
 func flash_dispel() -> void:
@@ -254,6 +282,16 @@ func flash() -> void:
 func _process(delta: float) -> void:
 	_glow_t += delta
 	_update_debuff_visible()
+	# Плавная интерполяция к серверной цели.
+	if _has_target_pos:
+		var to := _target_pos - position
+		var d := to.length()
+		if d > 0.5:
+			var step := POS_LERP_SPEED * delta
+			if d <= step:
+				position = _target_pos
+			else:
+				position += to.normalized() * step
 	# Снять stun-иконку когда оглушение истекло.
 	if _stun_end_ms > 0 and not stun_active():
 		_stun_end_ms = 0

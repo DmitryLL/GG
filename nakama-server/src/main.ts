@@ -261,6 +261,17 @@ interface MatchMob {
     nextFireTickAt?: number; // ms timestamp следующего тика огня
     fireDmg?: number;        // урон за тик огня
     armorDebuffUntil?: number; // Mage С2-1п: пока t<armorDebuffUntil у моба дебафф брони
+    knockbackEndAt?: number;   // ms timestamp конца knockback
+    knockbackVx?: number;      // px/sec по X
+    knockbackVy?: number;      // px/sec по Y
+    buffs?: MobBuff[];         // положительные эффекты (для dispel-тестов)
+}
+
+// Положительный бафф на мобе. Пока — пустышки (не влияют на бой),
+// нужны для тестирования снятия Дезой-dispel и отображения в UI.
+interface MobBuff {
+    type: string;   // "haste" | "regen" | "shield" | ...
+    endAt: number;  // ms timestamp окончания
 }
 
 // Универсальная сущность карты: портал, сундук, спавн-зона, (позже NPC).
@@ -306,15 +317,37 @@ function computeHpMax(p: MatchPlayer): number {
     }
     return total;
 }
-function computeDamage(p: MatchPlayer): number {
+// Два типа урона: физический и магический. Оружие даёт свой тип
+// (`physDmg` у лука/меча, `magDmg` у книги), украшения с общим `damage`
+// суммируются в оба типа.
+function computePhysDmg(p: MatchPlayer): number {
     let total = playerBaseDamage(p.level);
     for (const slot of EQUIP_SLOTS) {
         const id = p.equipment[slot];
         if (!id) continue;
-        const def = ITEMS[id];
-        if (def && def.damage) total += def.damage;
+        const def = ITEMS[id] as any;
+        if (!def) continue;
+        if (def.physDmg) total += def.physDmg;
+        if (def.damage) total += def.damage;
     }
     return total;
+}
+function computeMagDmg(p: MatchPlayer): number {
+    let total = 0;
+    for (const slot of EQUIP_SLOTS) {
+        const id = p.equipment[slot];
+        if (!id) continue;
+        const def = ITEMS[id] as any;
+        if (!def) continue;
+        if (def.magDmg) total += def.magDmg;
+        if (def.damage) total += def.damage;
+    }
+    return total;
+}
+// Legacy: текущий класс определяет какой тип возвращается как базовый.
+function computeDamage(p: MatchPlayer): number {
+    if (p.charClass === "mage") return computeMagDmg(p);
+    return computePhysDmg(p);
 }
 function markMe(p: MatchPlayer): void { p.dirtyMe = true; }
 
@@ -355,13 +388,24 @@ function killMob(mob: MatchMob, player: MatchPlayer, t: number): void {
 function spawnMob(id: string, spec: MobSpawn): MatchMob {
     const type = MOB_TYPES[spec.type] ? spec.type : "slime";
     const def = MOB_TYPES[type];
-    return {
+    const mob: MatchMob = {
         id: id, type: type,
         home: { x: spec.x, y: spec.y },
         pos: { x: spec.x, y: spec.y },
         hp: def.hpMax, hpMax: def.hpMax,
         state: "alive", respawnAt: 0, target: null, loot: rollMobLoot(type), dirty: true,
     };
+    // Манекены: 3 разных положительных эффекта-пустышки для теста
+    // Дезы-dispel. Длительность большая (24ч) — не истекают в бою.
+    if (type === "dummy") {
+        const farFuture = Date.now() + 86_400_000;
+        mob.buffs = [
+            { type: "haste",  endAt: farFuture },
+            { type: "regen",  endAt: farFuture },
+            { type: "shield", endAt: farFuture },
+        ];
+    }
+    return mob;
 }
 
 function rollMobLoot(mobType: string): InvEntry[] {
@@ -1056,6 +1100,7 @@ function mobSnap(m: MatchMob) {
         st: m.state,
         loot: m.loot,
         debuff: m.debuff || null,
+        buffs: m.buffs || [],
         now: Date.now(),
     };
 }
@@ -1095,6 +1140,8 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         skillCd: p.skillCd || {},
         charClass: p.charClass,
         name: p.username,  // имя активного персонажа (не email аккаунта)
+        physDmg: computePhysDmg(p),
+        magDmg: computeMagDmg(p),
         t: now(),
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
@@ -1938,6 +1985,20 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             mob.nextFireTickAt = undefined;
             mob.fireDmg = undefined;
         }
+        // Knockback: двигаем моба по velocity, обычный AI пропускаем.
+        if (mob.knockbackEndAt && t < mob.knockbackEndAt) {
+            const nx = mob.pos.x + (mob.knockbackVx || 0) * TICK_DT;
+            const ny = mob.pos.y + (mob.knockbackVy || 0) * TICK_DT;
+            if (isWalkableAt(currentTiles(state), nx, mob.pos.y)) mob.pos.x = nx;
+            if (isWalkableAt(currentTiles(state), mob.pos.x, ny)) mob.pos.y = ny;
+            mob.dirty = true;
+            continue;
+        }
+        if (mob.knockbackEndAt && t >= mob.knockbackEndAt) {
+            mob.knockbackEndAt = undefined;
+            mob.knockbackVx = undefined;
+            mob.knockbackVy = undefined;
+        }
         // Stun: оглушённый моб не двигается и не бьёт. Poison/fire DoT выше
         // продолжают тикать — стан не отменяет эти эффекты.
         if (mob.stunUntil && t < mob.stunUntil) {
@@ -2024,7 +2085,7 @@ function matchTerminate(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: 
     return { state: state };
 }
 
-function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, tick: number, state: WorldState, data: string): { state: WorldState; data?: string } | null {
+function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, tick: number, state: WorldState, data: string): { state: WorldState; data?: string } | null {
     if (data === "snapshot") {
         const snapPlayers: any[] = [];
         const tNow = Date.now();
@@ -2059,6 +2120,23 @@ function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nk
     if (data && data.indexOf("admin:") === 0) {
         const result = adminApply(state, data.substring("admin:".length));
         return { state: state, data: JSON.stringify(result) };
+    }
+    // Перезагрузка мод активного персонажа, когда клиент их поменял
+    // через RPC (storage обновился, но live-MatchPlayer — нет).
+    if (data && data.indexOf("reload_mods:") === 0) {
+        const rest = data.substring("reload_mods:".length);
+        let body: any;
+        try { body = JSON.parse(rest); } catch { return { state: state }; }
+        const uid = String(body.userId || "");
+        if (!uid) return { state: state };
+        for (const sk of Object.keys(state.players)) {
+            const p = state.players[sk];
+            if (p.userId !== uid) continue;
+            if (body.archerMods) p.archerMods = body.archerMods;
+            if (body.mageMods) p.mageMods = body.mageMods;
+            markMe(p);
+        }
+        return { state: state, data: "ok" };
     }
     return { state: state };
 }
@@ -2198,6 +2276,22 @@ function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
 // ===== Archer mods =====
 // Клиентские RPC: получить/записать выбор мод скиллов лучника.
 
+// Уведомить все активные матчи, что у игрока userId обновился набор
+// мод. Нужно чтобы живой MatchPlayer.archerMods/mageMods совпал со
+// storage без перелогина. Шлёт matchSignal во все зоны.
+function notifyModsReload(nk: nkruntime.Nakama, userId: string, mods: { archerMods?: { [k: string]: string }; mageMods?: { [k: string]: string } }): void {
+    try {
+        const payload = "reload_mods:" + JSON.stringify({ userId, ...mods });
+        // Пытаемся во все зоны — активный матч может быть в любой.
+        for (const zone of KNOWN_ZONES) {
+            const matches = nk.matchList(2, true, MATCH_LABEL_PREFIX + zone);
+            for (const m of matches) {
+                try { nk.matchSignal(m.matchId, payload); } catch (_e) {}
+            }
+        }
+    } catch (_e) { /* swallow */ }
+}
+
 // Моды теперь живут внутри активного персонажа. Старые коллекции
 // gg_archer_mods/gg_mage_mods остаются как fallback для аккаунтов, у
 // которых ещё нет персонажей.
@@ -2227,6 +2321,7 @@ function rpcArcherModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk:
     } else {
         saveArcherMods(nk, ctx.userId, sanity.cleaned);  // legacy fallback
     }
+    notifyModsReload(nk, ctx.userId, { archerMods: sanity.cleaned });
     return JSON.stringify({ ok: true, selected: sanity.cleaned, cost: sanity.cost, budget: ARCHER_POINTS_BUDGET });
 }
 
@@ -2255,6 +2350,7 @@ function rpcMageModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
     } else {
         saveMageMods(nk, ctx.userId, sanity.cleaned);
     }
+    notifyModsReload(nk, ctx.userId, { mageMods: sanity.cleaned });
     return JSON.stringify({ ok: true, selected: sanity.cleaned, cost: sanity.cost, budget: MAGE_POINTS_BUDGET });
 }
 
