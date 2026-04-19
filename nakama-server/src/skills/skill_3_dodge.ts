@@ -1,9 +1,13 @@
-// Скилл 3: Отскок — телепорт от цели + 0.5s неуязвимости + 3s atk speed x2.
+// Скилл 3: Эскейп — телепорт вперёд на 3 шага + 0.5s неуязвимости + 3s atk speed x2.
+// Модификации:
+//   "empowered_attack" (1п) — следующая базовая атака +100% урона (окно 5 сек).
+//   "sprint"           (2п) — на 2 сек скорость +25% (visual feedback через поле sprintUntil).
 registerSkill(3, {
     requiresBow: false,
     cooldownMs: 8000,
     handler: function (ctx: SkillContext): void {
         const { player, body, t, state, dispatcher } = ctx;
+        const mod = player.archerMods ? player.archerMods["3"] : "";
         // Направление: сначала dx/dy от клиента (взгляд), иначе вниз
         let dx = Number(body.dx) || 0;
         let dy = Number(body.dy) || 0;
@@ -44,9 +48,18 @@ registerSkill(3, {
         }
         player.invulnUntil = t + 500;
         player.atkSpeedBoostUntil = t + 3000;
+        // Обработка мод.
+        if (mod === "empowered_attack") {
+            player.empoweredAttackUntil = t + 5000;
+        }
+        if (mod === "sprint") {
+            player.sprintUntil = t + 2000;
+        }
         dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
             kind: "dodge", sid: player.sessionId,
             fx: player.pos.x, fy: player.pos.y,
+            empowered: mod === "empowered_attack",
+            sprint: mod === "sprint",
         }));
         player.skillCd[3] = t + 8000;
     },

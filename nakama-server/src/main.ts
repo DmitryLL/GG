@@ -188,6 +188,8 @@ interface MatchPlayer {
     preciseShotReady: boolean;
     effects: PlayerEffect[];
     archerMods: { [skillId: string]: string };  // выбранные модификации скиллов лучника
+    empoweredAttackUntil?: number;  // мода эскейпа "empowered_attack": следующая атака ×2 до этого ms
+    sprintUntil?: number;           // мода эскейпа "sprint": ускорение +25 до этого ms
 }
 
 const PLAYER_SPEED = 100; // px/sec — должна совпадать с Godot Player.SPEED
@@ -976,7 +978,11 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         if (dist(foe.pos, player.pos) > atkRange) break;
                         if (t < foe.invulnUntil) break;
                         player.lastAttackAt = t;
-                        const dmgP = computeDamage(player);
+                        let dmgP = computeDamage(player);
+                        if (player.empoweredAttackUntil && t < player.empoweredAttackUntil) {
+                            dmgP = dmgP * 2;
+                            player.empoweredAttackUntil = 0;  // один-шот
+                        }
                         foe.hp -= dmgP;
                         if (foe.hp < 0) foe.hp = 0;
                         foe.dirtyPos = true;
@@ -1002,7 +1008,11 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     if (!mob || mob.state !== "alive") break;
                     if (dist(mob.pos, player.pos) > atkRange) break;
                     player.lastAttackAt = t;
-                    const dmg = computeDamage(player);
+                    let dmg = computeDamage(player);
+                    if (player.empoweredAttackUntil && t < player.empoweredAttackUntil) {
+                        dmg = dmg * 2;
+                        player.empoweredAttackUntil = 0;  // один-шот
+                    }
                     mob.hp -= dmg;
                     mob.dirty = true;
                     dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
@@ -1478,7 +1488,11 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     for (const sk of Object.keys(state.players)) {
         const pl = state.players[sk];
         if (pl.hp <= 0 || !pl.moveTarget) continue;
-        let stepLeft = PLAYER_SPEED * TICK_DT;
+        // Мода Эскейпа "sprint": +25% к скорости пока sprintUntil не прошёл.
+        const speedNow = (pl.sprintUntil && t < pl.sprintUntil)
+            ? PLAYER_SPEED * 1.25
+            : PLAYER_SPEED;
+        let stepLeft = speedNow * TICK_DT;
         // Крутим цикл пока не израсходуем все шаги или не кончится путь —
         // чтобы на тике можно было перейти через несколько коротких waypoint-ов.
         while (stepLeft > 0 && pl.moveTarget) {
