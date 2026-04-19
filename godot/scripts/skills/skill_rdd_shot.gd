@@ -8,6 +8,7 @@ func _init() -> void:
 	display_name = "РДД-удар"
 	icon_path = "res://assets/sprites/skills/skill_1.png"
 	cooldown = 5.0
+	mana_cost = 20
 	server_id = 1
 	requires_bow = true
 	targets_mob = true

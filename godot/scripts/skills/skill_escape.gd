@@ -8,14 +8,15 @@ func _init() -> void:
 	display_name = "Эскейп"
 	icon_path = "res://assets/sprites/skills/skill_3.png"
 	cooldown = 8.0
+	mana_cost = 25
 	server_id = 3
 	# Не таргет-скилл: исполняется на себе (с учётом текущей цели)
 	arrow_style = ""
 
-func on_send(game) -> void:
-	# Запускаем анимацию переката сразу, не дожидаясь сервер-fx
-	if game.me:
-		game.me.play_roll()
+func on_send(_game) -> void:
+	# Анимация переката теперь полностью управляется сервером через
+	# OP_PLAYER_ACTION "roll" — локальный вызов больше не нужен.
+	pass
 
 func on_fx(game, body: Dictionary) -> bool:
 	if String(body.get("kind", "")) != "dodge":
@@ -26,13 +27,12 @@ func on_fx(game, body: Dictionary) -> bool:
 	var p = game.me if sid == game.my_session_id else game.remotes.get(sid)
 	if p == null:
 		return true
+	# Tween позиции + ghost-trail — чистый визуал. Сама анимация roll
+	# придёт через OP_PLAYER_ACTION, мы её здесь не трогаем.
 	var dodge_target := Vector2(px, py)
 	var tw: Tween = game.create_tween()
 	tw.tween_property(p, "position", dodge_target, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	p.flash()
-	# Для remote: запустить анимацию переката (свой персонаж уже играет from on_send)
-	if sid != game.my_session_id:
-		p.play_roll()
 	for i in range(3):
 		var ghost := Sprite2D.new()
 		ghost.texture = p.sprite.texture

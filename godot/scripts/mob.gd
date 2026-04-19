@@ -21,6 +21,7 @@ var hp_bg: ColorRect
 var hp_fill: ColorRect
 var glow: Sprite2D
 var _poison_end_ms: int = 0
+var _slow_end_ms: int = 0
 var _server_offset_ms: int = 0
 var buffs: Array = []  # [{type, endAt}] — положительные эффекты
 var _anim_t := 0.0
@@ -176,8 +177,10 @@ func set_hp(v: float, vmax: float) -> void:
 func set_debuff(d, server_now_ms: int) -> void:
 	if d == null or typeof(d) != TYPE_DICTIONARY:
 		_poison_end_ms = 0
+		_slow_end_ms = 0
 	else:
 		_poison_end_ms = int(d.get("poisonEndAt", 0))
+		_slow_end_ms = int(d.get("slowEndAt", 0))
 	if server_now_ms > 0:
 		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
 
@@ -271,6 +274,18 @@ func poison_remaining_ms() -> int:
 		return 0
 	var server_now: int = Time.get_ticks_msec() + _server_offset_ms
 	return max(0, _poison_end_ms - server_now)
+
+func slow_active() -> bool:
+	if _slow_end_ms <= 0:
+		return false
+	var server_now: int = Time.get_ticks_msec() + _server_offset_ms
+	return _slow_end_ms > server_now
+
+func slow_remaining_ms() -> int:
+	if _slow_end_ms <= 0:
+		return 0
+	var server_now: int = Time.get_ticks_msec() + _server_offset_ms
+	return max(0, _slow_end_ms - server_now)
 
 func _update_debuff_visible() -> void:
 	pass  # nameplate.target_effects отображает дебафы текущей цели

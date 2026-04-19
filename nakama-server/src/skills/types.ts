@@ -18,6 +18,7 @@ interface SkillSpec {
     handler: (ctx: SkillContext) => void;
     requiresBow: boolean;     // если true, без лука скилл не сработает
     cooldownMs: number;       // используется для default; сам handler может ставить свой
+    manaCost?: number;        // стоимость в мане; 0/undefined — бесплатно
 }
 
 const SKILLS: { [id: number]: SkillSpec } = {};

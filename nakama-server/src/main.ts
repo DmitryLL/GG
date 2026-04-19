@@ -149,6 +149,20 @@ const OP_OBJ_DEL       = 35; // admin: client→server {id}
 const OP_OBJS          = 36; // server→client: {objects: MapObject[], full: bool} — snapshot/delta
 const OP_OBJ_INTERACT  = 37; // client→server {id} — игрок кликнул на объект (сундук etc.)
 const OP_ZONE_SWITCH   = 38; // server→client {zone, matchId, x, y} — клиент переподключается
+const OP_PARTY_INVITE        = 39; // client→server {targetSid}
+const OP_PARTY_INVITE_NOTIFY = 40; // server→target {fromSid, fromName}
+const OP_PARTY_ACCEPT        = 41; // client→server {fromSid}
+const OP_PARTY_DECLINE       = 42; // client→server {fromSid}
+const OP_PARTY_UPDATE        = 43; // server→members {partyId, members:[{sid, name, level, hp, hpMax}]}
+const OP_PARTY_LEAVE         = 44; // client→server {} — выйти из группы
+const OP_PLAYER_DEAD         = 45; // server→self {deathX, deathY}
+const OP_RESPAWN             = 46; // client→server {place:"here"|"spawn"}
+// Универсальный канал анимаций игрока. Источник истины для всего, что
+// визуально «делает» игрок: bow_shot / punch / roll / cast / bow_shot_upward.
+// Проекция выстрела (стрела) и зоны (рейн) — отдельные эвенты (OP_ARROW /
+// OP_SKILL_FX). Точечные sid-поля в них можно убрать в будущем — сейчас
+// оставлены для совместимости.
+const OP_PLAYER_ACTION       = 47; // server→clients {sid, kind, tx?, ty?}
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -173,6 +187,8 @@ interface MatchPlayer {
     movePath: Vec2[];         // очередь waypoints (A* путь); шагает по одному
     hp: number;
     hpMax: number;
+    mana: number;
+    manaMax: number;
     level: number;
     xp: number;
     gold: number;
@@ -190,13 +206,17 @@ interface MatchPlayer {
     archerMods: { [skillId: string]: string };  // выбранные модификации скиллов лучника
     mageMods: { [skillId: string]: string };    // выбранные модификации скиллов мага
     charClass: string;                           // "archer" | "mage"
+    faction: string;                             // "west" | "east"
     characterId: string;                         // id активного персонажа в storage (новая модель)
     empoweredAttackUntil?: number;  // мода эскейпа "empowered_attack": следующая атака ×2 до этого ms
-    sprintUntil?: number;           // мода эскейпа "sprint": ускорение +25 до этого ms
+    sprintUntil?: number;           // мода эскейпа "sprint": +50 к скорости до этого ms
     critBuffUntil?: number;         // Баф крита (skill 5): окно действия
     critBonus?: number;             // доп вероятность крита (0..1)
     pierceBuffUntil?: number;       // Мода penetration: окно
     pierceBonus?: number;           // доп множитель урона (заглушка пока нет брони мобов)
+    partyId?: string;               // id группы, в которой состоит игрок
+    dead?: boolean;                 // hp упал до 0 → true; сидим в экране смерти до OP_RESPAWN
+    deathPos?: Vec2;                // точка, где умер (для "Возродиться здесь")
 }
 
 const PLAYER_SPEED = 100; // px/sec — должна совпадать с Godot Player.SPEED
@@ -265,6 +285,8 @@ interface MatchMob {
     knockbackVx?: number;      // px/sec по X
     knockbackVy?: number;      // px/sec по Y
     buffs?: MobBuff[];         // положительные эффекты (для dispel-тестов)
+    buffsNextRefreshAt?: number; // ms timestamp: для dummy — когда восполнять тестовые баффы
+    patrol?: { dir: number; range: number }; // двигается по X от home на ±range (для тестовых манекенов)
 }
 
 // Положительный бафф на мобе. Пока — пустышки (не влияют на бой),
@@ -285,6 +307,18 @@ interface MapObject {
                         // spawn: {mobType, radius, maxCount}
 }
 
+interface Party {
+    id: string;
+    leader: string;           // sessionId владельца
+    members: string[];        // sessionIds всех участников (включая leader)
+}
+
+interface PartyInvite {
+    fromSid: string;
+    partyId: string;
+    expires: number;  // ms timestamp
+}
+
 interface WorldState {
     players: { [sessionId: string]: MatchPlayer };
     mobs: { [mobId: string]: MatchMob };
@@ -294,6 +328,8 @@ interface WorldState {
     objects: { [id: string]: MapObject };           // порталы, сундуки и т.п.
     portalCooldowns: { [sessionId: string]: number }; // антидребезг телепорта (server-ms)
     zoneId: string;                                 // "village" | "forest" | "dungeon"
+    parties: { [partyId: string]: Party };          // активные группы
+    partyInvites: { [toSid: string]: PartyInvite }; // текущие приглашения (по получателю)
 }
 
 function currentTiles(state: WorldState): number[] {
@@ -304,11 +340,44 @@ function now(): number { return Date.now(); }
 function dist(a: Vec2, b: Vec2): number { const dx = a.x - b.x; const dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
 function clamp(v: number, lo: number, hi: number): number { return v < lo ? lo : v > hi ? hi : v; }
 
-function playerBaseHp(level: number): number { return PLAYER_HP_BASE + PER_LEVEL_HP_BONUS * (level - 1); }
+// ---------- Class profiles ----------
+// Единая точка правды по базовым ресурсам класса. Новый класс
+// добавляется одной записью в CLASS_PROFILES — остальная логика
+// (init, регенерация, level-up, OP_ME) ничего не знает про конкретный
+// класс и берёт значения через classProfile(). Значения — базовые;
+// предметы с полями `hp` / `mana` и будущие бафы добавляются поверх.
+interface ClassProfile {
+    baseHp: number;            // HP на 1 уровне
+    perLevelHp: number;        // прирост HP за уровень
+    baseMana: number;          // стартовый пул маны
+    perLevelMana: number;      // прирост маны за уровень (0 = не растёт)
+    manaRegenPerSec: number;   // регенерация маны в секунду
+}
+const DEFAULT_CLASS_PROFILE: ClassProfile = {
+    baseHp: PLAYER_HP_BASE,
+    perLevelHp: PER_LEVEL_HP_BONUS,
+    baseMana: 100,
+    perLevelMana: 0,
+    manaRegenPerSec: 5,
+};
+// Archer и mage сейчас имеют те же значения, что раньше «по умолчанию».
+// Когда появится рыцарь/жрец/вор — добавляем только здесь.
+const CLASS_PROFILES: { [cls: string]: ClassProfile } = {
+    archer: { ...DEFAULT_CLASS_PROFILE },
+    mage:   { ...DEFAULT_CLASS_PROFILE },
+};
+function classProfile(cls: string): ClassProfile {
+    return CLASS_PROFILES[cls] || DEFAULT_CLASS_PROFILE;
+}
+
+function playerBaseHp(p: { charClass: string; level: number }): number {
+    const prof = classProfile(p.charClass);
+    return prof.baseHp + prof.perLevelHp * (p.level - 1);
+}
 function playerBaseDamage(level: number): number { return PLAYER_ATTACK_DAMAGE + PER_LEVEL_DAMAGE_BONUS * (level - 1); }
 
 function computeHpMax(p: MatchPlayer): number {
-    let total = playerBaseHp(p.level);
+    let total = playerBaseHp(p);
     for (const slot of EQUIP_SLOTS) {
         const id = p.equipment[slot];
         if (!id) continue;
@@ -316,6 +385,20 @@ function computeHpMax(p: MatchPlayer): number {
         if (def && def.hp) total += def.hp;
     }
     return total;
+}
+function computeManaMax(p: MatchPlayer): number {
+    const prof = classProfile(p.charClass);
+    let total = prof.baseMana + prof.perLevelMana * (p.level - 1);
+    for (const slot of EQUIP_SLOTS) {
+        const id = p.equipment[slot];
+        if (!id) continue;
+        const def = ITEMS[id] as any;
+        if (def && def.mana) total += Number(def.mana) || 0;
+    }
+    return total;
+}
+function manaRegenPerSec(p: MatchPlayer): number {
+    return classProfile(p.charClass).manaRegenPerSec;
 }
 // Два типа урона: физический и магический. Оружие даёт свой тип
 // (`physDmg` у лука/меча, `magDmg` у книги), украшения с общим `damage`
@@ -348,6 +431,86 @@ function computeMagDmg(p: MatchPlayer): number {
 function computeDamage(p: MatchPlayer): number {
     if (p.charClass === "mage") return computeMagDmg(p);
     return computePhysDmg(p);
+}
+
+// Защита: сумма physDef/magDef со всех слотов экипировки. База класса 0.
+// Применение: incomingDmg - def, но всегда хотя бы 1 урон.
+function computePhysDef(p: MatchPlayer): number {
+    let total = 0;
+    for (const slot of EQUIP_SLOTS) {
+        const id = p.equipment[slot];
+        if (!id) continue;
+        const def = ITEMS[id] as any;
+        if (def && def.physDef) total += Number(def.physDef) || 0;
+    }
+    return total;
+}
+function computeMagDef(p: MatchPlayer): number {
+    let total = 0;
+    for (const slot of EQUIP_SLOTS) {
+        const id = p.equipment[slot];
+        if (!id) continue;
+        const def = ITEMS[id] as any;
+        if (def && def.magDef) total += Number(def.magDef) || 0;
+    }
+    return total;
+}
+// Применить защиту игрока к входящему урону. Минимум 1.
+// kind: "phys" → physDef, "mag" → magDef.
+function applyPlayerArmor(foe: MatchPlayer, raw: number, kind: "phys" | "mag"): number {
+    const def = kind === "mag" ? computeMagDef(foe) : computePhysDef(foe);
+    const out = raw - def;
+    return out < 1 ? 1 : out;
+}
+// Универсальная рассылка анимации игрока. Все PvP/PvE атаки и скиллы
+// зовут этот helper вместо проставления sid в OP_ARROW/OP_SKILL_FX.
+// Клиент ловит один OP_PLAYER_ACTION и диспатчит в Player.play_action(kind).
+function broadcastPlayerAction(
+    dispatcher: nkruntime.MatchDispatcher,
+    player: MatchPlayer,
+    kind: string,
+    target?: { x: number; y: number },
+): void {
+    const payload: { sid: string; kind: string; tx?: number; ty?: number } = {
+        sid: player.sessionId,
+        kind: kind,
+    };
+    if (target) { payload.tx = target.x; payload.ty = target.y; }
+    dispatcher.broadcastMessage(OP_PLAYER_ACTION, JSON.stringify(payload));
+}
+
+// Смерть игрока: вместо мгновенного респа оставляем игрока в dead-состоянии
+// и отправляем ему OP_PLAYER_DEAD. Дальше ждём OP_RESPAWN с выбором места.
+function killPlayer(p: MatchPlayer, dispatcher: nkruntime.MatchDispatcher): void {
+    p.hp = 0;
+    p.dead = true;
+    p.deathPos = { x: p.pos.x, y: p.pos.y };
+    p.moveTarget = null;
+    p.movePath = [];
+    p.lastTouchedByMob = {};
+    p.effects = [];
+    p.empoweredAttackUntil = 0;
+    p.sprintUntil = 0;
+    p.critBuffUntil = 0;
+    p.pierceBuffUntil = 0;
+    p.dirtyPos = true;
+    markMe(p);
+    dispatcher.broadcastMessage(OP_PLAYER_DEAD, JSON.stringify({
+        deathX: p.deathPos.x, deathY: p.deathPos.y,
+    }), [p.presence]);
+}
+// Реальный респаун — восстановление HP/маны и телепорт. Вызывается из OP_RESPAWN.
+function respawnPlayer(p: MatchPlayer, place: "here" | "spawn"): void {
+    const pos = (place === "here" && p.deathPos)
+        ? { x: p.deathPos.x, y: p.deathPos.y }
+        : { x: WORLD.playerSpawn.x, y: WORLD.playerSpawn.y };
+    p.pos.x = pos.x; p.pos.y = pos.y;
+    p.hp = p.hpMax;
+    p.mana = p.manaMax;
+    p.dead = false;
+    p.deathPos = undefined;
+    p.dirtyPos = true;
+    markMe(p);
 }
 function markMe(p: MatchPlayer): void { p.dirtyMe = true; }
 
@@ -397,6 +560,7 @@ function spawnMob(id: string, spec: MobSpawn): MatchMob {
     };
     // Манекены: 3 разных положительных эффекта-пустышки для теста
     // Дезы-dispel. Длительность большая (24ч) — не истекают в бою.
+    // Каждые 60 сек mob AI восполняет удалённые — см. refreshDummyBuffs.
     if (type === "dummy") {
         const farFuture = Date.now() + 86_400_000;
         mob.buffs = [
@@ -404,8 +568,30 @@ function spawnMob(id: string, spec: MobSpawn): MatchMob {
             { type: "regen",  endAt: farFuture },
             { type: "shield", endAt: farFuture },
         ];
+        mob.buffsNextRefreshAt = Date.now() + 60_000;
     }
     return mob;
+}
+
+// Восполнение тестовых баффов у манекена — чтобы можно было снова и
+// снова тренировать Дезу-dispel без пересоздания моба.
+const DUMMY_BUFF_TYPES = ["haste", "regen", "shield"];
+function refreshDummyBuffs(mob: MatchMob, t: number): void {
+    if (mob.type !== "dummy") return;
+    if (!mob.buffsNextRefreshAt || t < mob.buffsNextRefreshAt) return;
+    const have: { [k: string]: boolean } = {};
+    for (const b of (mob.buffs || [])) have[b.type] = true;
+    const farFuture = t + 86_400_000;
+    const next = (mob.buffs || []).slice();
+    let added = false;
+    for (const bt of DUMMY_BUFF_TYPES) {
+        if (!have[bt]) { next.push({ type: bt, endAt: farFuture }); added = true; }
+    }
+    if (added) {
+        mob.buffs = next;
+        mob.dirty = true;
+    }
+    mob.buffsNextRefreshAt = t + 60_000;
 }
 
 function rollMobLoot(mobType: string): InvEntry[] {
@@ -507,6 +693,7 @@ interface StoredCharacter {
     id: string;
     name: string;
     charClass: string;  // "archer" | "mage"
+    faction: string;    // "west" | "east" — западные/восточные (союзники/враги PvP)
     level: number;
     xp: number;
     gold: number;
@@ -529,7 +716,7 @@ function starterWeaponForClass(cls: string): string {
     return "wood_bow";  // archer по умолчанию
 }
 
-function defaultChar(id: string, name: string, cls: string, fromLegacy?: StoredProgress): StoredCharacter {
+function defaultChar(id: string, name: string, cls: string, faction: string, fromLegacy?: StoredProgress): StoredCharacter {
     // Если мигрируем со старого прогресса — сохраняем всё как было.
     // Иначе выдаём стартовое оружие в зависимости от класса.
     let equipment: { [slot: string]: string } = {};
@@ -539,10 +726,12 @@ function defaultChar(id: string, name: string, cls: string, fromLegacy?: StoredP
     if (!fromLegacy && !equipment.weapon) {
         equipment.weapon = starterWeaponForClass(cls);
     }
+    const safeFaction = ALLOWED_FACTIONS.indexOf(faction) >= 0 ? faction : "west";
     return {
         id,
         name,
         charClass: cls,
+        faction: safeFaction,
         level: fromLegacy ? fromLegacy.level : 1,
         xp: fromLegacy ? fromLegacy.xp : 0,
         gold: fromLegacy ? fromLegacy.gold : 0,
@@ -587,7 +776,7 @@ function migrateCharactersIfNeeded(nk: nkruntime.Nakama, userId: string): Stored
     const id = "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const name = "Герой";
     const cls = (legacy.charClass === "mage") ? "mage" : "archer";
-    const ch = defaultChar(id, name, cls, legacy);
+    const ch = defaultChar(id, name, cls, "west", legacy);
     const newState: StoredCharactersState = { active: id, chars: [ch] };
     saveCharacters(nk, userId, newState);
     return newState;
@@ -664,6 +853,21 @@ const MAGE_MOD_COSTS: { [skillId: number]: { [modId: string]: number } } = {
 };
 const MAGE_POINTS_BUDGET = 5;
 const ALLOWED_CLASSES = ["archer", "mage"];
+const ALLOWED_FACTIONS = ["west", "east"];
+
+// ---------- faction helpers ----------
+// Игроки считаются союзниками, если их фракции совпадают.
+// Если у одной из сторон фракции нет (защитный кейс) — считаем союзниками,
+// чтобы не уронить урон в игроков случайно.
+function areAllies(a: MatchPlayer, b: MatchPlayer): boolean {
+    if (!a || !b) return true;
+    const fa = a.faction || "west";
+    const fb = b.faction || "west";
+    return fa === fb;
+}
+function areHostile(a: MatchPlayer, b: MatchPlayer): boolean {
+    return !areAllies(a, b);
+}
 
 // ---------- weapon helpers ----------
 function weaponKind(w: string): string {
@@ -959,6 +1163,18 @@ function matchInit(_ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkrunt
         const mobId = "m" + i;
         mobs[mobId] = spawnMob(mobId, mobSpawns[i]);
     }
+    // Тестовый ряд патрульных манекенов в village — для проверки
+    // Града стрел и прочих AoE-модификаторов.
+    if (isVillage) {
+        const baseX = 800, baseY = 1100, step = 48;  // ряд на поле спавна
+        for (let i = 0; i < 10; i++) {
+            const id = "patrol_dummy_" + i;
+            const m = spawnMob(id, { x: baseX + i * step, y: baseY, type: "dummy" });
+            // Патруль по X: ±64 px от home, стартуем в случайную сторону.
+            m.patrol = { dir: (i % 2 === 0 ? 1 : -1), range: 64 };
+            mobs[id] = m;
+        }
+    }
     const savedTiles = loadMapFromStorage(nk, zoneId);
     const tiles = savedTiles ? savedTiles : defaultTiles;
     const savedObjects = loadObjectsFromStorage(nk, zoneId);
@@ -971,6 +1187,7 @@ function matchInit(_ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkrunt
     const state: WorldState = {
         players: {}, mobs: mobs, zones: [], tick: 0, tiles: tiles,
         objects: objects, portalCooldowns: {}, zoneId: zoneId,
+        parties: {}, partyInvites: {},
     };
     return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL_PREFIX + zoneId };
 }
@@ -1032,12 +1249,16 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         const charClassFromChar = activeChar
             ? activeChar.charClass
             : ((saved && saved.charClass && ALLOWED_CLASSES.indexOf(saved.charClass) >= 0) ? saved.charClass : "archer");
+        const factionFromChar = activeChar && activeChar.faction && ALLOWED_FACTIONS.indexOf(activeChar.faction) >= 0
+            ? activeChar.faction
+            : "west";
         const displayUsername = activeChar ? activeChar.name : p.username;
         const player: MatchPlayer = {
             userId: p.userId, sessionId: p.sessionId, username: displayUsername,
             presence: p,
             pos: { x: WORLD.playerSpawn.x, y: WORLD.playerSpawn.y },
             hp: 0, hpMax: 0,
+            mana: 100, manaMax: 100,
             level: activeChar ? activeChar.level : (saved ? saved.level : 1),
             xp: activeChar ? activeChar.xp : (saved ? saved.xp : 0),
             gold: activeChar ? activeChar.gold : (saved ? saved.gold : 0),
@@ -1056,10 +1277,13 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             archerMods: archerModsFromChar,
             mageMods: mageModsFromChar,
             charClass: charClassFromChar,
+            faction: factionFromChar,
             characterId: activeChar ? activeChar.id : "",
         };
         player.hpMax = computeHpMax(player);
         player.hp = player.hpMax;
+        player.manaMax = computeManaMax(player);
+        player.mana = player.manaMax;
         state.players[p.sessionId] = player;
 
         // Send one-shot snapshots to the newcomer.
@@ -1083,11 +1307,16 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     return { state: state };
 }
 
-function matchLeave(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
+function matchLeave(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
     for (let i = 0; i < presences.length; i++) {
-        const p = state.players[presences[i].sessionId];
-        if (p) saveProgress(nk, p);
-        delete state.players[presences[i].sessionId];
+        const sid = presences[i].sessionId;
+        const p = state.players[sid];
+        if (p) {
+            if (p.partyId) leaveParty(state, dispatcher, p);
+            delete state.partyInvites[sid];
+            saveProgress(nk, p);
+        }
+        delete state.players[sid];
     }
     return { state: state };
 }
@@ -1129,8 +1358,14 @@ function snapshotMobsDirty(state: WorldState) {
 }
 
 function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, presences: nkruntime.Presence[]): void {
+    const nowT = now();
+    const critActive = p.critBuffUntil && nowT < p.critBuffUntil;
+    const pierceActive = p.pierceBuffUntil && nowT < p.pierceBuffUntil;
+    const sprintActive = p.sprintUntil && nowT < p.sprintUntil;
+    const effSpeed = sprintActive ? PLAYER_SPEED + 50 : PLAYER_SPEED;
     const payload = {
         hp: p.hp, hpMax: p.hpMax,
+        mana: Math.floor(p.mana), manaMax: p.manaMax,
         level: p.level, xp: p.xp, xpNeed: XP_FOR_LEVEL(p.level),
         gold: p.gold,
         damage: computeDamage(p),
@@ -1139,12 +1374,103 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         effects: p.effects || [],
         skillCd: p.skillCd || {},
         charClass: p.charClass,
+        faction: p.faction || "west",
         name: p.username,  // имя активного персонажа (не email аккаунта)
         physDmg: computePhysDmg(p),
         magDmg: computeMagDmg(p),
-        t: now(),
+        physDef: computePhysDef(p),
+        magDef: computeMagDef(p),
+        // Временные баффы в процентах — для статус-окна.
+        critChance: critActive ? Math.round((p.critBonus || 0) * 100) : 0,
+        critPower: 100,  // базовый крит = ×2 урон, то есть +100%
+        penetration: pierceActive ? Math.round((p.pierceBonus || 0) * 100) : 0,
+        moveSpeed: effSpeed,  // px/sec, с учётом активного sprint
+        t: nowT,
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
+}
+
+// ─── Группы (party) ────────────────────────────────────────────────
+
+function newPartyId(): string {
+    return "p_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function partySnapshot(state: WorldState, party: Party): any[] {
+    const out: any[] = [];
+    for (const sid of party.members) {
+        const p = state.players[sid];
+        if (!p) continue;
+        out.push({
+            sid: p.sessionId,
+            uid: p.userId,
+            name: p.username,
+            level: p.level,
+            hp: p.hp,
+            hpMax: p.hpMax,
+        });
+    }
+    return out;
+}
+
+function broadcastPartyUpdate(state: WorldState, dispatcher: nkruntime.MatchDispatcher, party: Party): void {
+    const payload = JSON.stringify({
+        partyId: party.id,
+        leader: party.leader,
+        members: partySnapshot(state, party),
+    });
+    const presences: nkruntime.Presence[] = [];
+    for (const sid of party.members) {
+        const p = state.players[sid];
+        if (p) presences.push(p.presence);
+    }
+    if (presences.length > 0) {
+        dispatcher.broadcastMessage(OP_PARTY_UPDATE, payload, presences);
+    }
+}
+
+// Слать пустой «ты больше не в группе» одиночному игроку.
+function broadcastPartyEmpty(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer): void {
+    dispatcher.broadcastMessage(OP_PARTY_UPDATE, JSON.stringify({
+        partyId: "", leader: "", members: [],
+    }), [p.presence]);
+}
+
+function leaveParty(state: WorldState, dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer): void {
+    if (!p.partyId) return;
+    const party = state.parties[p.partyId];
+    const leavingId = p.partyId;
+    p.partyId = undefined;
+    if (!party) return;
+    const idx = party.members.indexOf(p.sessionId);
+    if (idx >= 0) party.members.splice(idx, 1);
+    // Если leader ушёл — передаём следующему; если <2 участников — группа распадается.
+    if (party.members.length < 2) {
+        for (const sid of party.members) {
+            const mp = state.players[sid];
+            if (mp) {
+                mp.partyId = undefined;
+                broadcastPartyEmpty(dispatcher, mp);
+            }
+        }
+        delete state.parties[leavingId];
+    } else {
+        if (party.leader === p.sessionId) party.leader = party.members[0];
+        broadcastPartyUpdate(state, dispatcher, party);
+    }
+    // Покинувшему тоже шлём пустое обновление.
+    broadcastPartyEmpty(dispatcher, p);
+}
+
+function createParty(state: WorldState, leader: MatchPlayer): Party {
+    const party: Party = {
+        id: newPartyId(),
+        leader: leader.sessionId,
+        members: [leader.sessionId],
+    };
+    state.parties[party.id] = party;
+    leader.partyId = party.id;
+    return party;
 }
 
 function applyPlayerEffect(p: MatchPlayer, eff: PlayerEffect): void {
@@ -1170,6 +1496,15 @@ function applyPlayerEffect(p: MatchPlayer, eff: PlayerEffect): void {
         });
     }
     markMe(p);
+}
+
+function removePlayerEffect(p: MatchPlayer, type: string): void {
+    if (!p.effects || p.effects.length === 0) return;
+    const next: PlayerEffect[] = [];
+    for (let i = 0; i < p.effects.length; i++) {
+        if (p.effects[i].type !== type) next.push(p.effects[i]);
+    }
+    p.effects = next;
 }
 
 function tickPlayerEffects(p: MatchPlayer, t: number): void {
@@ -1206,6 +1541,8 @@ function grantXp(p: MatchPlayer, amount: number): void {
         p.level += 1;
         p.hpMax = computeHpMax(p);
         p.hp = p.hpMax;
+        p.manaMax = computeManaMax(p);
+        p.mana = p.manaMax;
     }
     if (p.level >= MAX_LEVEL) p.xp = 0;
     markMe(p);
@@ -1275,6 +1612,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     if (body.sid && body.sid !== player.sessionId) {
                         const foe = state.players[body.sid];
                         if (!foe || foe.hp <= 0) break;
+                        if (areAllies(player, foe)) break;  // по союзнику не бьём
                         if (dist(foe.pos, player.pos) > atkRange) break;
                         if (t < foe.invulnUntil) break;
                         player.lastAttackAt = t;
@@ -1282,6 +1620,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         if (player.empoweredAttackUntil && t < player.empoweredAttackUntil) {
                             dmgP = dmgP * 2;
                             player.empoweredAttackUntil = 0;  // один-шот
+                            removePlayerEffect(player, "empowered");
+                            markMe(player);
                         }
                         let isCritP = false;
                         if (player.critBuffUntil && t < player.critBuffUntil) {
@@ -1293,23 +1633,21 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         if (player.pierceBuffUntil && t < player.pierceBuffUntil) {
                             dmgP = Math.floor(dmgP * (1 + (player.pierceBonus || 0)));
                         }
+                        // Вычитание защиты цели: phys для лучника/меча, mag для мага.
+                        const dmgKindP: "phys" | "mag" = (player.charClass === "mage") ? "mag" : "phys";
+                        dmgP = applyPlayerArmor(foe, dmgP, dmgKindP);
                         foe.hp -= dmgP;
                         if (foe.hp < 0) foe.hp = 0;
                         foe.dirtyPos = true;
                         markMe(foe);
+                        broadcastPlayerAction(dispatcher, player, hasRanged ? "bow_shot" : "punch", foe.pos);
                         dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
                             fx: player.pos.x, fy: player.pos.y,
                             tx: foe.pos.x, ty: foe.pos.y,
                             melee: !hasRanged,
                         }));
                         dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: foe.sessionId, by: player.sessionId, dmg: dmgP, crit: isCritP }));
-                        if (foe.hp <= 0) {
-                            foe.pos.x = WORLD.playerSpawn.x; foe.pos.y = WORLD.playerSpawn.y;
-                            foe.hp = foe.hpMax;
-                            foe.lastTouchedByMob = {};
-                            foe.dirtyPos = true;
-                            markMe(foe);
-                        }
+                        if (foe.hp <= 0) killPlayer(foe, dispatcher);
                         break;
                     }
 
@@ -1322,6 +1660,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     if (player.empoweredAttackUntil && t < player.empoweredAttackUntil) {
                         dmg = dmg * 2;
                         player.empoweredAttackUntil = 0;  // один-шот
+                        removePlayerEffect(player, "empowered");
+                        markMe(player);
                     }
                     let isCritM = false;
                     if (player.critBuffUntil && t < player.critBuffUntil) {
@@ -1335,6 +1675,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     }
                     mob.hp -= dmg;
                     mob.dirty = true;
+                    broadcastPlayerAction(dispatcher, player, hasBow ? "bow_shot" : "punch", mob.pos);
                     dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
                         fx: player.pos.x, fy: player.pos.y,
                         tx: mob.pos.x, ty: mob.pos.y,
@@ -1478,16 +1819,49 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             }
             case OP_CHAT_SEND: {
                 try {
-                    const body = JSON.parse(nk.binaryToString(msg.data)) as { text?: string };
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { text?: string; ch?: string };
                     const text = String(body.text || "").slice(0, 140).trim();
                     if (text.length === 0) break;
-                    dispatcher.broadcastMessage(OP_CHAT_RELAY, JSON.stringify({
+                    // Поддерживаемые каналы: "global" (default), "faction", "party".
+                    // Для неизвестных значений — global. Сервер решает набор
+                    // получателей: faction → те же фракции, party → члены
+                    // одной группы, global → все.
+                    let ch = String(body.ch || "global");
+                    if (ch !== "global" && ch !== "faction" && ch !== "party") ch = "global";
+                    let targets: nkruntime.Presence[] | undefined = undefined;
+                    if (ch === "faction") {
+                        targets = [];
+                        for (const sk of Object.keys(state.players)) {
+                            const o = state.players[sk];
+                            if (areAllies(player, o)) targets.push(o.presence);
+                        }
+                    } else if (ch === "party") {
+                        targets = [];
+                        if (player.partyId) {
+                            const pp = state.parties[player.partyId];
+                            if (pp) {
+                                for (const sid of pp.members) {
+                                    const mp = state.players[sid];
+                                    if (mp) targets.push(mp.presence);
+                                }
+                            }
+                        }
+                        // Нет группы — сообщение видит только сам автор.
+                        if (targets.length === 0) targets.push(player.presence);
+                    }
+                    const relayPayload = JSON.stringify({
                         sid: player.sessionId,
                         uid: player.userId,
                         n: player.username,
                         t: text,
+                        ch: ch,
                         ts: t,
-                    }));
+                    });
+                    if (targets) {
+                        dispatcher.broadcastMessage(OP_CHAT_RELAY, relayPayload, targets);
+                    } else {
+                        dispatcher.broadcastMessage(OP_CHAT_RELAY, relayPayload);
+                    }
                 } catch (_e) {}
                 break;
             }
@@ -1513,12 +1887,28 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill, reason: "no_bow" }), [player.presence]);
                         break;
                     }
+                    const manaCost = Number(spec.manaCost || 0);
+                    if (manaCost > 0 && player.mana < manaCost) {
+                        dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill, reason: "no_mana" }), [player.presence]);
+                        break;
+                    }
                     const baseDmg = computeDamage(player);
                     const cdBefore = player.skillCd[skill] || 0;
+                    const manaBefore = player.mana;
+                    // Списываем ману заранее, чтобы handler с list allies/zones
+                    // не успел быть обманут повторным OP_SKILL в этот же тик.
+                    if (manaCost > 0) {
+                        player.mana = Math.max(0, player.mana - manaCost);
+                        markMe(player);
+                    }
                     spec.handler({ player, body, t, state, dispatcher, baseDmg });
                     // Если handler не поставил cooldown — значит скилл не сработал
-                    // (например, цель не в зоне, мобид невалидный)
+                    // (например, цель не в зоне, мобид невалидный). Ману — возвращаем.
                     if ((player.skillCd[skill] || 0) === cdBefore) {
+                        if (manaCost > 0) {
+                            player.mana = manaBefore;
+                            markMe(player);
+                        }
                         dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill, reason: "out_of_range" }), [player.presence]);
                     }
                 } catch (_e) {}
@@ -1750,7 +2140,74 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 } catch (_e) {}
                 break;
             }
+            case OP_PARTY_INVITE: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { targetSid?: string };
+                    const targetSid = String(body.targetSid || "");
+                    if (!targetSid || targetSid === player.sessionId) break;
+                    const target = state.players[targetSid];
+                    if (!target) break;
+                    if (!areAllies(player, target)) break;  // зовём только своих
+                    if (target.partyId && target.partyId === player.partyId) break; // уже в одной
+                    // Если у приглашающего нет группы — создаём.
+                    let myParty = player.partyId ? state.parties[player.partyId] : null;
+                    if (!myParty) myParty = createParty(state, player);
+                    state.partyInvites[targetSid] = {
+                        fromSid: player.sessionId,
+                        partyId: myParty.id,
+                        expires: t + 60_000,
+                    };
+                    dispatcher.broadcastMessage(OP_PARTY_INVITE_NOTIFY, JSON.stringify({
+                        fromSid: player.sessionId,
+                        fromName: player.username,
+                    }), [target.presence]);
+                } catch (_e) {}
+                break;
+            }
+            case OP_PARTY_ACCEPT: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { fromSid?: string };
+                    const inv = state.partyInvites[player.sessionId];
+                    if (!inv || t >= inv.expires) { delete state.partyInvites[player.sessionId]; break; }
+                    if (body.fromSid && body.fromSid !== inv.fromSid) break;
+                    const party = state.parties[inv.partyId];
+                    if (!party) { delete state.partyInvites[player.sessionId]; break; }
+                    // Если принимающий уже в другой группе — выходим.
+                    if (player.partyId && player.partyId !== party.id) {
+                        leaveParty(state, dispatcher, player);
+                    }
+                    if (party.members.indexOf(player.sessionId) < 0) {
+                        party.members.push(player.sessionId);
+                    }
+                    player.partyId = party.id;
+                    delete state.partyInvites[player.sessionId];
+                    broadcastPartyUpdate(state, dispatcher, party);
+                } catch (_e) {}
+                break;
+            }
+            case OP_PARTY_DECLINE: {
+                delete state.partyInvites[player.sessionId];
+                break;
+            }
+            case OP_PARTY_LEAVE: {
+                leaveParty(state, dispatcher, player);
+                break;
+            }
+            case OP_RESPAWN: {
+                try {
+                    if (!player.dead) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { place?: string };
+                    const place = (body.place === "here") ? "here" : "spawn";
+                    respawnPlayer(player, place);
+                } catch (_e) {}
+                break;
+            }
         }
+    }
+
+    // --- expired party invites ---
+    for (const toSid of Object.keys(state.partyInvites)) {
+        if (t >= state.partyInvites[toSid].expires) delete state.partyInvites[toSid];
     }
 
     // --- active zones (arrow rain / град стрел) ---
@@ -1771,21 +2228,24 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             if (Math.abs(m.pos.x - z.x) > z.radius || Math.abs(m.pos.y - z.y) > z.radius) continue;
             mobsInZone.push(m);
         }
-        for (const m of mobsInZone) {
+        // Правило целей: за тик бьём до 5 мобов из текущих-в-зоне.
+        // Если ≤5 — бьём по всем. Если больше — shuffle, первые 5.
+        // Моды slow / final_stun применяются к тем же выбранным целям.
+        const pool = mobsInZone.filter(m => m.hp > 0 && m.state === "alive");
+        for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        const picks = pool.slice(0, 5);
+        for (const m of picks) {
             m.hp -= ownerDmg;
             m.dirty = true;
             dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: m.id, dmg: ownerDmg }));
             if (m.hp <= 0 && owner) killMob(m, owner, t);
         }
-        // Мода slow — 5 случайных живых целей, slowEndAt = t + 800 (держим до след. тика).
-        if (z.mod === "slow" && mobsInZone.length > 0) {
-            const alive = mobsInZone.filter(m => m.hp > 0 && m.state === "alive");
-            for (let i = alive.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [alive[i], alive[j]] = [alive[j], alive[i]];
-            }
-            const picks = alive.slice(0, 5);
+        if (z.mod === "slow") {
             for (const m of picks) {
+                if (m.hp <= 0) continue;
                 if (!m.debuff) {
                     m.debuff = { poisonStacks: 0, poisonEndAt: 0, slowEndAt: 0, nextPoisonTickAt: 0, poisonDmg: 0 };
                 }
@@ -1793,15 +2253,9 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 m.dirty = true;
             }
         }
-        // Мода final_stun — только на последнем тике, до 5 случайных живых, стан 500мс.
         if (isLastTick && z.mod === "final_stun") {
-            const alive = mobsInZone.filter(m => m.hp > 0 && m.state === "alive");
-            for (let i = alive.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [alive[i], alive[j]] = [alive[j], alive[i]];
-            }
-            const picks = alive.slice(0, 5);
             for (const m of picks) {
+                if (m.hp <= 0) continue;
                 m.stunUntil = t + 500;
                 dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
                     kind: "stun", mobId: m.id, duration: 500,
@@ -1811,24 +2265,23 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             continue;
         }
         if (isLastTick) { state.zones.splice(zi, 1); continue; }
-        // PvP: бьём чужих игроков в зоне (исключая владельца)
+        // PvP: бьём чужих игроков в зоне (исключая владельца и союзников)
         for (const sk of Object.keys(state.players)) {
             const tp = state.players[sk];
             if (tp.sessionId === z.ownerSid || tp.hp <= 0) continue;
+            if (owner && areAllies(owner, tp)) continue;  // по союзнику не бьём
             if (t < tp.invulnUntil) continue;
             if (Math.abs(tp.pos.x - z.x) > z.radius || Math.abs(tp.pos.y - z.y) > z.radius) continue;
-            tp.hp -= ownerDmg;
+            // Град стрел — физический PvP-урон.
+            const zoneDmg = applyPlayerArmor(tp, ownerDmg, "phys");
+            tp.hp -= zoneDmg;
             if (tp.hp < 0) tp.hp = 0;
             tp.dirtyPos = true;
             markMe(tp);
             dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({
-                sessionId: tp.sessionId, by: z.ownerSid, dmg: ownerDmg,
+                sessionId: tp.sessionId, by: z.ownerSid, dmg: zoneDmg,
             }));
-            if (tp.hp <= 0) {
-                tp.pos.x = WORLD.playerSpawn.x; tp.pos.y = WORLD.playerSpawn.y;
-                tp.hp = tp.hpMax; tp.lastTouchedByMob = {};
-                tp.dirtyPos = true; markMe(tp);
-            }
+            if (tp.hp <= 0) killPlayer(tp, dispatcher);
         }
     }
 
@@ -1836,14 +2289,15 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     for (const sk of Object.keys(state.players)) {
         const pl = state.players[sk];
         if (pl.hp <= 0) continue;
-        tickPlayerEffects(pl, t);
-        if (pl.hp <= 0) {
-            pl.pos.x = WORLD.playerSpawn.x; pl.pos.y = WORLD.playerSpawn.y;
-            pl.hp = pl.hpMax; pl.lastTouchedByMob = {};
-            pl.effects = [];
-            pl.moveTarget = null; pl.movePath = [];
-            pl.dirtyPos = true; markMe(pl);
+        // Регенерация маны: берём скорость из профиля класса. Добавляем за тик.
+        if (pl.mana < pl.manaMax) {
+            const regenPerTick = manaRegenPerSec(pl) * TICK_DT;
+            const next = Math.min(pl.manaMax, pl.mana + regenPerTick);
+            if (Math.floor(next) !== Math.floor(pl.mana)) markMe(pl);
+            pl.mana = next;
         }
+        tickPlayerEffects(pl, t);
+        if (pl.hp <= 0) killPlayer(pl, dispatcher);
     }
 
     // --- server-authoritative player movement ---
@@ -1852,9 +2306,10 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     for (const sk of Object.keys(state.players)) {
         const pl = state.players[sk];
         if (pl.hp <= 0 || !pl.moveTarget) continue;
-        // Мода Эскейпа "sprint": +25% к скорости пока sprintUntil не прошёл.
+        // Мода Эскейпа "sprint": +50 к скорости пока sprintUntil не прошёл
+        // (в абсолютных единицах, чтобы не зависело от базовой скорости класса).
         const speedNow = (pl.sprintUntil && t < pl.sprintUntil)
-            ? PLAYER_SPEED * 1.25
+            ? PLAYER_SPEED + 50
             : PLAYER_SPEED;
         let stepLeft = speedNow * TICK_DT;
         // Крутим цикл пока не израсходуем все шаги или не кончится путь —
@@ -1949,6 +2404,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             continue;
         }
         const def = MOB_TYPES[mob.type];
+        // Манекен: восполнение тестовых баффов раз в минуту.
+        refreshDummyBuffs(mob, t);
         // Poison DoT
         if (mob.debuff && t < mob.debuff.poisonEndAt && t >= mob.debuff.nextPoisonTickAt) {
             const perTick = mob.debuff.poisonDmg || 3;
@@ -1965,7 +2422,12 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 continue;
             }
         }
-        if (mob.debuff && t >= mob.debuff.poisonEndAt) mob.debuff = undefined;
+        // Сбрасываем debuff только когда И poison, И slow истекли. Иначе
+        // slow от Града стрел (ставит только slowEndAt, poisonEndAt=0)
+        // терялся ещё до первого тика AI.
+        if (mob.debuff && t >= mob.debuff.poisonEndAt && t >= mob.debuff.slowEndAt) {
+            mob.debuff = undefined;
+        }
         // Fire DoT (мода "fire" РДД-удара)
         if (mob.fireEndAt && t < mob.fireEndAt && mob.nextFireTickAt && t >= mob.nextFireTickAt) {
             const fdmg = Math.max(1, Math.floor(mob.fireDmg || 0));
@@ -2006,7 +2468,27 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             continue;
         }
         const slowed = mob.debuff && t < mob.debuff.slowEndAt;
-        const speed = slowed ? def.speed * 0.7 : def.speed;
+        const speed = slowed ? Math.max(0, def.speed - 25) : def.speed;  // −25 единиц
+        // Патрульный режим: движение по X туда-обратно в пределах ±range
+        // от home. Используется для тестовых манекенов, которые dummy
+        // по статам неподвижны (speed=0), но мы дадим фиксированную.
+        if (mob.patrol) {
+            // Патрульная скорость 50 px/sec; slow от Града стрел её
+            // тоже режет на −25, чтобы замедление визуально было заметно.
+            const patrolSpeed = slowed ? Math.max(0, 50 - 25) : 50;
+            const leftX = mob.home.x - mob.patrol.range;
+            const rightX = mob.home.x + mob.patrol.range;
+            mob.target = { x: (mob.patrol.dir > 0 ? rightX : leftX), y: mob.home.y };
+            if (mob.pos.x >= rightX - 1) mob.patrol.dir = -1;
+            else if (mob.pos.x <= leftX + 1) mob.patrol.dir = 1;
+            const stepPatrol = patrolSpeed * TICK_DT;
+            const dxp = (mob.patrol.dir > 0 ? 1 : -1) * stepPatrol;
+            const nxp = mob.pos.x + dxp;
+            if (isWalkableAt(currentTiles(state), nxp, mob.pos.y)) mob.pos.x = nxp;
+            mob.dirty = true;
+            // Патрульные манекены не касаются игроков — не продолжаем в touch-damage.
+            continue;
+        }
         if (!mob.target || dist(mob.pos, mob.target) < 4) {
             const angle = Math.random() * Math.PI * 2;
             const r = Math.random() * def.wanderRadius;
@@ -2035,27 +2517,25 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             const last = p.lastTouchedByMob[mob.id] || 0;
             if (t - last < def.touchCooldownMs) continue;
             p.lastTouchedByMob[mob.id] = t;
-            p.hp -= def.touchDamage;
+            // Касание моба считается физическим уроном для применения защиты.
+            const mobDmg = applyPlayerArmor(p, def.touchDamage, "phys");
+            p.hp -= mobDmg;
             if (p.hp < 0) p.hp = 0;
             p.dirtyPos = true; markMe(p);
-            dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: p.sessionId, by: mob.id }));
-            if (p.hp <= 0) {
-                p.pos.x = WORLD.playerSpawn.x; p.pos.y = WORLD.playerSpawn.y;
-                p.hp = p.hpMax;
-                p.lastTouchedByMob = {};
-            }
+            dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: p.sessionId, by: mob.id, dmg: mobDmg }));
+            if (p.hp <= 0) killPlayer(p, dispatcher);
         }
     }
 
     // --- broadcasts ---
-    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; wpn: string; eqWeapon: string; effects: PlayerEffect[] }[] = [];
+    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; wpn: string; eqWeapon: string; faction: string; effects: PlayerEffect[] }[] = [];
     const pKeys = Object.keys(state.players);
     for (let i = 0; i < pKeys.length; i++) {
         const p = state.players[pKeys[i]];
         if (!p.dirtyPos) continue;
         const weaponB = p.equipment.weapon || "";
         const hasRangedB = isRangedWeapon(weaponB);
-        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, lv: p.level, hb: hasRangedB, wpn: weaponKind(weaponB), eqWeapon: weaponB, effects: p.effects || [] });
+        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, lv: p.level, hb: hasRangedB, wpn: weaponKind(weaponB), eqWeapon: weaponB, faction: p.faction || "west", effects: p.effects || [] });
         p.dirtyPos = false;
     }
     if (pUpdates.length > 0) {
@@ -2384,11 +2864,11 @@ function rpcSetClass(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkru
 
 // ===== Characters (multi-character account) =====
 
-function summarizeChars(state: StoredCharactersState): { active: string; chars: Array<{ id: string; name: string; charClass: string; level: number; gold: number }> } {
+function summarizeChars(state: StoredCharactersState): { active: string; chars: Array<{ id: string; name: string; charClass: string; faction: string; level: number; gold: number }> } {
     return {
         active: state.active,
         chars: state.chars.map(c => ({
-            id: c.id, name: c.name, charClass: c.charClass, level: c.level, gold: c.gold,
+            id: c.id, name: c.name, charClass: c.charClass, faction: c.faction || "west", level: c.level, gold: c.gold,
         })),
     };
 }
@@ -2401,12 +2881,16 @@ function rpcCharactersList(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk
 
 function rpcCharacterCreate(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
     if (!ctx.userId) throw new Error("auth required");
-    let req: { name?: string; class?: string } = {};
+    let req: { name?: string; class?: string; faction?: string } = {};
     try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
     const wantClass = String(req.class || "");
     const wantName = String(req.name || "").trim();
+    const wantFaction = String(req.faction || "west");
     if (ALLOWED_CLASSES.indexOf(wantClass) < 0) {
         return JSON.stringify({ ok: false, reason: "unknown_class" });
+    }
+    if (ALLOWED_FACTIONS.indexOf(wantFaction) < 0) {
+        return JSON.stringify({ ok: false, reason: "unknown_faction", allowed: ALLOWED_FACTIONS });
     }
     if (!validCharacterName(wantName)) {
         return JSON.stringify({ ok: false, reason: "bad_name" });
@@ -2421,7 +2905,7 @@ function rpcCharacterCreate(ctx: nkruntime.Context, _logger: nkruntime.Logger, n
         }
     }
     const id = "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const ch = defaultChar(id, wantName, wantClass);
+    const ch = defaultChar(id, wantName, wantClass, wantFaction);
     state.chars.push(ch);
     if (!state.active) state.active = id;  // первый персонаж — сразу активный
     saveCharacters(nk, ctx.userId, state);
@@ -2437,6 +2921,26 @@ function rpcCharacterSelect(ctx: nkruntime.Context, _logger: nkruntime.Logger, n
     const found = state.chars.find(c => c.id === id);
     if (!found) return JSON.stringify({ ok: false, reason: "not_found" });
     state.active = id;
+    saveCharacters(nk, ctx.userId, state);
+    return JSON.stringify({ ok: true, ...summarizeChars(state) });
+}
+
+// Смена фракции персонажа. Изменения на лету применяются только к
+// хранилищу; если персонаж уже в матче, новая фракция подтянется
+// при следующем matchJoin. Для теста/дебага на этапе разработки.
+function rpcCharacterSetFaction(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { id?: string; faction?: string } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const id = String(req.id || "");
+    const wantFaction = String(req.faction || "");
+    if (ALLOWED_FACTIONS.indexOf(wantFaction) < 0) {
+        return JSON.stringify({ ok: false, reason: "unknown_faction", allowed: ALLOWED_FACTIONS });
+    }
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const found = state.chars.find(c => c.id === id);
+    if (!found) return JSON.stringify({ ok: false, reason: "not_found" });
+    found.faction = wantFaction;
     saveCharacters(nk, ctx.userId, state);
     return JSON.stringify({ ok: true, ...summarizeChars(state) });
 }
@@ -2634,6 +3138,7 @@ function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkru
     initializer.registerRpc("character_create", rpcCharacterCreate);
     initializer.registerRpc("character_select", rpcCharacterSelect);
     initializer.registerRpc("character_delete", rpcCharacterDelete);
+    initializer.registerRpc("character_set_faction", rpcCharacterSetFaction);
     logger.info("GG runtime loaded. mobs=" + WORLD.mobSpawns.length + " npcs=" + NPCS.length);
 }
 

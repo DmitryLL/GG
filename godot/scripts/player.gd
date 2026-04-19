@@ -5,6 +5,10 @@ extends Node2D
 signal moved(pos: Vector2)
 
 const SPEED := 100.0
+# При активном бафе «sprint» (см. OP_ME.effects) клиент тоже должен
+# успевать интерполировать — иначе серверное +50 не видно визуально.
+# В абсолютных единицах px/sec, совпадает с сервером (PLAYER_SPEED + 50).
+const SPEED_SPRINT_BONUS := 50.0
 const SPRITE_VARIANTS := 6
 # Фундамент (pixellab walking-6-frames + cross-punch-6-frames):
 # walk-атлас: 6 walk frames × 4 directions (hframes=6, vframes=4)
@@ -52,6 +56,7 @@ var _path: PackedVector2Array = PackedVector2Array()
 var _path_idx: int = 0
 var _remote_target: Vector2 = Vector2.ZERO
 var _remote_has_target: bool = false
+var _sprint_end_ms: int = 0  # когда активен баф sprint — локальное ms
 var facing: int = Dir.DOWN
 var moving: bool = false
 var anim_t: float = 0.0
@@ -111,6 +116,8 @@ func _ready() -> void:
 	label = Label.new()
 	label.text = display_name
 	# Враждебные игроки — красные ники, свой — белый
+	# По умолчанию: свой белый, чужой красный. game.gd при получении
+	# OP_POSITIONS.faction может обновить через set_friendly().
 	var nick_color: Color = Color(1, 1, 1) if local else Color(1.0, 0.35, 0.30)
 	label.add_theme_color_override("font_color", nick_color)
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
@@ -146,7 +153,8 @@ func _process(delta: float) -> void:
 	if _remote_has_target:
 		var to := _remote_target - position
 		var dist := to.length()
-		var s := SPEED * delta
+		var speed_now := (SPEED + SPEED_SPRINT_BONUS) if Time.get_ticks_msec() < _sprint_end_ms else SPEED
+		var s := speed_now * delta
 		if dist <= s:
 			position = _remote_target
 			_remote_has_target = false
@@ -208,6 +216,27 @@ func facing_vector() -> Vector2:
 		Dir.LEFT: return Vector2(-1, 0)
 		Dir.RIGHT: return Vector2(1, 0)
 	return Vector2(0, 1)
+
+var is_friendly: bool = true  # читают миникарта и прочие UI
+
+func set_friendly(friendly: bool) -> void:
+	is_friendly = friendly
+	if label == null:
+		return
+	# Свой персонаж остаётся белым — не меняем.
+	if local:
+		return
+	label.add_theme_color_override("font_color",
+		Color(0.45, 0.9, 0.5) if friendly else Color(1.0, 0.35, 0.30))
+
+func set_sprint_remaining(ms: int) -> void:
+	# Вызывается из game._apply_me / _apply_positions когда сервер
+	# подтверждает активный sprint-баф. Клиент временно повышает
+	# скорость интерполяции, чтобы визуально догонять серверную pos.
+	if ms <= 0:
+		_sprint_end_ms = 0
+		return
+	_sprint_end_ms = Time.get_ticks_msec() + ms
 
 func remote_update(new_pos: Vector2) -> void:
 	# Если позиция далеко (>120px) — телепорт. Иначе плавное движение.
@@ -413,7 +442,12 @@ const BOW_DRAW_PHASE := 0.45
 const BOW_RELEASE_PHASE := 0.72
 
 func play_punch() -> void:
-	_punch_end_ms = Session.server_now_ms() + int(PUNCH_DURATION * 1000.0)
+	# Идемпотентно: уже играется — не перезапускаем. Это нужно, чтобы
+	# server-echo через OP_PLAYER_ACTION (повторный вызов) не сбрасывал
+	# локально уже запущенную анимацию на середине.
+	var now_s := Session.server_now_ms()
+	if _punch_end_ms > now_s: return
+	_punch_end_ms = now_s + int(PUNCH_DURATION * 1000.0)
 	sprite.texture = load("res://assets/sprites/characters/char_base_punch.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
@@ -425,7 +459,9 @@ func play_bow_shot() -> void:
 	# 4 кадра × 4 направления. Направление «вверх» пока использует south
 	# до генерации специфического ракурса.
 	if not _has_bow: return
-	_bow_shot_end_ms = Session.server_now_ms() + int(SHOOT_DURATION * 1000.0)
+	var now_s := Session.server_now_ms()
+	if _bow_shot_end_ms > now_s: return
+	_bow_shot_end_ms = now_s + int(SHOOT_DURATION * 1000.0)
 	sprite.texture = load("res://assets/sprites/characters/char_base_shoot.png")
 	sprite.hframes = SHOOT_HFRAMES
 	sprite.vframes = 4
@@ -433,11 +469,31 @@ func play_bow_shot() -> void:
 
 func play_roll() -> void:
 	# Временно: перекат = короткий punch-sprite (пока нет отдельного rig).
-	_roll_end_ms = Session.server_now_ms() + int(ROLL_DURATION * 1000.0)
+	var now_s := Session.server_now_ms()
+	if _roll_end_ms > now_s: return
+	_roll_end_ms = now_s + int(ROLL_DURATION * 1000.0)
 	sprite.texture = load("res://assets/sprites/characters/char_base_punch.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
 	_apply_layer_state("punch")
+
+# Универсальный диспатчер анимаций. Сервер шлёт OP_PLAYER_ACTION{kind},
+# клиент вызывает play_action(kind) на нужном Player — одна точка входа
+# для всех классов/скиллов. Добавить новую анимацию = новый case.
+func play_action(kind: String) -> void:
+	match kind:
+		"bow_shot":         play_bow_shot()
+		"punch":            play_punch()
+		"roll":             play_roll()
+		"bow_shot_upward":  play_bow_shot_upward()
+		"cast":             play_cast()
+		_: pass
+
+# Заглушка каста книжника: пока нет отдельной cast-рiг, reuse punch-анимация
+# (замах рукой с книгой — выглядит как жест). Перехватывается в Player,
+# поэтому когда Вова добавит нормальный cast, достаточно заменить только её.
+func play_cast() -> void:
+	play_punch()
 
 func play_bow_shot_upward() -> void:
 	if not _has_bow: return

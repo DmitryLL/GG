@@ -1,10 +1,12 @@
 // Скилл 3: Эскейп — телепорт вперёд на 3 шага + 0.5s неуязвимости + 3s atk speed x2.
 // Модификации:
-//   "empowered_attack" (1п) — следующая базовая атака +100% урона (окно 5 сек).
+//   "empowered_attack" (1п) — следующая базовая атака +100% урона
+//                             (окно 3 сек, показывается баффом в nameplate).
 //   "sprint"           (2п) — на 2 сек скорость +25% (visual feedback через поле sprintUntil).
 registerSkill(3, {
     requiresBow: false,
     cooldownMs: 8000,
+    manaCost: 25,
     handler: function (ctx: SkillContext): void {
         const { player, body, t, state, dispatcher } = ctx;
         const mod = player.archerMods ? player.archerMods["3"] : "";
@@ -50,11 +52,32 @@ registerSkill(3, {
         player.atkSpeedBoostUntil = t + 3000;
         // Обработка мод.
         if (mod === "empowered_attack") {
-            player.empoweredAttackUntil = t + 5000;
+            const EMPOWERED_MS = 3000;
+            player.empoweredAttackUntil = t + EMPOWERED_MS;
+            // Показываем как положительный эффект в nameplate, чтобы
+            // игрок видел оставшееся время до истечения буста.
+            applyPlayerEffect(player, {
+                id: "empowered_attack",
+                kind: "buff",
+                type: "empowered",
+                endAt: t + EMPOWERED_MS,
+            });
+            markMe(player);
         }
         if (mod === "sprint") {
-            player.sprintUntil = t + 2000;
+            const SPRINT_MS = 2000;
+            player.sprintUntil = t + SPRINT_MS;
+            applyPlayerEffect(player, {
+                id: "sprint",
+                kind: "buff",
+                type: "sprint",
+                endAt: t + SPRINT_MS,
+            });
+            markMe(player);
         }
+        broadcastPlayerAction(dispatcher, player, "roll");
+        // Tween позиции и ghost-trail — отдельный визуальный FX; анимация roll
+        // больше не зовётся в клиенте on_fx, она идёт через OP_PLAYER_ACTION.
         dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
             kind: "dodge", sid: player.sessionId,
             fx: player.pos.x, fy: player.pos.y,

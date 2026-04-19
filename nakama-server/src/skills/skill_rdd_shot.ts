@@ -5,6 +5,7 @@
 registerSkill(1, {
     requiresBow: true,
     cooldownMs: 5000,
+    manaCost: 20,
     handler: function (ctx: SkillContext): void {
         const { player, body, t, state, dispatcher, baseDmg } = ctx;
         const dmg = baseDmg * 2;
@@ -15,19 +16,22 @@ registerSkill(1, {
         if (body.sid && body.sid !== player.sessionId) {
             const foe = state.players[String(body.sid)];
             if (!foe || foe.hp <= 0) return;
+            if (areAllies(player, foe)) return;  // по союзнику не бьём
             if (dist(foe.pos, player.pos) > PLAYER_ATTACK_RANGE + 40) return;
             if (t < foe.invulnUntil) return;
-            foe.hp -= dmg;
+            const finalDmg = applyPlayerArmor(foe, dmg, "phys");
+            foe.hp -= finalDmg;
             if (foe.hp < 0) foe.hp = 0;
             foe.dirtyPos = true;
             markMe(foe);
+            broadcastPlayerAction(dispatcher, player, "bow_shot", foe.pos);
             dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
                 fx: player.pos.x, fy: player.pos.y,
                 tx: foe.pos.x, ty: foe.pos.y,
                 crit: true,
             }));
             dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({
-                sessionId: foe.sessionId, by: player.sessionId, dmg: dmg, crit: true,
+                sessionId: foe.sessionId, by: player.sessionId, dmg: finalDmg, crit: true,
             }));
             if (foe.hp <= 0) {
                 foe.pos.x = WORLD.playerSpawn.x; foe.pos.y = WORLD.playerSpawn.y;
@@ -46,6 +50,7 @@ registerSkill(1, {
         if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE + 40) return;
         mob.hp -= dmg;
         mob.dirty = true;
+        broadcastPlayerAction(dispatcher, player, "bow_shot", mob.pos);
         dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
             fx: player.pos.x, fy: player.pos.y,
             tx: mob.pos.x, ty: mob.pos.y,

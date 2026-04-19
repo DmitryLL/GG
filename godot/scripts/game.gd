@@ -18,6 +18,7 @@ const SKILLBAR_SCRIPT := preload("res://scripts/skillbar.gd")
 const ADMIN_SCRIPT := preload("res://scripts/admin_panel.gd")
 const STATS_SCRIPT := preload("res://scripts/stats_window.gd")
 const SKILLS_WIN_SCRIPT := preload("res://scripts/skills_window.gd")
+const PARTY_UI_SCRIPT := preload("res://scripts/party_ui.gd")
 const BUTTERFLIES_SCRIPT := preload("res://scripts/butterflies.gd")
 
 const OP_POSITIONS    := 1
@@ -83,6 +84,15 @@ const OP_OBJ_DEL      := 35
 const OP_OBJS         := 36
 const OP_OBJ_INTERACT := 37
 const OP_ZONE_SWITCH  := 38
+const OP_PARTY_INVITE        := 39
+const OP_PARTY_INVITE_NOTIFY := 40
+const OP_PARTY_ACCEPT        := 41
+const OP_PARTY_DECLINE       := 42
+const OP_PARTY_UPDATE        := 43
+const OP_PARTY_LEAVE         := 44
+const OP_PLAYER_DEAD         := 45
+const OP_RESPAWN             := 46
+const OP_PLAYER_ACTION       := 47
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -135,6 +145,12 @@ var _targeting_ring: Sprite2D
 var admin_panel: AdminPanel
 var stats_win: StatsWindow
 var skills_win: CanvasLayer
+var party_ui: CanvasLayer
+var party_members_cache: Array = []
+var my_faction: String = "west"  # обновляется из OP_ME
+var death_overlay: CanvasLayer
+var _death_pos: Vector2 = Vector2.ZERO
+var _am_dead: bool = false
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -227,6 +243,12 @@ func _ready() -> void:
 	skills_win = SKILLS_WIN_SCRIPT.new()
 	add_child(skills_win)
 	hud.skills_button_pressed.connect(skills_win.toggle)
+
+	party_ui = PARTY_UI_SCRIPT.new()
+	add_child(party_ui)
+	party_ui.invite_accepted.connect(_on_invite_accepted)
+	party_ui.invite_declined.connect(_on_invite_declined)
+	party_ui.party_leave_requested.connect(_on_party_leave_request)
 
 	admin_panel = ADMIN_SCRIPT.new()
 	add_child(admin_panel)
@@ -401,9 +423,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				_send_move_intent(mob_hit.position)
 			return
-		# Check for remote player click (PvP)
+		# Check for remote player click (PvP или дружественное действие).
 		var sid_hit: String = _player_at(world_pos)
 		if sid_hit != "":
+			# Режим «Действия с игроками» → приглашение в группу.
+			if hud and hud.actions_mode:
+				_send_party_invite(sid_hit)
+				hud.reset_actions_mode()
+				_hide_marker()
+				return
 			pvp_target = remotes.get(sid_hit)
 			pvp_target_sid = sid_hit
 			attack_target = null
@@ -1171,6 +1199,12 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_MOBS:       _apply_mobs(body)
 		OP_SKILL_FX:
 			_handle_skill_fx(body)
+		OP_PLAYER_DEAD:
+			var dx := float(body.get("deathX", 0))
+			var dy := float(body.get("deathY", 0))
+			_show_death_screen(Vector2(dx, dy))
+		OP_PLAYER_ACTION:
+			_apply_player_action(body)
 		OP_SKILL_REJECT:
 			# Сервер отверг скилл — сбрасываем локальный кулдаун слота,
 			# в котором стоит этот скилл. Server.skill = server_id.
@@ -1180,6 +1214,11 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 				var slot_i := SkillRegistry.all().find(rej_def)
 				if slot_i >= 0 and slot_i < skillbar.cooldowns.size():
 					skillbar.cooldowns[slot_i] = 0.0
+					var reason := String(body.get("reason", ""))
+					if reason == "no_mana":
+						skillbar.flash_slot(slot_i, Color(0.4, 0.6, 1.0))
+					elif reason == "no_bow":
+						skillbar.flash_slot(slot_i, Color(0.95, 0.55, 0.30))
 		OP_HIT_FLASH:
 			var mid: String = String(body.get("mobId", ""))
 			var m: Mob = mobs.get(mid)
@@ -1232,6 +1271,10 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 			_apply_objects(body)
 		OP_ZONE_SWITCH:
 			_handle_zone_switch(body)
+		OP_PARTY_INVITE_NOTIFY:
+			_on_party_invite_notify(body)
+		OP_PARTY_UPDATE:
+			_on_party_update(body)
 
 var _last_intent_ms: int = 0
 
@@ -1329,6 +1372,21 @@ func _apply_positions(body: Dictionary) -> void:
 		remote.set_weapon_item(remote_wpn)
 		var hp_max_remote: float = float(p.get("hpMax", 100))
 		remote.set_hp(hp, hp_max_remote)
+		# Фракция: союзник — зелёный, враг — красный.
+		var remote_fac := String(p.get("faction", ""))
+		if remote_fac != "":
+			remote.set_friendly(remote_fac == my_faction)
+		# Спринт (бафф Эскейп-sprint): remote-игрок должен интерполироваться
+		# быстрее, иначе на клиенте он «отстаёт» от server-позиции.
+		var server_now_pos: int = int(body.get("t", 0))
+		var sprint_remain_ms := 0
+		for eff in p.get("effects", []):
+			if String(eff.get("type", "")) == "sprint":
+				var end_at := int(eff.get("endAt", 0))
+				if server_now_pos > 0 and end_at > server_now_pos:
+					sprint_remain_ms = end_at - server_now_pos
+				break
+		remote.set_sprint_remaining(sprint_remain_ms)
 
 func _apply_mobs(body: Dictionary) -> void:
 	for m in body.get("mobs", []):
@@ -1363,6 +1421,9 @@ func _apply_me(body: Dictionary) -> void:
 	last_me = body
 	if body.has("t"):
 		Session.server_offset_ms = int(body["t"]) - Time.get_ticks_msec()
+	# Если hp > 0 и мы были мертвы — сервер уже респавнил нас, убираем модалку.
+	if _am_dead and int(body.get("hp", 0)) > 0:
+		_hide_death_screen()
 	# Класс от сервера — источник истины (может отличаться от локального выбора).
 	var server_class: String = str(body.get("charClass", ""))
 	if server_class != "" and server_class != Session.selected_character:
@@ -1406,6 +1467,22 @@ func _apply_me(body: Dictionary) -> void:
 	elif _wname.contains("sword"): _kind = "sword"
 	me.set_weapon_kind(_kind)
 	me.set_weapon_item(_wname)
+	# Фракция игрока (шлётся сервером в каждом OP_ME) — нужна чтобы
+	# раскрашивать remote-ников: союзник зелёный, враг красный.
+	var server_faction: String = str(body.get("faction", ""))
+	if server_faction != "":
+		my_faction = server_faction
+	# Баф sprint: если активен — сообщаем Player чтобы повысил скорость
+	# интерполяции клиентской позиции до SPEED_SPRINT.
+	var sprint_remaining := 0
+	var server_now_ms: int = int(body.get("t", 0))
+	for eff in body.get("effects", []):
+		if String(eff.get("type", "")) == "sprint":
+			var end_at := int(eff.get("endAt", 0))
+			if server_now_ms > 0 and end_at > server_now_ms:
+				sprint_remaining = end_at - server_now_ms
+			break
+	me.set_sprint_remaining(sprint_remaining)
 	# Paper-doll слои: каждый слот → wear-atlas (если существует в assets).
 	const WEAR_SLOT_MAP := {
 		"boots":  "boots",
@@ -1570,17 +1647,98 @@ func _apply_chat(body: Dictionary) -> void:
 	var sid: String = String(body.get("sid", ""))
 	var who: String = String(body.get("n", "?"))
 	var text: String = String(body.get("t", ""))
+	var ch: String = String(body.get("ch", "global"))
 	if text.is_empty():
 		return
-	chat_panel.append_line(who, text)
+	chat_panel.append_line(who, text, ch)
 	var speaker: Player = me if sid == my_session_id else remotes.get(sid)
 	if speaker:
 		speaker.show_bubble(text)
 
-func _on_chat_send(text: String) -> void:
+func _on_chat_send(text: String, channel: String = "global") -> void:
 	if match_id == "":
 		return
-	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text}))
+	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text, "ch": channel}))
+
+# ─── Экран смерти ────────────────────────────────────────────────
+# Сервер шлёт OP_PLAYER_DEAD → показываем модалку с двумя кнопками.
+# Нажатие → OP_RESPAWN {place:"here"|"spawn"}. Сервер восстанавливает
+# HP/ману и телепортирует, шлёт OP_ME с hp>0 → модалку убираем.
+
+func _show_death_screen(death_pos: Vector2) -> void:
+	_am_dead = true
+	_death_pos = death_pos
+	if death_overlay != null and is_instance_valid(death_overlay):
+		return
+	death_overlay = CanvasLayer.new()
+	death_overlay.layer = 50
+	add_child(death_overlay)
+
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.65)
+	bg.anchor_right = 1.0; bg.anchor_bottom = 1.0
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	death_overlay.add_child(bg)
+
+	var card := PanelContainer.new()
+	card.anchor_left = 0.5; card.anchor_top = 0.5
+	card.anchor_right = 0.5; card.anchor_bottom = 0.5
+	card.offset_left = -220; card.offset_top = -110
+	card.offset_right = 220; card.offset_bottom = 110
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.10, 0.07, 0.07, 0.98)
+	sb.border_color = Color(0.85, 0.30, 0.30, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(18)
+	card.add_theme_stylebox_override("panel", sb)
+	death_overlay.add_child(card)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 12)
+	card.add_child(col)
+
+	var title := Label.new()
+	title.text = "Вы погибли"
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(title)
+
+	var hint := Label.new()
+	hint.text = "Выберите место возрождения:"
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(hint)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_child(row)
+
+	var here_btn := Button.new()
+	here_btn.text = "Возродиться здесь"
+	here_btn.custom_minimum_size = Vector2(170, 36)
+	here_btn.pressed.connect(func(): _send_respawn("here"))
+	row.add_child(here_btn)
+
+	var town_btn := Button.new()
+	town_btn.text = "В городе"
+	town_btn.custom_minimum_size = Vector2(170, 36)
+	town_btn.pressed.connect(func(): _send_respawn("spawn"))
+	row.add_child(town_btn)
+
+func _hide_death_screen() -> void:
+	_am_dead = false
+	if death_overlay != null and is_instance_valid(death_overlay):
+		death_overlay.queue_free()
+	death_overlay = null
+
+func _send_respawn(place: String) -> void:
+	if match_id == "":
+		return
+	Session.socket.send_match_state_async(match_id, OP_RESPAWN, JSON.stringify({"place": place}))
 
 func _handle_skill_fx(body: Dictionary) -> void:
 	# Общие эффекты (не привязаны к конкретному скиллу): обрабатываем сразу.
@@ -1900,6 +2058,44 @@ func _send_skill(index: int, payload: Dictionary) -> void:
 	if sk_def:
 		sk_def.on_send(self)
 
+# ─── Party (группы) ───
+
+func _send_party_invite(target_sid: String) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_PARTY_INVITE,
+		JSON.stringify({ "targetSid": target_sid }))
+
+func _on_party_invite_notify(body: Dictionary) -> void:
+	var from_sid := String(body.get("fromSid", ""))
+	var from_name := String(body.get("fromName", "Игрок"))
+	if party_ui:
+		party_ui.show_invite(from_sid, from_name)
+
+func _on_party_update(body: Dictionary) -> void:
+	var members: Array = body.get("members", [])
+	party_members_cache = members
+	if party_ui:
+		# my_session_id — уже хранится в my_session_id переменной game.gd
+		party_ui.update_party(members, my_session_id)
+
+func _on_invite_accepted(from_sid: String) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_PARTY_ACCEPT,
+		JSON.stringify({ "fromSid": from_sid }))
+
+func _on_invite_declined(from_sid: String) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_PARTY_DECLINE,
+		JSON.stringify({ "fromSid": from_sid }))
+
+func _on_party_leave_request() -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_PARTY_LEAVE, "{}")
+
 # Server id скилла в данном слоте hotbar. Пока hotbar = SkillRegistry.all()
 # 1:1, но когда игрок сможет раскладывать скиллы по слотам — эта
 # функция станет точкой маппинга.
@@ -1934,12 +2130,12 @@ func _spawn_damage_label(pos: Vector2, dmg: int, is_crit: bool = false, is_poiso
 	tween.finished.connect(lbl.queue_free)
 
 func _spawn_arrow(body: Dictionary) -> void:
+	# OP_ARROW теперь — только визуал снаряда. Анимация стрелка идёт
+	# через OP_PLAYER_ACTION (источник истины единый для всех классов).
 	if bool(body.get("melee", false)):
 		return
 	var from := Vector2(float(body.get("fx", 0)), float(body.get("fy", 0)))
 	var to := Vector2(float(body.get("tx", 0)), float(body.get("ty", 0)))
-	# Стрела вылетает из лука (рука), а не от ног. Подъём 22px + небольшой
-	# сдвиг в сторону цели, чтобы визуально стартовала из руки.
 	var dir: Vector2 = (to - from).normalized()
 	from = Vector2(from.x + dir.x * 10.0, from.y - 22.0)
 	var style := "normal"
@@ -1949,6 +2145,24 @@ func _spawn_arrow(body: Dictionary) -> void:
 	var arrow: Arrow = ARROW_SCRIPT.new()
 	entities.add_child(arrow)
 	arrow.shoot(from, to, style)
+
+# Универсальный обработчик OP_PLAYER_ACTION. Server шлёт {sid, kind, tx?, ty?}
+# при любом действии игрока, которое имеет визуальную анимацию. Клиент
+# находит нужного Player'а (свой или remote) и зовёт play_action(kind).
+# Добавить новый класс/скилл = выбрать имя kind на сервере, клиент
+# автоматически его проиграет.
+func _apply_player_action(body: Dictionary) -> void:
+	var sid := String(body.get("sid", ""))
+	var kind := String(body.get("kind", ""))
+	if kind == "":
+		return
+	var p: Player = me if sid == my_session_id else remotes.get(sid)
+	if p == null or not is_instance_valid(p):
+		return
+	if body.has("tx") and body.has("ty"):
+		var tgt := Vector2(float(body.get("tx", 0)), float(body.get("ty", 0)))
+		p.face_toward(tgt)
+	p.play_action(kind)
 
 func _mm_me() -> Vector2:
 	return me.position if me != null else Vector2.ZERO

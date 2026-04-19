@@ -5,6 +5,7 @@
 registerSkill(4, {
     requiresBow: true,
     cooldownMs: 12000,
+    manaCost: 40,
     handler: function (ctx: SkillContext): void {
         const { player, body, t, state, dispatcher } = ctx;
         const zx = Number(body.x); const zy = Number(body.y);
@@ -22,8 +23,10 @@ registerSkill(4, {
             ownerSid: player.sessionId,
             mod: mod,
         });
+        broadcastPlayerAction(dispatcher, player, "bow_shot_upward", { x: zx, y: zy });
         dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
-            kind: "rain_start", x: zx, y: zy, r: 80,
+            kind: "rain_start",
+            x: zx, y: zy, r: 80,
             fx: player.pos.x, fy: player.pos.y,
             duration: 3500,
             t: t,  // server-time старта, чтобы клиент привязал длительность к серверу

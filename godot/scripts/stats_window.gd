@@ -19,6 +19,7 @@ const CHAR_ROWS := [
 	["hp_regen",  "Регенерация здоровья"],
 	["mp",        "Мана"],
 	["mp_regen",  "Регенерация маны"],
+	["speed",     "Скорость бега"],
 ]
 const ATK_ROWS := [
 	["phys_dmg",      "Физический урон"],
@@ -137,7 +138,8 @@ func close() -> void:
 	panel.visible = false
 
 # Обновление значений из body OP_ME.
-# Большинство статов ещё не реализованы в сервере — показываем «—».
+# Нереализованные статы показываем 0 (не «—»), чтобы было видно что
+# параметр есть, просто пока без накоплений.
 func refresh(me: Dictionary) -> void:
 	if me == null or me.is_empty():
 		return
@@ -150,30 +152,35 @@ func refresh(me: Dictionary) -> void:
 		_set_stat(_char_lbl, "xp", str(xp))
 	var hp := int(me.get("hp", 0)); var hp_max := int(me.get("hpMax", 0))
 	_set_stat(_char_lbl, "hp", "%d / %d" % [hp, hp_max])
-	_set_stat(_char_lbl, "hp_regen", "—")
-	_set_stat(_char_lbl, "mp", "—")
-	_set_stat(_char_lbl, "mp_regen", "—")
+	_set_stat(_char_lbl, "hp_regen", "0")
+	var mp := int(me.get("mana", 0)); var mp_max := int(me.get("manaMax", 0))
+	_set_stat(_char_lbl, "mp", "%d / %d" % [mp, mp_max])
+	_set_stat(_char_lbl, "mp_regen", "5")
+	_set_stat(_char_lbl, "speed", str(int(me.get("moveSpeed", 100))))
 	# Атака — сервер шлёт два раздельных значения (physDmg, magDmg).
-	# Legacy-поле "damage" содержит тип по классу — fallback если нового нет.
 	var phys: int = int(me.get("physDmg", me.get("damage", 0)))
 	var mag: int = int(me.get("magDmg", 0))
 	_set_stat(_atk_lbl, "phys_dmg", str(phys))
 	_set_stat(_atk_lbl, "mag_dmg", str(mag))
-	_set_stat(_atk_lbl, "crit_chance", "—")
-	_set_stat(_atk_lbl, "crit_power", "—")
-	_set_stat(_atk_lbl, "accuracy", "—")
-	_set_stat(_atk_lbl, "penetration", "—")
-	_set_stat(_atk_lbl, "cd_reduction", "—")
-	_set_stat(_atk_lbl, "stun", "—")
-	_set_stat(_atk_lbl, "pvp_bonus", "—")
+	# Crit/pierce — реальные значения с учётом активных баффов.
+	var crit_ch: int = int(me.get("critChance", 0))
+	var crit_pw: int = int(me.get("critPower", 0))
+	var pierce: int = int(me.get("penetration", 0))
+	_set_stat(_atk_lbl, "crit_chance", "%d%%" % crit_ch)
+	_set_stat(_atk_lbl, "crit_power",  "%d%%" % crit_pw)
+	_set_stat(_atk_lbl, "accuracy", "0")
+	_set_stat(_atk_lbl, "penetration", "%d%%" % pierce)
+	_set_stat(_atk_lbl, "cd_reduction", "0")
+	_set_stat(_atk_lbl, "stun", "0")
+	_set_stat(_atk_lbl, "pvp_bonus", "0")
 	# Защита
-	_set_stat(_def_lbl, "phys_def", "—")
-	_set_stat(_def_lbl, "mag_def", "—")
-	_set_stat(_def_lbl, "dodge", "—")
-	_set_stat(_def_lbl, "pvp_resist", "—")
-	_set_stat(_def_lbl, "block", "—")
-	_set_stat(_def_lbl, "lifesteal", "—")
-	_set_stat(_def_lbl, "reflect", "—")
+	_set_stat(_def_lbl, "phys_def", str(int(me.get("physDef", 0))))
+	_set_stat(_def_lbl, "mag_def", str(int(me.get("magDef", 0))))
+	_set_stat(_def_lbl, "dodge", "0")
+	_set_stat(_def_lbl, "pvp_resist", "0")
+	_set_stat(_def_lbl, "block", "0")
+	_set_stat(_def_lbl, "lifesteal", "0")
+	_set_stat(_def_lbl, "reflect", "0")
 
 func _set_stat(sink: Dictionary, key: String, value: String) -> void:
 	var lbl: Label = sink.get(key)

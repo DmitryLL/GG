@@ -97,13 +97,13 @@
 
 ### Handoff открытые
 
-**от `dima` → `vovan`**
+**от `dima` → `vovan`** (луки)
 - Что сделано: сервер теперь шлёт `eqWeapon`, клиент умеет
   подгружать индивидуальные оверлеи по контракту выше.
 - Что нужно: доделать спрайты для луков (`bows/wood_bow_drawn.png`,
-  `bows/iron_bow_drawn.png`, `bows/golden_bow_drawn.png`), чтобы
-  разные луки тоже были визуально различимы, а не все один `bow_hand.png`.
-- Файлы: только `godot/assets/sprites/characters/bows/*.png`.
+  `bows/iron_bow_drawn.png`). Золотой (`golden_bow_drawn.png`)
+  уже сделан, спасибо ✅.
+- Файлы: `godot/assets/sprites/characters/bows/*.png`.
 - Контракт: 14×14..16×16 прозрачный PNG, nearest-filter; применяется
   как overlay в руке через те же позиции что текущий `bow_hand.png`.
 - Нельзя ломать: существующие `book_hand.png` / `bow_hand.png` —
@@ -121,6 +121,25 @@
   трогает механику урона или серверный спавн настоящей стрелы.
 - Нельзя ломать: настоящий выстрел и урон остаются на серверной логике;
   это только клиентский визуальный слой.
+
+**от `dima` → `vovan`** (иконки эффектов)
+- Что сделано: сервер шлёт в OP_ME новые эффекты (`empowered`
+  от мода Эскейпа, потенциально `haste/regen/shield` и т.п.).
+  Клиент nameplate.gd ищет PNG по пути
+  `res://assets/sprites/ui/effect_<type>.png`; если не найдена —
+  рисует fallback-символ (⚔/»/+/▲) чтобы хоть что-то было видно.
+- Что нужно: отдельные 16×16 иконки эффектов в
+  `godot/assets/sprites/ui/`:
+    - `effect_empowered.png` (Эскейп 1п)
+    - `effect_sprint.png` (Эскейп 2п)
+    - `effect_crit_buff.png` (Баф крита — базовый + party)
+    - `effect_pierce.png` (Баф крита 2п)
+    - `effect_slow.png` (дебафф, красный)
+  при наличии: `effect_haste.png`, `effect_regen.png`,
+  `effect_shield.png` — для положительных эффектов на мобах.
+- Контракт: 16×16 прозрачный, nearest-filter, цвет зелёный (баффы).
+- Нельзя ломать: существующие `effect_heal.png`, `effect_poison.png` —
+  уже используются и работают.
 
 ### Оружие и анимации по типу оружия
 

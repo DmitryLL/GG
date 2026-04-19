@@ -9,6 +9,8 @@ signal logout_button_pressed
 signal admin_button_pressed
 signal stats_button_pressed
 signal skills_button_pressed
+signal actions_button_pressed
+signal actions_mode_changed(on: bool)
 
 const ICON_BAG := preload("res://assets/sprites/ui/icon_bag.png")
 const ICON_CHAR := preload("res://assets/sprites/ui/icon_character.png")
@@ -24,6 +26,8 @@ var logout_btn: Button
 var admin_btn: Button
 var stats_btn: Button
 var skills_btn: Button
+var actions_btn: Button
+var actions_mode: bool = false
 
 func _ready() -> void:
 	var root := Control.new()
@@ -94,6 +98,24 @@ func _ready() -> void:
 	skills_btn.pressed.connect(func(): skills_button_pressed.emit())
 	root.add_child(skills_btn)
 
+	# «Действия с игроками» — toggle-режим; по нажатию клики в мире
+	# становятся «дружественными» (пригласить в группу и т.п.).
+	actions_btn = _make_icon_button(null, "👥", Color(0.55, 0.95, 0.70), "Действия с игроками")
+	actions_btn.anchor_left = 1.0; actions_btn.anchor_right = 1.0
+	actions_btn.anchor_top = 1.0; actions_btn.anchor_bottom = 1.0
+	var actions_right: int = skills_right - BTN_SIZE - BTN_GAP
+	actions_btn.offset_right = actions_right
+	actions_btn.offset_left = actions_right - BTN_SIZE
+	actions_btn.offset_top = y_top
+	actions_btn.offset_bottom = y_bottom
+	actions_btn.pressed.connect(func():
+		actions_mode = not actions_mode
+		_refresh_actions_style()
+		actions_mode_changed.emit(actions_mode)
+		actions_button_pressed.emit()
+	)
+	root.add_child(actions_btn)
+
 	# Админская кнопка — над × (видна только админам).
 	admin_btn = _make_icon_button(ICON_ADMIN, "", Color(0.70, 0.85, 1.00), "Админка (`)")
 	admin_btn.anchor_left = 1.0; admin_btn.anchor_right = 1.0
@@ -111,6 +133,20 @@ func _ready() -> void:
 func set_admin_visible(on: bool) -> void:
 	if admin_btn:
 		admin_btn.visible = on
+
+func _refresh_actions_style() -> void:
+	if actions_btn == null: return
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.20, 0.35, 0.15, 1.0) if actions_mode else Color(0.12, 0.10, 0.07, 1.0)
+	sb.border_color = Color(0.55, 1.0, 0.55, 1.0) if actions_mode else Color(0.45, 0.35, 0.20, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	actions_btn.add_theme_stylebox_override("normal", sb)
+	actions_btn.add_theme_stylebox_override("hover", sb)
+
+func reset_actions_mode() -> void:
+	actions_mode = false
+	_refresh_actions_style()
 
 func _make_icon_button(icon_tex: Texture2D, fallback_text: String, tint: Color, tip: String) -> Button:
 	var b := Button.new()

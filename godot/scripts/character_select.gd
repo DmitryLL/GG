@@ -94,6 +94,21 @@ func _make_card(c: Dictionary) -> PanelContainer:
 	meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(meta)
 
+	# Кнопка-плашка фракции под уровнем. Клик — переключение Запад↔Восток
+	# через rpc character_set_faction (тестовый режим, меняется в любой момент).
+	var fac := String(c.get("faction", "west"))
+	var fac_btn := Button.new()
+	fac_btn.focus_mode = Control.FOCUS_NONE
+	fac_btn.flat = true
+	fac_btn.text = ("Запад" if fac == "west" else "Восток") + " ↺"
+	fac_btn.add_theme_font_size_override("font_size", 11)
+	fac_btn.add_theme_color_override("font_color",
+		Color(0.60, 0.85, 1.0) if fac == "west" else Color(1.0, 0.65, 0.55))
+	fac_btn.tooltip_text = "Сменить фракцию"
+	var this_char_id := str(c.get("id", ""))
+	fac_btn.pressed.connect(func(): _on_toggle_faction(this_char_id, fac))
+	v.add_child(fac_btn)
+
 	var del := Button.new()
 	del.text = "Удалить"
 	del.focus_mode = Control.FOCUS_NONE
@@ -173,11 +188,24 @@ func _on_delete(char_id: String) -> void:
 		return
 	await _refresh_from_server()
 
+# Тоггл фракции существующего персонажа (тестовый режим).
+func _on_toggle_faction(char_id: String, current: String) -> void:
+	var next_fac := "east" if current == "west" else "west"
+	var res: NakamaAPI.ApiRpc = await Session.client.rpc_async(
+		Session.auth, "character_set_faction",
+		JSON.stringify({ "id": char_id, "faction": next_fac })
+	)
+	if res == null or res.is_exception():
+		return
+	await _refresh_from_server()
+
 # ─── Модалка создания персонажа ───
 
 var _modal: PanelContainer
 var _modal_name: LineEdit
 var _modal_class := "archer"
+var _modal_faction := "west"
+var _modal_faction_cards: Dictionary = {}
 var _modal_error: Label
 var _modal_class_cards: Dictionary = {}
 
@@ -199,7 +227,9 @@ func _open_create_modal() -> void:
 	_modal.add_child(center)
 
 	var inner := PanelContainer.new()
-	inner.custom_minimum_size = Vector2(440, 380)
+	# С появлением раздела «Фракция» высота выросла — даём модалке простор,
+	# чтобы секцию не обрезало на низких разрешениях.
+	inner.custom_minimum_size = Vector2(480, 520)
 	var sb2 := StyleBoxFlat.new()
 	sb2.bg_color = Color(0.12, 0.09, 0.06, 1)
 	sb2.border_color = Color(0.85, 0.65, 0.30, 1)
@@ -248,6 +278,24 @@ func _open_create_modal() -> void:
 		_modal_class_cards[cls_id] = card
 	_modal_class = "archer"
 	_refresh_modal_class_cards()
+
+	# Фракция: запад / восток.
+	var fac_lbl := Label.new()
+	fac_lbl.text = "Фракция"
+	fac_lbl.add_theme_font_size_override("font_size", 12)
+	fac_lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	col.add_child(fac_lbl)
+	var fac_row := HBoxContainer.new()
+	fac_row.add_theme_constant_override("separation", 8)
+	fac_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_child(fac_row)
+	_modal_faction_cards.clear()
+	for fac_id in ["west", "east"]:
+		var fc := _make_faction_card(fac_id)
+		fac_row.add_child(fc)
+		_modal_faction_cards[fac_id] = fc
+	_modal_faction = "west"
+	_refresh_modal_faction_cards()
 
 	_modal_error = Label.new()
 	_modal_error.text = ""
@@ -313,13 +361,45 @@ func _refresh_modal_class_cards() -> void:
 	for k in _modal_class_cards.keys():
 		_apply_card_style(_modal_class_cards[k], str(k) == _modal_class)
 
+func _make_faction_card(fac_id: String) -> PanelContainer:
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(150, 60)
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	card.add_child(v)
+	var lbl := Label.new()
+	lbl.text = "Запад" if fac_id == "west" else "Восток"
+	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.add_theme_color_override("font_color", Color(0.60, 0.85, 1.0) if fac_id == "west" else Color(1.0, 0.65, 0.55))
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(lbl)
+	var hint := Label.new()
+	hint.text = "синие союзники" if fac_id == "west" else "красные союзники"
+	hint.add_theme_font_size_override("font_size", 10)
+	hint.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(hint)
+	card.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			_modal_faction = fac_id
+			_refresh_modal_faction_cards()
+	)
+	return card
+
+func _refresh_modal_faction_cards() -> void:
+	for k in _modal_faction_cards.keys():
+		_apply_card_style(_modal_faction_cards[k], str(k) == _modal_faction)
+
 func _submit_create() -> void:
 	var nm := _modal_name.text.strip_edges()
 	if nm.length() < 3 or nm.length() > 20:
 		_modal_error.text = "Имя: 3-20 символов"
 		return
 	_modal_error.text = ""
-	var payload := JSON.stringify({ "name": nm, "class": _modal_class })
+	var payload := JSON.stringify({ "name": nm, "class": _modal_class, "faction": _modal_faction })
 	var res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "character_create", payload)
 	if res == null or res.is_exception():
 		_modal_error.text = "Сеть: не получилось"
