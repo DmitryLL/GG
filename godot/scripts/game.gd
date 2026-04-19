@@ -134,7 +134,7 @@ var targeting_skill: int = -1  # -1 = нет таргетинга, иначе и
 var _targeting_ring: Sprite2D
 var admin_panel: AdminPanel
 var stats_win: StatsWindow
-var skills_win: SkillsWindow
+var skills_win: CanvasLayer
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
