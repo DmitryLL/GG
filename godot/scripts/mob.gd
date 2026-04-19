@@ -3,6 +3,9 @@
 class_name Mob
 extends Node2D
 
+const MOBS_DATA_PATH := "res://data/mobs.json"
+static var _mobs_data: Dictionary = {}
+
 var _anim_fps := 4.0
 var _anim_frames := 4
 
@@ -29,13 +32,25 @@ func setup(id: String, p_kind: String) -> void:
 	mob_id = id
 	kind = p_kind
 
+static func _load_mobs_data() -> Dictionary:
+	if not _mobs_data.is_empty():
+		return _mobs_data
+	var f := FileAccess.open(MOBS_DATA_PATH, FileAccess.READ)
+	if f == null:
+		push_error("mobs.json not found at %s" % MOBS_DATA_PATH)
+		return {}
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_error("mobs.json is not a JSON object")
+		return {}
+	_mobs_data = parsed
+	return _mobs_data
+
 func _ready() -> void:
-	var def := {
-		"slime":  { "tex": "res://assets/sprites/mobs/slime.png",  "scale": 1.3, "frames": 8, "fps": 6.0 },
-		"goblin": { "tex": "res://assets/sprites/mobs/goblin.png", "scale": 1.25, "frames": 4, "fps": 4.0 },
-		"dummy":  { "tex": "res://assets/sprites/mobs/dummy.png",  "scale": 1.4, "frames": 1, "fps": 1.0 },
-	}
-	var info: Dictionary = def.get(kind, def["slime"])
+	var def: Dictionary = _load_mobs_data()
+	var info: Dictionary = def.get(kind, def.get("slime", {
+		"texture": "res://assets/sprites/mobs/slime.png", "scale": 1.3, "frames": 8, "fps": 6.0
+	}))
 
 	# Лёгкое свечение вокруг моба — виден только если есть лут.
 	glow = Sprite2D.new()
@@ -48,7 +63,7 @@ func _ready() -> void:
 	add_child(glow)
 
 	sprite = Sprite2D.new()
-	sprite.texture = load(info["tex"])
+	sprite.texture = load(info["texture"])
 	sprite.hframes = int(info["frames"])
 	sprite.vframes = 1
 	sprite.frame = 0
