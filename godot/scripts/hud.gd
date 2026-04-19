@@ -8,6 +8,7 @@ signal bag_button_pressed
 signal logout_button_pressed
 signal admin_button_pressed
 signal stats_button_pressed
+signal skills_button_pressed
 
 const ICON_BAG := preload("res://assets/sprites/ui/icon_bag.png")
 const ICON_CHAR := preload("res://assets/sprites/ui/icon_character.png")
@@ -22,6 +23,7 @@ var bag_btn: Button
 var logout_btn: Button
 var admin_btn: Button
 var stats_btn: Button
+var skills_btn: Button
 
 func _ready() -> void:
 	var root := Control.new()
@@ -78,6 +80,19 @@ func _ready() -> void:
 	stats_btn.offset_bottom = y_bottom
 	stats_btn.pressed.connect(func(): stats_button_pressed.emit())
 	root.add_child(stats_btn)
+
+	# «Скиллы» — слева от параметров. Иконка — звезда-заглушка
+	# (позже заменим на настоящий арт из assets/sprites/ui/).
+	skills_btn = _make_icon_button(null, "★", Color(0.95, 0.90, 0.55), "Скиллы (K)")
+	skills_btn.anchor_left = 1.0; skills_btn.anchor_right = 1.0
+	skills_btn.anchor_top = 1.0; skills_btn.anchor_bottom = 1.0
+	var skills_right: int = stats_right - BTN_SIZE - BTN_GAP
+	skills_btn.offset_right = skills_right
+	skills_btn.offset_left = skills_right - BTN_SIZE
+	skills_btn.offset_top = y_top
+	skills_btn.offset_bottom = y_bottom
+	skills_btn.pressed.connect(func(): skills_button_pressed.emit())
+	root.add_child(skills_btn)
 
 	# Админская кнопка — над × (видна только админам).
 	admin_btn = _make_icon_button(ICON_ADMIN, "", Color(0.70, 0.85, 1.00), "Админка (`)")
