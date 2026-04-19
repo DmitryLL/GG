@@ -18,6 +18,7 @@ func _build_skills_list() -> void:
 			"key": str(i + 1),      # хоткей = номер слота (1..5)
 			"icon": d.icon_path,
 			"cd": d.cooldown,
+			"mana_cost": d.mana_cost,
 			"targets_mob": d.targets_mob,
 			"targets_ground": d.targets_ground,
 			"def": d,
@@ -163,8 +164,28 @@ func _make_slot(i: int) -> Control:
 	key_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(key_label)
 
-	# Тултип с названием скилла
-	btn.tooltip_text = String(sk["name"])
+	# Стоимость маны снизу слева (только если > 0).
+	var mana_cost: int = int(sk.get("mana_cost", 0))
+	if mana_cost > 0:
+		var mana_label := Label.new()
+		mana_label.text = str(mana_cost)
+		mana_label.add_theme_font_size_override("font_size", 11)
+		mana_label.add_theme_color_override("font_color", Color(0.55, 0.75, 1.0))
+		mana_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+		mana_label.add_theme_constant_override("outline_size", 3)
+		mana_label.anchor_left = 0.0; mana_label.anchor_top = 1.0
+		mana_label.anchor_right = 0.0; mana_label.anchor_bottom = 1.0
+		mana_label.offset_left = 4; mana_label.offset_top = -18
+		mana_label.offset_right = 20; mana_label.offset_bottom = -2
+		mana_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		mana_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(mana_label)
+
+	# Тултип с названием скилла и стоимостью маны.
+	var tooltip: String = String(sk["name"])
+	if mana_cost > 0:
+		tooltip += " · %d маны" % mana_cost
+	btn.tooltip_text = tooltip
 
 	return btn
 
@@ -218,6 +239,20 @@ func _set_slot_cd(i: int, remaining: float) -> void:
 	else:
 		dim.visible = false
 		lbl.visible = false
+
+# Короткая красная подсветка слота — фидбек на no_mana reject и пр.
+func flash_slot(index: int, color: Color = Color(0.95, 0.35, 0.30)) -> void:
+	if index < 0 or index >= slots.size(): return
+	var btn: Button = slots[index]
+	if btn == null: return
+	var tint := ColorRect.new()
+	tint.color = Color(color.r, color.g, color.b, 0.55)
+	tint.anchor_right = 1.0; tint.anchor_bottom = 1.0
+	tint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(tint)
+	var tw := create_tween()
+	tw.tween_property(tint, "color:a", 0.0, 0.5)
+	tw.finished.connect(tint.queue_free)
 
 var hotkeys_enabled: bool = true
 
