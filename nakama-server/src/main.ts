@@ -201,6 +201,7 @@ interface ActiveZone {
     nextTickAt: number;
     endAt: number;
     ownerSid: string;
+    mod?: string;  // мода Града стрел на момент создания: "slow" | "final_stun" | ""
 }
 
 interface MobDebuff {
@@ -1430,23 +1431,64 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         }
     }
 
-    // --- active zones (arrow rain) ---
+    // --- active zones (arrow rain / град стрел) ---
     for (let zi = state.zones.length - 1; zi >= 0; zi--) {
         const z = state.zones[zi];
-        if (t >= z.endAt) { state.zones.splice(zi, 1); continue; }
-        if (t < z.nextTickAt) continue;
+        // Финальный тик перед удалением — возможность применить final_stun.
+        const isLastTick = (t >= z.endAt);
+        if (t >= z.endAt && z.mod !== "final_stun") { state.zones.splice(zi, 1); continue; }
+        if (!isLastTick && t < z.nextTickAt) continue;
         z.nextTickAt = t + 400;
         const owner = state.players[z.ownerSid];
         const ownerDmg = owner ? Math.floor(computeDamage(owner) * 0.45) : 3;
+        // Собираем мобов в зоне одним проходом — пригодится для мод.
+        const mobsInZone: MatchMob[] = [];
         for (const mk of Object.keys(state.mobs)) {
             const m = state.mobs[mk];
             if (m.state !== "alive") continue;
             if (Math.abs(m.pos.x - z.x) > z.radius || Math.abs(m.pos.y - z.y) > z.radius) continue;
+            mobsInZone.push(m);
+        }
+        for (const m of mobsInZone) {
             m.hp -= ownerDmg;
             m.dirty = true;
             dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: m.id, dmg: ownerDmg }));
             if (m.hp <= 0 && owner) killMob(m, owner, t);
         }
+        // Мода slow — 5 случайных живых целей, slowEndAt = t + 800 (держим до след. тика).
+        if (z.mod === "slow" && mobsInZone.length > 0) {
+            const alive = mobsInZone.filter(m => m.hp > 0 && m.state === "alive");
+            for (let i = alive.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [alive[i], alive[j]] = [alive[j], alive[i]];
+            }
+            const picks = alive.slice(0, 5);
+            for (const m of picks) {
+                if (!m.debuff) {
+                    m.debuff = { poisonStacks: 0, poisonEndAt: 0, slowEndAt: 0, nextPoisonTickAt: 0, poisonDmg: 0 };
+                }
+                m.debuff.slowEndAt = Math.max(m.debuff.slowEndAt, t + 800);
+                m.dirty = true;
+            }
+        }
+        // Мода final_stun — только на последнем тике, до 5 случайных живых, стан 500мс.
+        if (isLastTick && z.mod === "final_stun") {
+            const alive = mobsInZone.filter(m => m.hp > 0 && m.state === "alive");
+            for (let i = alive.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [alive[i], alive[j]] = [alive[j], alive[i]];
+            }
+            const picks = alive.slice(0, 5);
+            for (const m of picks) {
+                m.stunUntil = t + 500;
+                dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
+                    kind: "stun", mobId: m.id, duration: 500,
+                }));
+            }
+            state.zones.splice(zi, 1);
+            continue;
+        }
+        if (isLastTick) { state.zones.splice(zi, 1); continue; }
         // PvP: бьём чужих игроков в зоне (исключая владельца)
         for (const sk of Object.keys(state.players)) {
             const tp = state.players[sk];
