@@ -61,8 +61,9 @@ registerSkill(1, {
             }));
         }
         if (mob.hp > 0 && mod === "fire") {
-            // 20% урона за тик × 3 тика, первый тик через 1 сек после выстрела.
-            mob.fireDmg = Math.max(1, Math.floor(dmg * 0.2));
+            // Стрела попадает на dmg (x2) + поджигает: 20% от базового
+            // физического урона игрока за тик × 3 тика.
+            mob.fireDmg = Math.max(1, Math.floor(computePhysDmg(player) * 0.2));
             mob.fireEndAt = t + 3500;
             mob.nextFireTickAt = t + 1000;
             dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
