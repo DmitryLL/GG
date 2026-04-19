@@ -22,6 +22,7 @@ var hp_fill: ColorRect
 var glow: Sprite2D
 var _poison_end_ms: int = 0
 var _server_offset_ms: int = 0
+var buffs: Array = []  # [{type, endAt}] — положительные эффекты
 var _anim_t := 0.0
 var _flash_t := 0.0
 var _glow_t := 0.0
@@ -248,6 +249,9 @@ func fire_remaining_ms() -> int:
 	if _fire_end_ms <= 0:
 		return 0
 	return max(0, _fire_end_ms - Time.get_ticks_msec())
+
+func set_buffs(arr: Array) -> void:
+	buffs = arr if arr else []
 
 # Краткая вспышка диспелла — голубой flash поверх спрайта.
 func flash_dispel() -> void:

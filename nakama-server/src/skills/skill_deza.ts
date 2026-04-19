@@ -71,7 +71,15 @@ registerSkill(2, {
                 }));
             }
             if (mod === "dispel") {
-                // TODO: система баффов на мобах ещё не реализована.
+                // Снимаем один случайный активный положительный бафф.
+                const now = t;
+                const active = (mob.buffs || []).filter(b => b.endAt > now);
+                if (active.length > 0) {
+                    const removeIdx = Math.floor(Math.random() * active.length);
+                    const removed = active[removeIdx];
+                    mob.buffs = (mob.buffs || []).filter(b => b !== removed);
+                    mob.dirty = true;
+                }
                 dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
                     kind: "dispel", mobId: mob.id,
                 }));
