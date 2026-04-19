@@ -6,7 +6,7 @@ extends SkillDef
 
 func _init() -> void:
 	display_name = "Деза"
-	icon_path = "res://assets/sprites/skills/skill_2.png"
+	icon_path = "res://assets/sprites/skills/skill_4.png"
 	cooldown = 6.0
 	server_id = 2
 	requires_bow = true
