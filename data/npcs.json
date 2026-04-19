@@ -12,6 +12,8 @@
 
       "wood_bow", "iron_bow", "golden_bow",
 
+      "apprentice_tome", "mystic_tome", "arcane_tome", "eldritch_tome", "celestial_tome",
+
       "cloth_armor", "leather_armor", "bronze_armor", "iron_armor", "steel_armor", "golden_armor",
 
       "leather_helmet", "bronze_helmet", "iron_helmet", "steel_helmet", "golden_helmet",
