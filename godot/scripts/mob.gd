@@ -202,6 +202,11 @@ func stun_active() -> bool:
 		return false
 	return _stun_end_ms > Time.get_ticks_msec()
 
+func stun_remaining_ms() -> int:
+	if _stun_end_ms <= 0:
+		return 0
+	return max(0, _stun_end_ms - Time.get_ticks_msec())
+
 func apply_fire(duration_ms: int) -> void:
 	_fire_end_ms = Time.get_ticks_msec() + maxi(500, duration_ms)
 	_show_fire_icon()
