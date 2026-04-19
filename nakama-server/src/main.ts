@@ -478,7 +478,23 @@ interface StoredCharactersState {
     chars: StoredCharacter[];
 }
 
+// Стартовое оружие по классу. Новые персонажи получают базовый
+// предмет в слот weapon, чтобы не было «голого» спаvна.
+function starterWeaponForClass(cls: string): string {
+    if (cls === "mage") return "apprentice_tome";
+    return "wood_bow";  // archer по умолчанию
+}
+
 function defaultChar(id: string, name: string, cls: string, fromLegacy?: StoredProgress): StoredCharacter {
+    // Если мигрируем со старого прогресса — сохраняем всё как было.
+    // Иначе выдаём стартовое оружие в зависимости от класса.
+    let equipment: { [slot: string]: string } = {};
+    if (fromLegacy && fromLegacy.equipment) {
+        equipment = { ...fromLegacy.equipment };
+    }
+    if (!fromLegacy && !equipment.weapon) {
+        equipment.weapon = starterWeaponForClass(cls);
+    }
     return {
         id,
         name,
@@ -487,7 +503,7 @@ function defaultChar(id: string, name: string, cls: string, fromLegacy?: StoredP
         xp: fromLegacy ? fromLegacy.xp : 0,
         gold: fromLegacy ? fromLegacy.gold : 0,
         inventory: fromLegacy ? fromLegacy.inventory : [],
-        equipment: (fromLegacy && fromLegacy.equipment) ? fromLegacy.equipment : {},
+        equipment: equipment,
         archerMods: {},
         mageMods: {},
         createdAt: Date.now(),
@@ -604,6 +620,25 @@ const MAGE_MOD_COSTS: { [skillId: number]: { [modId: string]: number } } = {
 };
 const MAGE_POINTS_BUDGET = 5;
 const ALLOWED_CLASSES = ["archer", "mage"];
+
+// ---------- weapon helpers ----------
+function weaponKind(w: string): string {
+    if (!w) return "";
+    if (w.indexOf("bow") >= 0) return "bow";
+    if (w.indexOf("tome") >= 0) return "tome";
+    if (w.indexOf("sword") >= 0) return "sword";
+    return "other";
+}
+function isRangedWeapon(w: string): boolean {
+    const k = weaponKind(w);
+    return k === "bow" || k === "tome";
+}
+function weaponAllowedForClass(itemId: string, cls: string): boolean {
+    const k = weaponKind(itemId);
+    if (cls === "archer") return k === "bow";
+    if (cls === "mage") return k === "tome";
+    return true;  // другие классы (на будущее)
+}
 
 interface StoredArcherMods {
     // ключ — skillId как строка (JSON совместимость), значение — modId
@@ -1175,8 +1210,10 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     const body = JSON.parse(nk.binaryToString(msg.data)) as { mobId?: string; sid?: string };
                     const atkCd = t < player.atkSpeedBoostUntil ? PLAYER_ATTACK_COOLDOWN_MS * 0.5 : PLAYER_ATTACK_COOLDOWN_MS;
                     if (t - player.lastAttackAt < atkCd) break;
-                    const hasBow = (player.equipment.weapon || "").includes("bow");
-                    const atkRange = hasBow ? PLAYER_ATTACK_RANGE : 36;
+                    const weapon = player.equipment.weapon || "";
+                    const hasBow = weapon.includes("bow");
+                    const hasRanged = isRangedWeapon(weapon);
+                    const atkRange = hasRanged ? PLAYER_ATTACK_RANGE : 36;
 
                     // PvP: атакуем другого игрока
                     if (body.sid && body.sid !== player.sessionId) {
@@ -1207,7 +1244,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
                             fx: player.pos.x, fy: player.pos.y,
                             tx: foe.pos.x, ty: foe.pos.y,
-                            melee: !hasBow,
+                            melee: !hasRanged,
                         }));
                         dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: foe.sessionId, by: player.sessionId, dmg: dmgP, crit: isCritP }));
                         if (foe.hp <= 0) {
@@ -1281,8 +1318,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         target = targetSlotFor(entry.itemId, player.equipment);
                     }
                     if (!target) break;
-                    // Класс «Лучник»: в слот weapon только луки.
-                    if (target === "weapon" && !entry.itemId.includes("bow")) break;
+                    // Класс решает какое оружие можно экипировать в weapon slot.
+                    if (target === "weapon" && !weaponAllowedForClass(entry.itemId, player.charClass)) break;
                     const prev = player.equipment[target];
                     player.equipment[target] = entry.itemId;
                     entry.qty -= 1;
@@ -1414,6 +1451,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         break;
                     }
                     const hasBow = (player.equipment.weapon || "").includes("bow");
+                    // Для archer skills требуется лук (спец проверка). Для mage-
+                    // скиллов requiresBow = false, так что tome их не тормозит.
                     if (spec.requiresBow && !hasBow) {
                         dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill, reason: "no_bow" }), [player.presence]);
                         break;
@@ -1939,13 +1978,14 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
 
     // --- broadcasts ---
-    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; effects: PlayerEffect[] }[] = [];
+    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; wpn: string; effects: PlayerEffect[] }[] = [];
     const pKeys = Object.keys(state.players);
     for (let i = 0; i < pKeys.length; i++) {
         const p = state.players[pKeys[i]];
         if (!p.dirtyPos) continue;
-        const hasBowBroadcast = (p.equipment.weapon || "").includes("bow");
-        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, lv: p.level, hb: hasBowBroadcast, effects: p.effects || [] });
+        const weaponB = p.equipment.weapon || "";
+        const hasRangedB = isRangedWeapon(weaponB);
+        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, lv: p.level, hb: hasRangedB, wpn: weaponKind(weaponB), effects: p.effects || [] });
         p.dirtyPos = false;
     }
     if (pUpdates.length > 0) {

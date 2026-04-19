@@ -1285,7 +1285,11 @@ func _apply_positions(body: Dictionary) -> void:
 			remotes[sid] = remote
 		var new_pos := Vector2(x, y)
 		remote.remote_update(new_pos)
-		remote.set_has_bow(has_bow_remote)
+		# wpn приходит от сервера ("bow"/"tome"/"sword"/""), если его нет — fallback на hb.
+		var remote_wpn := String(p.get("wpn", ""))
+		if remote_wpn == "" and has_bow_remote:
+			remote_wpn = "bow"
+		remote.set_weapon_kind(remote_wpn)
 		var hp_max_remote: float = float(p.get("hpMax", 100))
 		remote.set_hp(hp, hp_max_remote)
 
@@ -1343,7 +1347,12 @@ func _apply_me(body: Dictionary) -> void:
 	if skillbar:
 		skillbar.update_skill_cd(body.get("skillCd", {}), int(body.get("t", 0)))
 	var eq_dict: Dictionary = body.get("eq", {})
-	me.set_has_bow(String(eq_dict.get("weapon", "")).contains("bow"))
+	var _wname := String(eq_dict.get("weapon", ""))
+	var _kind := ""
+	if _wname.contains("bow"): _kind = "bow"
+	elif _wname.contains("tome"): _kind = "tome"
+	elif _wname.contains("sword"): _kind = "sword"
+	me.set_weapon_kind(_kind)
 	# Paper-doll слои: каждый слот → wear-atlas (если существует в assets).
 	const WEAR_SLOT_MAP := {
 		"boots":  "boots",
