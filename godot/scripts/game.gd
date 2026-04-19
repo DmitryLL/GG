@@ -1373,6 +1373,17 @@ func _apply_positions(body: Dictionary) -> void:
 		var remote_fac := String(p.get("faction", ""))
 		if remote_fac != "":
 			remote.set_friendly(remote_fac == my_faction)
+		# Спринт (бафф Эскейп-sprint): remote-игрок должен интерполироваться
+		# быстрее, иначе на клиенте он «отстаёт» от server-позиции.
+		var server_now_pos: int = int(body.get("t", 0))
+		var sprint_remain_ms := 0
+		for eff in p.get("effects", []):
+			if String(eff.get("type", "")) == "sprint":
+				var end_at := int(eff.get("endAt", 0))
+				if server_now_pos > 0 and end_at > server_now_pos:
+					sprint_remain_ms = end_at - server_now_pos
+				break
+		remote.set_sprint_remaining(sprint_remain_ms)
 
 func _apply_mobs(body: Dictionary) -> void:
 	for m in body.get("mobs", []):
@@ -2116,10 +2127,22 @@ func _spawn_damage_label(pos: Vector2, dmg: int, is_crit: bool = false, is_poiso
 	tween.finished.connect(lbl.queue_free)
 
 func _spawn_arrow(body: Dictionary) -> void:
-	if bool(body.get("melee", false)):
-		return
 	var from := Vector2(float(body.get("fx", 0)), float(body.get("fy", 0)))
 	var to := Vector2(float(body.get("tx", 0)), float(body.get("ty", 0)))
+	var is_melee := bool(body.get("melee", false))
+	# Синхронизация анимаций remote-атакующего: свою уже играем локально
+	# при отправке, но для remote (sid != me) нужно триггернуть здесь.
+	var sid := String(body.get("sid", ""))
+	if sid != "" and sid != my_session_id:
+		var shooter: Player = remotes.get(sid)
+		if shooter != null and is_instance_valid(shooter):
+			shooter.face_toward(to)
+			if is_melee:
+				shooter.play_punch()
+			else:
+				shooter.play_bow_shot()
+	if is_melee:
+		return
 	# Стрела вылетает из лука (рука), а не от ног. Подъём 22px + небольшой
 	# сдвиг в сторону цели, чтобы визуально стартовала из руки.
 	var dir: Vector2 = (to - from).normalized()

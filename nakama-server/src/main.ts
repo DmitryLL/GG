@@ -1618,6 +1618,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         foe.dirtyPos = true;
                         markMe(foe);
                         dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
+                            sid: player.sessionId,
                             fx: player.pos.x, fy: player.pos.y,
                             tx: foe.pos.x, ty: foe.pos.y,
                             melee: !hasRanged,
@@ -1652,6 +1653,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     mob.hp -= dmg;
                     mob.dirty = true;
                     dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
+                        sid: player.sessionId,
                         fx: player.pos.x, fy: player.pos.y,
                         tx: mob.pos.x, ty: mob.pos.y,
                         melee: !hasBow,

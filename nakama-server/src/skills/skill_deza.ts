@@ -28,6 +28,7 @@ registerSkill(2, {
             foe.dirtyPos = true;
             markMe(foe);
             dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
+                sid: player.sessionId,
                 fx: player.pos.x, fy: player.pos.y,
                 tx: foe.pos.x, ty: foe.pos.y,
             }));
@@ -49,6 +50,7 @@ registerSkill(2, {
         mob.hp -= hitDmg;
         mob.dirty = true;
         dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
+            sid: player.sessionId,
             fx: player.pos.x, fy: player.pos.y,
             tx: mob.pos.x, ty: mob.pos.y,
         }));
