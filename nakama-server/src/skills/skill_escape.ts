@@ -1,6 +1,7 @@
 // Скилл 3: Эскейп — телепорт вперёд на 3 шага + 0.5s неуязвимости + 3s atk speed x2.
 // Модификации:
-//   "empowered_attack" (1п) — следующая базовая атака +100% урона (окно 5 сек).
+//   "empowered_attack" (1п) — следующая базовая атака +100% урона
+//                             (окно 3 сек, показывается баффом в nameplate).
 //   "sprint"           (2п) — на 2 сек скорость +25% (visual feedback через поле sprintUntil).
 registerSkill(3, {
     requiresBow: false,
@@ -50,7 +51,17 @@ registerSkill(3, {
         player.atkSpeedBoostUntil = t + 3000;
         // Обработка мод.
         if (mod === "empowered_attack") {
-            player.empoweredAttackUntil = t + 5000;
+            const EMPOWERED_MS = 3000;
+            player.empoweredAttackUntil = t + EMPOWERED_MS;
+            // Показываем как положительный эффект в nameplate, чтобы
+            // игрок видел оставшееся время до истечения буста.
+            applyPlayerEffect(player, {
+                id: "empowered_attack",
+                kind: "buff",
+                type: "empowered",
+                endAt: t + EMPOWERED_MS,
+            });
+            markMe(player);
         }
         if (mod === "sprint") {
             player.sprintUntil = t + 2000;

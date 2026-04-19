@@ -1196,6 +1196,15 @@ function applyPlayerEffect(p: MatchPlayer, eff: PlayerEffect): void {
     markMe(p);
 }
 
+function removePlayerEffect(p: MatchPlayer, type: string): void {
+    if (!p.effects || p.effects.length === 0) return;
+    const next: PlayerEffect[] = [];
+    for (let i = 0; i < p.effects.length; i++) {
+        if (p.effects[i].type !== type) next.push(p.effects[i]);
+    }
+    p.effects = next;
+}
+
 function tickPlayerEffects(p: MatchPlayer, t: number): void {
     if (!p.effects || p.effects.length === 0) return;
     let changed = false;
@@ -1306,6 +1315,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         if (player.empoweredAttackUntil && t < player.empoweredAttackUntil) {
                             dmgP = dmgP * 2;
                             player.empoweredAttackUntil = 0;  // один-шот
+                            removePlayerEffect(player, "empowered");
+                            markMe(player);
                         }
                         let isCritP = false;
                         if (player.critBuffUntil && t < player.critBuffUntil) {
@@ -1346,6 +1357,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     if (player.empoweredAttackUntil && t < player.empoweredAttackUntil) {
                         dmg = dmg * 2;
                         player.empoweredAttackUntil = 0;  // один-шот
+                        removePlayerEffect(player, "empowered");
+                        markMe(player);
                     }
                     let isCritM = false;
                     if (player.critBuffUntil && t < player.critBuffUntil) {

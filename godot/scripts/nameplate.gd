@@ -367,6 +367,24 @@ func _make_effect_icon(eff: Dictionary) -> Control:
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wrap.add_child(icon)
+	# Fallback-символ пока нет настоящего PNG (см. handoff в AI_HANDOFF.md).
+	if tex == null:
+		var fallback_sym := ""
+		match eff_type:
+			"empowered": fallback_sym = "⚔"
+			"haste":     fallback_sym = "»"
+			"regen":     fallback_sym = "+"
+			"shield":    fallback_sym = "▲"
+		if fallback_sym != "":
+			var sym := Label.new()
+			sym.text = fallback_sym
+			sym.add_theme_font_size_override("font_size", 14)
+			sym.add_theme_color_override("font_color", col)
+			sym.position = Vector2(3, -2)
+			sym.size = Vector2(16, 20)
+			sym.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			sym.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			wrap.add_child(sym)
 
 	var timer_lbl := Label.new()
 	timer_lbl.name = "Timer"
