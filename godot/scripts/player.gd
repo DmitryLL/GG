@@ -265,8 +265,13 @@ func _apply_weapon(kind: String, item_id: String) -> void:
 			book_sprite.texture = _weapon_texture("tome", item_id, "res://assets/sprites/characters/book_hand.png")
 			_update_book_position()
 
-# Ищет индивидуальный спрайт по имени предмета, иначе — общий.
-# Пример: "wood_bow" → `bow_wood_hand.png`; "apprentice_tome" → `book_apprentice_hand.png`.
+# Ищет индивидуальный спрайт по имени предмета. Пробует несколько
+# раскладок (в AI_HANDOFF.md зафиксирован контракт):
+#   tome: assets/sprites/characters/books/<short>_tome_open.png
+#         assets/sprites/characters/book_<short>_hand.png (legacy)
+#   bow:  assets/sprites/characters/bows/<short>_bow_drawn.png
+#         assets/sprites/characters/bow_<short>_hand.png (legacy)
+# Если ни один не найден — общий overlay (fallback).
 func _weapon_texture(kind: String, item_id: String, fallback: String) -> Texture2D:
 	if item_id != "":
 		var short := item_id
@@ -274,10 +279,18 @@ func _weapon_texture(kind: String, item_id: String, fallback: String) -> Texture
 			short = short.substr(0, short.length() - 4)
 		elif kind == "tome" and short.ends_with("_tome"):
 			short = short.substr(0, short.length() - 5)
-		var prefix := "book" if kind == "tome" else kind  # tome → book_<name>_hand.png
-		var path := "res://assets/sprites/characters/%s_%s_hand.png" % [prefix, short]
-		if ResourceLoader.exists(path):
-			return load(path)
+		var candidates: Array = []
+		if kind == "tome":
+			candidates.append("res://assets/sprites/characters/books/%s_tome_open.png" % short)
+			candidates.append("res://assets/sprites/characters/book_%s_hand.png" % short)
+		elif kind == "bow":
+			candidates.append("res://assets/sprites/characters/bows/%s_bow_drawn.png" % short)
+			candidates.append("res://assets/sprites/characters/bow_%s_hand.png" % short)
+		elif kind == "sword":
+			candidates.append("res://assets/sprites/characters/swords/%s_sword.png" % short)
+		for path in candidates:
+			if ResourceLoader.exists(path):
+				return load(path)
 	return load(fallback)
 
 func _update_bow_position() -> void:

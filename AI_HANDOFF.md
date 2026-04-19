@@ -65,7 +65,7 @@
 
 ## Текущий контракт по проекту
 
-### Книги как оружие
+### Книги как оружие ✅
 
 Сделано со стороны `vovan`:
 - книги поддержаны как отдельные weapon-визуалы по `item_id`
@@ -75,12 +75,40 @@
   - `godot/assets/sprites/characters/books/mystic_tome_open.png`
   - `godot/assets/sprites/characters/books/arcane_tome_open.png`
 
-Нужно от `dima`:
-- для удалённых игроков сервер должен слать не только тип оружия (`tome`), но и точный `eq.weapon`
+Сделано со стороны `dima` (закрыт запрос vovan):
+- сервер шлёт в `OP_POSITIONS` поле `eqWeapon` с точным item id
+  (и `wpn` — тип). Клиент использует `Player.set_weapon_item(id)`
+  и тянет корректный спрайт для remote-игроков. (PR #73)
 
-Ожидание контракта:
-- клиент должен иметь доступ к реальному `weapon item id`
-- тогда разные книги будут одинаково видны и локально, и у других игроков
+### Контракт имён weapon-overlay
+
+Клиент (`Player._weapon_texture`) ищет индивидуальную текстуру
+по следующим путям (первый найденный побеждает). Если ни одна не
+найдена — используется общий `bow_hand.png` / `book_hand.png`.
+
+Пусть `short` = часть `item_id` до суффикса (`apprentice_tome` → `apprentice`,
+`wood_bow` → `wood`, `iron_sword` → `iron`).
+
+| Оружие | Основной путь (актуальный) | Legacy (совместимость) |
+|---|---|---|
+| book / tome | `characters/books/<short>_tome_open.png` | `characters/book_<short>_hand.png` |
+| bow         | `characters/bows/<short>_bow_drawn.png`  | `characters/bow_<short>_hand.png`  |
+| sword       | `characters/swords/<short>_sword.png`    | — |
+
+### Handoff открытые
+
+**от `dima` → `vovan`**
+- Что сделано: сервер теперь шлёт `eqWeapon`, клиент умеет
+  подгружать индивидуальные оверлеи по контракту выше.
+- Что нужно: доделать спрайты для луков (`bows/wood_bow_drawn.png`,
+  `bows/iron_bow_drawn.png`, `bows/golden_bow_drawn.png`), чтобы
+  разные луки тоже были визуально различимы, а не все один `bow_hand.png`.
+- Файлы: только `godot/assets/sprites/characters/bows/*.png`.
+- Контракт: 14×14..16×16 прозрачный PNG, nearest-filter; применяется
+  как overlay в руке через те же позиции что текущий `bow_hand.png`.
+- Нельзя ломать: существующие `book_hand.png` / `bow_hand.png` —
+  это плейсхолдер-fallback и используется всеми, у кого ещё нет
+  индивидуальной текстуры.
 
 ## Готовый промпт для Claude
 
