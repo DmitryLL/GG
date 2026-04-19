@@ -1360,7 +1360,7 @@ func _apply_npcs(body: Dictionary) -> void:
 		var npc_root := Node2D.new()
 		npc_root.position = Vector2(float(entry.get("x", 0)), float(entry.get("y", 0)))
 		var sprite := Sprite2D.new()
-		sprite.texture = load("res://assets/sprites/npc.png")
+		sprite.texture = load("res://assets/sprites/mobs/npc.png")
 		sprite.scale = Vector2(1.2, 1.2)
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		npc_root.add_child(sprite)

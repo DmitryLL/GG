@@ -4,8 +4,8 @@
 class_name World
 extends Node2D
 
-const TILES_TEX := preload("res://assets/sprites/tiles.png")
-const TREE_TEX := preload("res://assets/sprites/tree.png")
+const TILES_TEX := preload("res://assets/sprites/world/tiles.png")
+const TREE_TEX := preload("res://assets/sprites/world/tree.png")
 
 var data: WorldData
 var astar: AStarGrid2D

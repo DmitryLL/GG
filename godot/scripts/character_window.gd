@@ -9,7 +9,7 @@ signal unequip_requested(slot: String)
 signal equip_requested(inv_index: int, target_slot: String)
 signal closed
 
-const ITEMS_TEX := preload("res://assets/sprites/items.png")
+const ITEMS_TEX := preload("res://assets/sprites/items/items.png")
 
 const SLOT_LAYOUT := [
 	{ "slot": "head",   "x":   0, "y": -124, "label": "Шлем" },
@@ -498,7 +498,7 @@ func set_doll(variant: int) -> void:
 	_update_doll_sprite(false)
 
 func _update_doll_sprite(has_bow: bool) -> void:
-	var path: String = "res://assets/sprites/char_%d.png" % _doll_variant
+	var path: String = "res://assets/sprites/characters/char_%d.png" % _doll_variant
 	doll_sprite.texture = load(path)
 	doll_sprite.hframes = 6
 	doll_sprite.vframes = 4

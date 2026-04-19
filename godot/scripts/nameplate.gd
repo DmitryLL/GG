@@ -20,7 +20,7 @@ var target_effects: HBoxContainer
 var server_time_offset_ms: int = 0
 var current_effects: Array = []
 
-const POISON_ICON := preload("res://assets/sprites/skill_4.png")
+const POISON_ICON := preload("res://assets/sprites/skills/skill_4.png")
 
 func _ready() -> void:
 	var root := Control.new()
@@ -55,7 +55,7 @@ func _ready() -> void:
 	v.add_child(top)
 
 	var class_icon := TextureRect.new()
-	class_icon.texture = load("res://assets/sprites/class_archer.png")
+	class_icon.texture = load("res://assets/sprites/skills/class_archer.png")
 	class_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	class_icon.custom_minimum_size = Vector2(24, 24)
 	class_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST

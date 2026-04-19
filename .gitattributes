@@ -1,0 +1,25 @@
+# Нормализация переводов строк
+* text=auto eol=lf
+
+# Бинарные ассеты — не пытаться мержить
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.webp      binary
+*.gif       binary
+*.mp3       binary
+*.ogg       binary
+*.wav       binary
+*.ttf       binary
+*.otf       binary
+
+# Godot-ресурсы формально текстовые, но их ручной мерж чаще всего ломает сцену.
+# Помечаем как текст (чтобы diff читался), но отключаем авто-мерж через драйвер ours-политики на уровне ветки.
+*.tres      text
+*.tscn      text
+*.import    text
+
+# Карты Tiled — text, мержатся нормально
+*.tmj       text
+*.tmx       text
+*.tsx       text
