@@ -8,6 +8,7 @@ func _init() -> void:
 	display_name = "Баф крита"
 	icon_path = "res://assets/sprites/skills/skill_5.png"
 	cooldown = 15.0
+	mana_cost = 30
 	server_id = 5
 	requires_bow = true
 	targets_ground = false  # INSTANT, не нужен таргет или точка на земле

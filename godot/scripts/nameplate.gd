@@ -9,6 +9,8 @@ var level_label: Label
 var class_icon: TextureRect
 var hp_text: Label
 var hp_bar: ProgressBar
+var mana_text: Label
+var mana_bar: ProgressBar
 var xp_bar: ProgressBar
 
 var target_panel: PanelContainer
@@ -101,6 +103,35 @@ func _ready() -> void:
 	hp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hp_bar.add_child(hp_text)
 	hp_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	# Мана — синяя полоска под HP.
+	mana_bar = ProgressBar.new()
+	mana_bar.min_value = 0
+	mana_bar.max_value = 100
+	mana_bar.value = 100
+	mana_bar.show_percentage = false
+	mana_bar.custom_minimum_size = Vector2(220, 10)
+	var mana_fg := StyleBoxFlat.new()
+	mana_fg.bg_color = Color(0.35, 0.55, 0.95, 1.0)
+	mana_fg.set_corner_radius_all(2)
+	mana_bar.add_theme_stylebox_override("fill", mana_fg)
+	var mana_bg := StyleBoxFlat.new()
+	mana_bg.bg_color = Color(0.08, 0.10, 0.14, 1.0)
+	mana_bg.set_corner_radius_all(2)
+	mana_bar.add_theme_stylebox_override("background", mana_bg)
+	v.add_child(mana_bar)
+
+	mana_text = Label.new()
+	mana_text.text = "100 / 100"
+	mana_text.add_theme_font_size_override("font_size", 9)
+	mana_text.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95))
+	mana_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	mana_text.add_theme_constant_override("outline_size", 3)
+	mana_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mana_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	mana_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mana_bar.add_child(mana_text)
+	mana_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	xp_bar = ProgressBar.new()
 	xp_bar.min_value = 0
@@ -324,6 +355,13 @@ func update_me(me: Dictionary) -> void:
 	hp_bar.max_value = float(hp_max)
 	hp_bar.value = float(hp)
 	hp_text.text = "%d / %d" % [hp, hp_max]
+	var mana: int = int(me.get("mana", 0))
+	var mana_max: int = int(me.get("manaMax", 100))
+	if mana_bar != null:
+		mana_bar.max_value = float(max(1, mana_max))
+		mana_bar.value = float(mana)
+	if mana_text != null:
+		mana_text.text = "%d / %d" % [mana, mana_max]
 	xp_bar.max_value = float(me.get("xpNeed", 50))
 	xp_bar.value = float(me.get("xp", 0))
 	if me.has("t"):

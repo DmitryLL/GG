@@ -8,6 +8,7 @@ func _init() -> void:
 	display_name = "Эскейп"
 	icon_path = "res://assets/sprites/skills/skill_3.png"
 	cooldown = 8.0
+	mana_cost = 25
 	server_id = 3
 	# Не таргет-скилл: исполняется на себе (с учётом текущей цели)
 	arrow_style = ""
