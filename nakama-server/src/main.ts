@@ -264,6 +264,14 @@ interface MatchMob {
     knockbackEndAt?: number;   // ms timestamp конца knockback
     knockbackVx?: number;      // px/sec по X
     knockbackVy?: number;      // px/sec по Y
+    buffs?: MobBuff[];         // положительные эффекты (для dispel-тестов)
+}
+
+// Положительный бафф на мобе. Пока — пустышки (не влияют на бой),
+// нужны для тестирования снятия Дезой-dispel и отображения в UI.
+interface MobBuff {
+    type: string;   // "haste" | "regen" | "shield" | ...
+    endAt: number;  // ms timestamp окончания
 }
 
 // Универсальная сущность карты: портал, сундук, спавн-зона, (позже NPC).
@@ -380,13 +388,24 @@ function killMob(mob: MatchMob, player: MatchPlayer, t: number): void {
 function spawnMob(id: string, spec: MobSpawn): MatchMob {
     const type = MOB_TYPES[spec.type] ? spec.type : "slime";
     const def = MOB_TYPES[type];
-    return {
+    const mob: MatchMob = {
         id: id, type: type,
         home: { x: spec.x, y: spec.y },
         pos: { x: spec.x, y: spec.y },
         hp: def.hpMax, hpMax: def.hpMax,
         state: "alive", respawnAt: 0, target: null, loot: rollMobLoot(type), dirty: true,
     };
+    // Манекены: 3 разных положительных эффекта-пустышки для теста
+    // Дезы-dispel. Длительность большая (24ч) — не истекают в бою.
+    if (type === "dummy") {
+        const farFuture = Date.now() + 86_400_000;
+        mob.buffs = [
+            { type: "haste",  endAt: farFuture },
+            { type: "regen",  endAt: farFuture },
+            { type: "shield", endAt: farFuture },
+        ];
+    }
+    return mob;
 }
 
 function rollMobLoot(mobType: string): InvEntry[] {
@@ -1081,6 +1100,7 @@ function mobSnap(m: MatchMob) {
         st: m.state,
         loot: m.loot,
         debuff: m.debuff || null,
+        buffs: m.buffs || [],
         now: Date.now(),
     };
 }

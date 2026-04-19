@@ -1350,6 +1350,7 @@ func _apply_mobs(body: Dictionary) -> void:
 		ms.set_alive(String(m.get("st", "alive")) == "alive")
 		ms.set_loot(m.get("loot", []))
 		ms.set_debuff(m.get("debuff"), int(m.get("now", 0)))
+		ms.set_buffs(m.get("buffs", []))
 		# Если открыто окно лута именно этого моба — обновим список.
 		if loot_win and loot_win.is_open():
 			loot_win.update_loot(mid, ms.loot)
