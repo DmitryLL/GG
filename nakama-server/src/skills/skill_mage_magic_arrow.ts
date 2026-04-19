@@ -33,8 +33,8 @@ registerMageSkill(1, {
             if (foe.hp < 0) foe.hp = 0;
             foe.dirtyPos = true;
             markMe(foe);
+            broadcastPlayerAction(dispatcher, player, "cast", foe.pos);
             dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
-                sid: player.sessionId,
                 fx: player.pos.x, fy: player.pos.y,
                 tx: foe.pos.x, ty: foe.pos.y, ghost: true,
             }));
@@ -61,8 +61,8 @@ registerMageSkill(1, {
 
         mob.hp -= dmg;
         mob.dirty = true;
+        broadcastPlayerAction(dispatcher, player, "cast", mob.pos);
         dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
-            sid: player.sessionId,
             fx: player.pos.x, fy: player.pos.y,
             tx: mob.pos.x, ty: mob.pos.y, ghost: true,
         }));

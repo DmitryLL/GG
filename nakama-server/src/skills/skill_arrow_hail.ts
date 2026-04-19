@@ -23,9 +23,9 @@ registerSkill(4, {
             ownerSid: player.sessionId,
             mod: mod,
         });
+        broadcastPlayerAction(dispatcher, player, "bow_shot_upward", { x: zx, y: zy });
         dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
             kind: "rain_start",
-            sid: player.sessionId,
             x: zx, y: zy, r: 80,
             fx: player.pos.x, fy: player.pos.y,
             duration: 3500,

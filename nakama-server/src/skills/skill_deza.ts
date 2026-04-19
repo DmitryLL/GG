@@ -27,8 +27,8 @@ registerSkill(2, {
             if (foe.hp < 0) foe.hp = 0;
             foe.dirtyPos = true;
             markMe(foe);
+            broadcastPlayerAction(dispatcher, player, "bow_shot", foe.pos);
             dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
-                sid: player.sessionId,
                 fx: player.pos.x, fy: player.pos.y,
                 tx: foe.pos.x, ty: foe.pos.y,
             }));
@@ -49,8 +49,8 @@ registerSkill(2, {
         if (dist(mob.pos, player.pos) > attackRangeFor(player.equipment.weapon || "") + 40) return;
         mob.hp -= hitDmg;
         mob.dirty = true;
+        broadcastPlayerAction(dispatcher, player, "bow_shot", mob.pos);
         dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
-            sid: player.sessionId,
             fx: player.pos.x, fy: player.pos.y,
             tx: mob.pos.x, ty: mob.pos.y,
         }));

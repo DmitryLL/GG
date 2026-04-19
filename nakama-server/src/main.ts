@@ -157,6 +157,12 @@ const OP_PARTY_UPDATE        = 43; // server→members {partyId, members:[{sid, 
 const OP_PARTY_LEAVE         = 44; // client→server {} — выйти из группы
 const OP_PLAYER_DEAD         = 45; // server→self {deathX, deathY}
 const OP_RESPAWN             = 46; // client→server {place:"here"|"spawn"}
+// Универсальный канал анимаций игрока. Источник истины для всего, что
+// визуально «делает» игрок: bow_shot / punch / roll / cast / bow_shot_upward.
+// Проекция выстрела (стрела) и зоны (рейн) — отдельные эвенты (OP_ARROW /
+// OP_SKILL_FX). Точечные sid-поля в них можно убрать в будущем — сейчас
+// оставлены для совместимости.
+const OP_PLAYER_ACTION       = 47; // server→clients {sid, kind, tx?, ty?}
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -456,6 +462,23 @@ function applyPlayerArmor(foe: MatchPlayer, raw: number, kind: "phys" | "mag"): 
     const out = raw - def;
     return out < 1 ? 1 : out;
 }
+// Универсальная рассылка анимации игрока. Все PvP/PvE атаки и скиллы
+// зовут этот helper вместо проставления sid в OP_ARROW/OP_SKILL_FX.
+// Клиент ловит один OP_PLAYER_ACTION и диспатчит в Player.play_action(kind).
+function broadcastPlayerAction(
+    dispatcher: nkruntime.MatchDispatcher,
+    player: MatchPlayer,
+    kind: string,
+    target?: { x: number; y: number },
+): void {
+    const payload: { sid: string; kind: string; tx?: number; ty?: number } = {
+        sid: player.sessionId,
+        kind: kind,
+    };
+    if (target) { payload.tx = target.x; payload.ty = target.y; }
+    dispatcher.broadcastMessage(OP_PLAYER_ACTION, JSON.stringify(payload));
+}
+
 // Смерть игрока: вместо мгновенного респа оставляем игрока в dead-состоянии
 // и отправляем ему OP_PLAYER_DEAD. Дальше ждём OP_RESPAWN с выбором места.
 function killPlayer(p: MatchPlayer, dispatcher: nkruntime.MatchDispatcher): void {
@@ -1617,8 +1640,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         if (foe.hp < 0) foe.hp = 0;
                         foe.dirtyPos = true;
                         markMe(foe);
+                        broadcastPlayerAction(dispatcher, player, hasRanged ? "bow_shot" : "punch", foe.pos);
                         dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
-                            sid: player.sessionId,
                             fx: player.pos.x, fy: player.pos.y,
                             tx: foe.pos.x, ty: foe.pos.y,
                             melee: !hasRanged,
@@ -1652,8 +1675,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     }
                     mob.hp -= dmg;
                     mob.dirty = true;
+                    broadcastPlayerAction(dispatcher, player, hasBow ? "bow_shot" : "punch", mob.pos);
                     dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
-                        sid: player.sessionId,
                         fx: player.pos.x, fy: player.pos.y,
                         tx: mob.pos.x, ty: mob.pos.y,
                         melee: !hasBow,
