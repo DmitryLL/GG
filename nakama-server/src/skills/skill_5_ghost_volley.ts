@@ -1,9 +1,43 @@
-// Скилл 5: Призрачный залп — 5 стрел в конусе.
+// Скилл 5: Баф крита — +75% шанс крита на 2 сек.
+// Легаси: пока сохраняется старая механика призрачного залпа (5 стрел
+// в конусе) как «разминка» скилла, до полной переделки под чистый
+// self-buff.
+// Модификации:
+//   "party_crit"  (1п) — союзникам в радиусе 5 тайлов (160px) +20%
+//                         к шансу крита на 2 сек.
+//   "penetration" (2п) — +20% к итоговому урону как stop-gap до
+//                         реализации брони у мобов.
 registerSkill(5, {
     requiresBow: true,
     cooldownMs: 15000,
     handler: function (ctx: SkillContext): void {
         const { player, body, t, state, dispatcher, baseDmg } = ctx;
+        const mod = player.archerMods ? player.archerMods["5"] : "";
+        const BUFF_MS = 2000;
+        const PARTY_RADIUS = 160;  // 5 тайлов × 32px
+
+        // Базовый эффект бафа крита — себе.
+        player.critBuffUntil = t + BUFF_MS;
+        player.critBonus = 0.75;
+        if (mod === "party_crit") {
+            for (const sk of Object.keys(state.players)) {
+                const ally = state.players[sk];
+                if (ally.sessionId === player.sessionId) continue;
+                if (dist(ally.pos, player.pos) > PARTY_RADIUS) continue;
+                ally.critBuffUntil = t + BUFF_MS;
+                ally.critBonus = Math.max(ally.critBonus || 0, 0.20);
+            }
+            dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
+                kind: "party_crit_buff",
+                sid: player.sessionId,
+                x: player.pos.x, y: player.pos.y,
+                radius: PARTY_RADIUS, duration: BUFF_MS,
+            }));
+        }
+        if (mod === "penetration") {
+            player.pierceBuffUntil = t + BUFF_MS;
+            player.pierceBonus = 0.20;
+        }
         const targetX = Number(body.x);
         const targetY = Number(body.y);
         const aimX = isFinite(targetX) ? targetX : player.pos.x + 100;
