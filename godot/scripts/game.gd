@@ -35,7 +35,27 @@ const OP_SELL         := 13
 const OP_NPCS         := 14
 
 const MOVE_SEND_HZ := 10.0
-const PLAYER_ATTACK_RANGE := 220.0
+const PLAYER_ATTACK_RANGE := 192.0  # 6 тайлов × 32px (для лучника)
+const TILE := 32.0
+
+# Тип текущего оружия игрока ("" для безоружного). Берётся из last_me.eq.weapon.
+func _my_weapon_kind() -> String:
+	var w: String = String(last_me.get("eq", {}).get("weapon", ""))
+	if w.contains("bow"): return "bow"
+	if w.contains("tome"): return "tome"
+	if w.contains("sword"): return "sword"
+	return ""
+
+# Максимальная дистанция базовой атаки, синхронизована с server.attackRangeFor.
+func _my_atk_range() -> float:
+	match _my_weapon_kind():
+		"bow": return PLAYER_ATTACK_RANGE
+		"tome": return PLAYER_ATTACK_RANGE - TILE
+		_: return 36.0
+
+func _my_has_ranged() -> bool:
+	var k := _my_weapon_kind()
+	return k == "bow" or k == "tome"
 const PLAYER_ATTACK_COOLDOWN := 0.6
 const CLICK_MOB_RADIUS := 60.0
 const CLICK_NPC_RADIUS := 28.0
@@ -424,8 +444,9 @@ func _process(delta: float) -> void:
 			pvp_target = null; pvp_target_sid = ""
 			queued_skill = -1
 		else:
-			var has_bow_pvp: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
-			var atk_range_pvp: float = PLAYER_ATTACK_RANGE if has_bow_pvp else 36.0
+			var has_ranged_pvp: bool = _my_has_ranged()
+			var has_bow_pvp: bool = (_my_weapon_kind() == "bow")
+			var atk_range_pvp: float = _my_atk_range()
 			var d_pvp: float = me.position.distance_to(pvp_target.position)
 
 			# Queued skill в PvP — приоритет над авто-атакой
@@ -449,7 +470,7 @@ func _process(delta: float) -> void:
 				if _attack_ready():
 					Session.socket.send_match_state_async(match_id, OP_ATTACK, JSON.stringify({"sid": pvp_target_sid}))
 					_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
-					if has_bow_pvp:
+					if has_ranged_pvp:
 						me.play_bow_shot()
 					else:
 						me.play_punch()
@@ -464,7 +485,7 @@ func _process(delta: float) -> void:
 				queued_skill = -1
 			else:
 				var d_now: float = me.position.distance_to(queued_ground_pos)
-				var max_cast: float = PLAYER_ATTACK_RANGE - 20.0
+				var max_cast: float = _my_atk_range() - 20.0
 				if d_now <= max_cast:
 					_send_stop_move()
 					me.has_target = false
@@ -484,11 +505,13 @@ func _process(delta: float) -> void:
 			attack_target = null
 			queued_skill = -1
 		else:
-			var has_bow: bool = String(last_me.get("eq", {}).get("weapon", "")).contains("bow")
+			var has_bow: bool = (_my_weapon_kind() == "bow")
+			var has_ranged: bool = _my_has_ranged()
+			var atk_range_now: float = _my_atk_range()
 			# Queued skill — пока не выпустили, авто-атака НЕ работает (ждём).
 			if queued_skill >= 0:
 				# Чуть меньше серверной дальности — компенсация лага позиции
-				var q_range: float = (PLAYER_ATTACK_RANGE - 20.0) if has_bow else 30.0
+				var q_range: float = (atk_range_now - 20.0) if has_ranged else 30.0
 				var q_d: float = me.position.distance_to(attack_target.position)
 				if q_d > q_range:
 					_send_move_intent(attack_target.position)
@@ -501,9 +524,9 @@ func _process(delta: float) -> void:
 					_set_attack_cooldown(PLAYER_ATTACK_COOLDOWN)
 					queued_skill = -1
 				return
-			if has_bow:
+			if has_ranged:
 				var d_bow: float = me.position.distance_to(attack_target.position)
-				if d_bow <= PLAYER_ATTACK_RANGE:
+				if d_bow <= atk_range_now:
 					_send_stop_move()
 					me.has_target = false
 					me.face_toward(attack_target.position)
@@ -585,7 +608,13 @@ func _tick_rain_zones() -> void:
 			_spawn_falling_arrow(c + Vector2(randf_range(-h, h), randf_range(-h, h)))
 
 func _on_logout() -> void:
-	Session.logout()
+	# HUD «×» — выход из мира к выбору персонажа (аккаунт остаётся).
+	# Закрываем сокет, чтобы сервер корректно прокинул matchLeave и
+	# сохранил прогресс активного персонажа.
+	if Session.socket and Session.socket.is_connected_to_host():
+		Session.socket.close()
+	Session.socket = null
+	Session.selected_character = ""
 	auth_changed.emit()
 
 func _send_tile_update(c: int, r: int, id: int) -> void:
@@ -1238,7 +1267,7 @@ func _send_move_intent(target: Vector2) -> void:
 	if queued_skill >= 0 and queued_ground_pos != Vector2.ZERO:
 		var sk_cfg: Dictionary = skillbar.SKILLS[queued_skill]
 		if bool(sk_cfg.get("targets_ground", false)) and path.size() > 0:
-			var max_cast: float = PLAYER_ATTACK_RANGE - 20.0
+			var max_cast: float = _my_atk_range() - 20.0
 			for i in range(path.size()):
 				if Vector2(path[i]).distance_to(queued_ground_pos) <= max_cast:
 					path.resize(i + 1)
@@ -1802,7 +1831,7 @@ func _resolve_targeting_click(index: int, world_pos: Vector2) -> void:
 			queued_ground_pos = world_pos
 			# Approach: если точка в радиусе — остаёмся на месте, иначе точка
 			# в радиусе каста, ближайшая к клику.
-			var max_cast_init: float = PLAYER_ATTACK_RANGE - 20.0
+			var max_cast_init: float = _my_atk_range() - 20.0
 			var d0: float = me.position.distance_to(world_pos)
 			if d0 <= max_cast_init:
 				queued_approach_pos = me.position

@@ -22,6 +22,12 @@ const DEFS := {
 	"iron_bow":        { "name": "Железный лук",       "icon": 6, "slot": "weapon", "damage": 12 },
 	"golden_bow":      { "name": "Золотой лук",        "icon": 6, "slot": "weapon", "damage": 20 },
 
+	"apprentice_tome": { "name": "Книга подмастерья",  "icon": 7, "slot": "weapon", "damage": 5 },
+	"mystic_tome":     { "name": "Мистическая книга",  "icon": 7, "slot": "weapon", "damage": 9 },
+	"arcane_tome":     { "name": "Тайная книга",       "icon": 7, "slot": "weapon", "damage": 14 },
+	"eldritch_tome":   { "name": "Древняя книга",      "icon": 7, "slot": "weapon", "damage": 20 },
+	"celestial_tome":  { "name": "Небесная книга",     "icon": 7, "slot": "weapon", "damage": 28 },
+
 	"cloth_armor":     { "name": "Тканая броня",       "icon": 3, "slot": "body", "hp": 12 },
 	"leather_armor":   { "name": "Кожаная броня",      "icon": 3, "slot": "body", "hp": 22 },
 	"bronze_armor":    { "name": "Бронзовая броня",    "icon": 4, "slot": "body", "hp": 32 },
@@ -92,16 +98,16 @@ static func stat_inline(id: String) -> String:
 # 0..4 — числовой ранг для сортировки/цвета.
 static func rarity(id: String) -> int:
 	if id == "": return -1
-	if id.begins_with("golden_") or id == "royal_cloak":
+	if id.begins_with("golden_") or id == "royal_cloak" or id == "celestial_tome":
 		return 4
-	if id.begins_with("steel_") or id == "ruby_ring" or id == "emerald_ring":
+	if id.begins_with("steel_") or id == "ruby_ring" or id == "emerald_ring" or id == "eldritch_tome":
 		return 3
-	if id.begins_with("iron_") or id == "sapphire_ring" or id == "silk_cloak":
+	if id.begins_with("iron_") or id == "sapphire_ring" or id == "silk_cloak" or id == "arcane_tome":
 		return 2
 	if id.begins_with("bronze_") or id == "silver_ring" or id == "silver_amulet" \
 			or id == "leather_armor" or id == "leather_helmet" or id == "leather_boots" \
 			or id == "leather_belt" or id == "leather_cloak" or id == "wool_cloak" \
-			or id == "health_potion":
+			or id == "health_potion" or id == "mystic_tome":
 		return 1
 	return 0
 

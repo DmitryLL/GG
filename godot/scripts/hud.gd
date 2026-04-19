@@ -37,7 +37,7 @@ func _ready() -> void:
 	var y_top: int = -58
 	var y_bottom: int = -10
 
-	logout_btn = _make_icon_button(null, "×", Color(0.90, 0.45, 0.35), "Выйти")
+	logout_btn = _make_icon_button(null, "×", Color(0.90, 0.45, 0.35), "Выйти к выбору персонажа")
 	logout_btn.anchor_left = 1.0; logout_btn.anchor_right = 1.0
 	logout_btn.anchor_top = 1.0; logout_btn.anchor_bottom = 1.0
 	logout_btn.offset_right = x_right

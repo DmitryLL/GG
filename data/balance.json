@@ -5,7 +5,7 @@
     "perLevelHpBonus": 10,
     "perLevelDamageBonus": 2,
     "attackDamage": 3,
-    "attackRange": 220,
+    "attackRange": 192,
     "attackCooldownMs": 600
   },
   "world": {

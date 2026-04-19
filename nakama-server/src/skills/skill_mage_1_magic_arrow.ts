@@ -11,12 +11,13 @@ registerMageSkill(1, {
         const { player, body, t, state, dispatcher, baseDmg } = ctx;
         let dmg = Math.max(1, Math.floor(baseDmg * 1.5));
         const mod = player.mageMods ? player.mageMods["1"] : "";
+        const maxDist = attackRangeFor(player.equipment.weapon || "") + 40;
 
         // PvP
         if (body.sid && body.sid !== player.sessionId) {
             const foe = state.players[String(body.sid)];
             if (!foe || foe.hp <= 0) return;
-            if (dist(foe.pos, player.pos) > PLAYER_ATTACK_RANGE + 40) return;
+            if (dist(foe.pos, player.pos) > maxDist) return;
             if (t < foe.invulnUntil) return;
             foe.hp -= dmg;
             if (foe.hp < 0) foe.hp = 0;
@@ -41,7 +42,7 @@ registerMageSkill(1, {
         // PvE
         const mob = state.mobs[String(body.mobId || "")];
         if (!mob || mob.state !== "alive") return;
-        if (dist(mob.pos, player.pos) > PLAYER_ATTACK_RANGE + 40) return;
+        if (dist(mob.pos, player.pos) > maxDist) return;
 
         if (mod === "armor_pierce" && mob.armorDebuffUntil && t < mob.armorDebuffUntil) {
             dmg = Math.floor(dmg * 1.20);
