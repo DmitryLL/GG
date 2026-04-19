@@ -330,11 +330,44 @@ function now(): number { return Date.now(); }
 function dist(a: Vec2, b: Vec2): number { const dx = a.x - b.x; const dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
 function clamp(v: number, lo: number, hi: number): number { return v < lo ? lo : v > hi ? hi : v; }
 
-function playerBaseHp(level: number): number { return PLAYER_HP_BASE + PER_LEVEL_HP_BONUS * (level - 1); }
+// ---------- Class profiles ----------
+// Единая точка правды по базовым ресурсам класса. Новый класс
+// добавляется одной записью в CLASS_PROFILES — остальная логика
+// (init, регенерация, level-up, OP_ME) ничего не знает про конкретный
+// класс и берёт значения через classProfile(). Значения — базовые;
+// предметы с полями `hp` / `mana` и будущие бафы добавляются поверх.
+interface ClassProfile {
+    baseHp: number;            // HP на 1 уровне
+    perLevelHp: number;        // прирост HP за уровень
+    baseMana: number;          // стартовый пул маны
+    perLevelMana: number;      // прирост маны за уровень (0 = не растёт)
+    manaRegenPerSec: number;   // регенерация маны в секунду
+}
+const DEFAULT_CLASS_PROFILE: ClassProfile = {
+    baseHp: PLAYER_HP_BASE,
+    perLevelHp: PER_LEVEL_HP_BONUS,
+    baseMana: 100,
+    perLevelMana: 0,
+    manaRegenPerSec: 5,
+};
+// Archer и mage сейчас имеют те же значения, что раньше «по умолчанию».
+// Когда появится рыцарь/жрец/вор — добавляем только здесь.
+const CLASS_PROFILES: { [cls: string]: ClassProfile } = {
+    archer: { ...DEFAULT_CLASS_PROFILE },
+    mage:   { ...DEFAULT_CLASS_PROFILE },
+};
+function classProfile(cls: string): ClassProfile {
+    return CLASS_PROFILES[cls] || DEFAULT_CLASS_PROFILE;
+}
+
+function playerBaseHp(p: { charClass: string; level: number }): number {
+    const prof = classProfile(p.charClass);
+    return prof.baseHp + prof.perLevelHp * (p.level - 1);
+}
 function playerBaseDamage(level: number): number { return PLAYER_ATTACK_DAMAGE + PER_LEVEL_DAMAGE_BONUS * (level - 1); }
 
 function computeHpMax(p: MatchPlayer): number {
-    let total = playerBaseHp(p.level);
+    let total = playerBaseHp(p);
     for (const slot of EQUIP_SLOTS) {
         const id = p.equipment[slot];
         if (!id) continue;
@@ -343,11 +376,9 @@ function computeHpMax(p: MatchPlayer): number {
     }
     return total;
 }
-// Стартовая мана: 100 у всех классов. Регенерация — 5/сек (в цикле).
-// Предметы с полем `mana` увеличивают пул (на будущее — пока нет ни одного).
-const MANA_REGEN_PER_SEC = 5;
 function computeManaMax(p: MatchPlayer): number {
-    let total = 100;
+    const prof = classProfile(p.charClass);
+    let total = prof.baseMana + prof.perLevelMana * (p.level - 1);
     for (const slot of EQUIP_SLOTS) {
         const id = p.equipment[slot];
         if (!id) continue;
@@ -355,6 +386,9 @@ function computeManaMax(p: MatchPlayer): number {
         if (def && def.mana) total += Number(def.mana) || 0;
     }
     return total;
+}
+function manaRegenPerSec(p: MatchPlayer): number {
+    return classProfile(p.charClass).manaRegenPerSec;
 }
 // Два типа урона: физический и магический. Оружие даёт свой тип
 // (`physDmg` у лука/меча, `magDmg` у книги), украшения с общим `damage`
@@ -2121,13 +2155,13 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
 
     // --- player status effects (buffs/debuffs ticking) ---
-    const manaRegenPerTick = MANA_REGEN_PER_SEC * TICK_DT;
     for (const sk of Object.keys(state.players)) {
         const pl = state.players[sk];
         if (pl.hp <= 0) continue;
-        // Регенерация маны: +MANA_REGEN_PER_SEC / сек, не превышая пула.
+        // Регенерация маны: берём скорость из профиля класса. Добавляем за тик.
         if (pl.mana < pl.manaMax) {
-            const next = Math.min(pl.manaMax, pl.mana + manaRegenPerTick);
+            const regenPerTick = manaRegenPerSec(pl) * TICK_DT;
+            const next = Math.min(pl.manaMax, pl.mana + regenPerTick);
             if (Math.floor(next) !== Math.floor(pl.mana)) markMe(pl);
             pl.mana = next;
         }

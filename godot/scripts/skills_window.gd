@@ -194,6 +194,20 @@ func _build_skill_card(s: Dictionary) -> Dictionary:
 	desc_lbl.add_theme_color_override("font_color", Color(0.85, 0.80, 0.70))
 	name_col.add_child(desc_lbl)
 
+	# Строка «Откат: X с · Мана: Y» — берём из SkillDef (единый источник
+	# истины), JSON хранит только текстовое описание для игрока.
+	var stat_def: SkillDef = SkillRegistry.by_server_id(int(s.get("id", -1)))
+	if stat_def != null:
+		var stats_lbl := Label.new()
+		var parts: Array = []
+		parts.append("Откат: %.0f с" % stat_def.cooldown)
+		if stat_def.mana_cost > 0:
+			parts.append("Мана: %d" % stat_def.mana_cost)
+		stats_lbl.text = " · ".join(parts)
+		stats_lbl.add_theme_font_size_override("font_size", 10)
+		stats_lbl.add_theme_color_override("font_color", Color(0.75, 0.85, 1.0))
+		name_col.add_child(stats_lbl)
+
 	# Кнопка «Модифицировать» — раскрывает блок с вариантами.
 	var modify_btn := Button.new()
 	modify_btn.text = "Модифицировать"

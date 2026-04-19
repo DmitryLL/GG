@@ -1202,6 +1202,11 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 				var slot_i := SkillRegistry.all().find(rej_def)
 				if slot_i >= 0 and slot_i < skillbar.cooldowns.size():
 					skillbar.cooldowns[slot_i] = 0.0
+					var reason := String(body.get("reason", ""))
+					if reason == "no_mana":
+						skillbar.flash_slot(slot_i, Color(0.4, 0.6, 1.0))
+					elif reason == "no_bow":
+						skillbar.flash_slot(slot_i, Color(0.95, 0.55, 0.30))
 		OP_HIT_FLASH:
 			var mid: String = String(body.get("mobId", ""))
 			var m: Mob = mobs.get(mid)
