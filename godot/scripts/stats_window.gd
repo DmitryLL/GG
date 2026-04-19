@@ -153,10 +153,12 @@ func refresh(me: Dictionary) -> void:
 	_set_stat(_char_lbl, "hp_regen", "—")
 	_set_stat(_char_lbl, "mp", "—")
 	_set_stat(_char_lbl, "mp_regen", "—")
-	# Атака — сервер шлёт суммарный урон в поле "damage" (computeDamage).
-	var phys: int = int(me.get("damage", 0))
+	# Атака — сервер шлёт два раздельных значения (physDmg, magDmg).
+	# Legacy-поле "damage" содержит тип по классу — fallback если нового нет.
+	var phys: int = int(me.get("physDmg", me.get("damage", 0)))
+	var mag: int = int(me.get("magDmg", 0))
 	_set_stat(_atk_lbl, "phys_dmg", str(phys))
-	_set_stat(_atk_lbl, "mag_dmg", "—")
+	_set_stat(_atk_lbl, "mag_dmg", str(mag))
 	_set_stat(_atk_lbl, "crit_chance", "—")
 	_set_stat(_atk_lbl, "crit_power", "—")
 	_set_stat(_atk_lbl, "accuracy", "—")
