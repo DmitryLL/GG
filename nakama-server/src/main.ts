@@ -716,6 +716,20 @@ const MAGE_POINTS_BUDGET = 5;
 const ALLOWED_CLASSES = ["archer", "mage"];
 const ALLOWED_FACTIONS = ["west", "east"];
 
+// ---------- faction helpers ----------
+// Игроки считаются союзниками, если их фракции совпадают.
+// Если у одной из сторон фракции нет (защитный кейс) — считаем союзниками,
+// чтобы не уронить урон в игроков случайно.
+function areAllies(a: MatchPlayer, b: MatchPlayer): boolean {
+    if (!a || !b) return true;
+    const fa = a.faction || "west";
+    const fb = b.faction || "west";
+    return fa === fb;
+}
+function areHostile(a: MatchPlayer, b: MatchPlayer): boolean {
+    return !areAllies(a, b);
+}
+
 // ---------- weapon helpers ----------
 function weaponKind(w: string): string {
     if (!w) return "";
@@ -1451,6 +1465,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     if (body.sid && body.sid !== player.sessionId) {
                         const foe = state.players[body.sid];
                         if (!foe || foe.hp <= 0) break;
+                        if (areAllies(player, foe)) break;  // по союзнику не бьём
                         if (dist(foe.pos, player.pos) > atkRange) break;
                         if (t < foe.invulnUntil) break;
                         player.lastAttackAt = t;
@@ -1937,6 +1952,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     if (!targetSid || targetSid === player.sessionId) break;
                     const target = state.players[targetSid];
                     if (!target) break;
+                    if (!areAllies(player, target)) break;  // зовём только своих
                     if (target.partyId && target.partyId === player.partyId) break; // уже в одной
                     // Если у приглашающего нет группы — создаём.
                     let myParty = player.partyId ? state.parties[player.partyId] : null;
@@ -2045,10 +2061,11 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             continue;
         }
         if (isLastTick) { state.zones.splice(zi, 1); continue; }
-        // PvP: бьём чужих игроков в зоне (исключая владельца)
+        // PvP: бьём чужих игроков в зоне (исключая владельца и союзников)
         for (const sk of Object.keys(state.players)) {
             const tp = state.players[sk];
             if (tp.sessionId === z.ownerSid || tp.hp <= 0) continue;
+            if (owner && areAllies(owner, tp)) continue;  // по союзнику не бьём
             if (t < tp.invulnUntil) continue;
             if (Math.abs(tp.pos.x - z.x) > z.radius || Math.abs(tp.pos.y - z.y) > z.radius) continue;
             tp.hp -= ownerDmg;

@@ -17,6 +17,7 @@ registerMageSkill(1, {
         if (body.sid && body.sid !== player.sessionId) {
             const foe = state.players[String(body.sid)];
             if (!foe || foe.hp <= 0) return;
+            if (areAllies(player, foe)) return;  // по союзнику не бьём
             if (dist(foe.pos, player.pos) > maxDist) return;
             if (t < foe.invulnUntil) return;
             foe.hp -= dmg;
