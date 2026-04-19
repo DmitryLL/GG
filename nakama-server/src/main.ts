@@ -190,6 +190,7 @@ interface MatchPlayer {
     archerMods: { [skillId: string]: string };  // выбранные модификации скиллов лучника
     mageMods: { [skillId: string]: string };    // выбранные модификации скиллов мага
     charClass: string;                           // "archer" | "mage"
+    characterId: string;                         // id активного персонажа в storage (новая модель)
     empoweredAttackUntil?: number;  // мода эскейпа "empowered_attack": следующая атака ×2 до этого ms
     sprintUntil?: number;           // мода эскейпа "sprint": ускорение +25 до этого ms
     critBuffUntil?: number;         // Баф крита (skill 5): окно действия
@@ -439,7 +440,127 @@ function saveProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
             permissionRead: 1,
             permissionWrite: 0,
         }]);
+        // Параллельно сохраняем в активного персонажа (новая модель).
+        if (p.characterId) {
+            saveActiveCharacterProgress(nk, p);
+        }
     } catch (_e) { /* swallow */ }
+}
+
+// ---------- Characters (multiple per account) ----------
+// Новая модель. Один аккаунт хранит несколько персонажей; каждый
+// персонаж держит свой прогресс (лвл/xp/gold/inv/eq) и выбор мод.
+// Storage: collection=CHARS_COLLECTION, key=CHARS_KEY, userId=ownerId.
+// Формат: { active: string, chars: StoredCharacter[] }.
+
+const CHARS_COLLECTION = "gg_chars";
+const CHARS_KEY = "list";
+const MAX_CHARS_PER_ACCOUNT = 5;
+const CHAR_NAME_MIN = 3;
+const CHAR_NAME_MAX = 20;
+
+interface StoredCharacter {
+    id: string;
+    name: string;
+    charClass: string;  // "archer" | "mage"
+    level: number;
+    xp: number;
+    gold: number;
+    inventory: InvEntry[];
+    equipment: { [slot: string]: string };
+    archerMods: { [skillId: string]: string };
+    mageMods: { [skillId: string]: string };
+    createdAt: number;
+}
+
+interface StoredCharactersState {
+    active: string;              // id активного персонажа ("" если не выбран)
+    chars: StoredCharacter[];
+}
+
+function defaultChar(id: string, name: string, cls: string, fromLegacy?: StoredProgress): StoredCharacter {
+    return {
+        id,
+        name,
+        charClass: cls,
+        level: fromLegacy ? fromLegacy.level : 1,
+        xp: fromLegacy ? fromLegacy.xp : 0,
+        gold: fromLegacy ? fromLegacy.gold : 0,
+        inventory: fromLegacy ? fromLegacy.inventory : [],
+        equipment: (fromLegacy && fromLegacy.equipment) ? fromLegacy.equipment : {},
+        archerMods: {},
+        mageMods: {},
+        createdAt: Date.now(),
+    };
+}
+
+function loadCharacters(nk: nkruntime.Nakama, userId: string): StoredCharactersState {
+    try {
+        const objs = nk.storageRead([{ collection: CHARS_COLLECTION, key: CHARS_KEY, userId: userId }]);
+        if (objs.length === 0) return { active: "", chars: [] };
+        const v = objs[0].value as StoredCharactersState;
+        return { active: v.active || "", chars: v.chars || [] };
+    } catch (_e) {
+        return { active: "", chars: [] };
+    }
+}
+
+function saveCharacters(nk: nkruntime.Nakama, userId: string, state: StoredCharactersState): void {
+    nk.storageWrite([{
+        collection: CHARS_COLLECTION,
+        key: CHARS_KEY,
+        userId: userId,
+        value: state as unknown as { [k: string]: any },
+        permissionRead: 1,
+        permissionWrite: 0,
+    }]);
+}
+
+// Миграция: если у игрока нет записи gg_chars/list, но есть старый
+// gg/progress — создаём одного персонажа "Герой" из старых данных.
+// Возвращаем актуальное состояние.
+function migrateCharactersIfNeeded(nk: nkruntime.Nakama, userId: string): StoredCharactersState {
+    const st = loadCharacters(nk, userId);
+    if (st.chars.length > 0) return st;
+    const legacy = loadProgress(nk, userId);
+    if (!legacy) return st;  // пусто — вернём пустое, клиент покажет «Создать»
+    const id = "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const name = "Герой";
+    const cls = (legacy.charClass === "mage") ? "mage" : "archer";
+    const ch = defaultChar(id, name, cls, legacy);
+    const newState: StoredCharactersState = { active: id, chars: [ch] };
+    saveCharacters(nk, userId, newState);
+    return newState;
+}
+
+function findActiveCharacter(state: StoredCharactersState): StoredCharacter | null {
+    if (!state.active) return null;
+    for (const c of state.chars) {
+        if (c.id === state.active) return c;
+    }
+    return null;
+}
+
+function saveActiveCharacterProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
+    const st = loadCharacters(nk, p.userId);
+    const ch = findActiveCharacter(st);
+    if (!ch) return;
+    ch.level = p.level;
+    ch.xp = p.xp;
+    ch.gold = p.gold;
+    ch.inventory = p.inventory;
+    ch.equipment = p.equipment;
+    ch.archerMods = p.archerMods;
+    ch.mageMods = p.mageMods;
+    saveCharacters(nk, p.userId, st);
+}
+
+function validCharacterName(name: string): boolean {
+    if (typeof name !== "string") return false;
+    const trimmed = name.trim();
+    if (trimmed.length < CHAR_NAME_MIN || trimmed.length > CHAR_NAME_MAX) return false;
+    // Буквы/цифры/пробел/дефис, без спец-символов.
+    return /^[\p{L}0-9 _\-]+$/u.test(trimmed);
 }
 
 // ================================================================== //
@@ -788,27 +909,42 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 delete state.players[oldSid];
             }
         }
+        // Новая модель: грузим активного персонажа из gg_chars/list.
+        // Если нет — пытаемся мигрировать из старого gg/progress.
+        const chState = migrateCharactersIfNeeded(nk, p.userId);
+        const activeChar: StoredCharacter | null = findActiveCharacter(chState);
         const saved = loadProgress(nk, p.userId);
         const equipment: { [slot: string]: string } = {};
         for (const s of EQUIP_SLOTS) equipment[s] = "";
-        if (saved && saved.equipment) {
+        // Приоритет: активный персонаж → legacy progress → default.
+        const progSource: Partial<StoredCharacter> & Partial<StoredProgress> = activeChar
+            ? activeChar
+            : (saved || {}) as any;
+        if (progSource.equipment) {
             for (const s of EQUIP_SLOTS) {
-                if (saved.equipment[s]) equipment[s] = saved.equipment[s];
+                if (progSource.equipment[s]) equipment[s] = progSource.equipment[s];
             }
         } else if (saved) {
-            // миграция со старого формата (eqWeapon / eqArmor → weapon/body)
             if (saved.eqWeapon) equipment.weapon = saved.eqWeapon;
             if (saved.eqArmor) equipment.body = saved.eqArmor;
         }
+        // Моды, класс, id — из активного персонажа, если он есть.
+        // Иначе legacy: отдельные коллекции и saved.charClass.
+        const archerModsFromChar = activeChar ? activeChar.archerMods : loadArcherMods(nk, p.userId).selected;
+        const mageModsFromChar = activeChar ? activeChar.mageMods : loadMageMods(nk, p.userId).selected;
+        const charClassFromChar = activeChar
+            ? activeChar.charClass
+            : ((saved && saved.charClass && ALLOWED_CLASSES.indexOf(saved.charClass) >= 0) ? saved.charClass : "archer");
+        const displayUsername = activeChar ? activeChar.name : p.username;
         const player: MatchPlayer = {
-            userId: p.userId, sessionId: p.sessionId, username: p.username,
+            userId: p.userId, sessionId: p.sessionId, username: displayUsername,
             presence: p,
             pos: { x: WORLD.playerSpawn.x, y: WORLD.playerSpawn.y },
             hp: 0, hpMax: 0,
-            level: saved ? saved.level : 1,
-            xp: saved ? saved.xp : 0,
-            gold: saved ? saved.gold : 0,
-            inventory: saved ? saved.inventory : [],
+            level: activeChar ? activeChar.level : (saved ? saved.level : 1),
+            xp: activeChar ? activeChar.xp : (saved ? saved.xp : 0),
+            gold: activeChar ? activeChar.gold : (saved ? saved.gold : 0),
+            inventory: activeChar ? activeChar.inventory : (saved ? saved.inventory : []),
             equipment: equipment,
             dirtyPos: true, dirtyMe: true,
             lastAttackAt: 0,
@@ -820,9 +956,10 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             effects: [],
             moveTarget: null,
             movePath: [],
-            archerMods: loadArcherMods(nk, p.userId).selected,
-            mageMods: loadMageMods(nk, p.userId).selected,
-            charClass: (saved && saved.charClass && ALLOWED_CLASSES.indexOf(saved.charClass) >= 0) ? saved.charClass : "archer",
+            archerMods: archerModsFromChar,
+            mageMods: mageModsFromChar,
+            charClass: charClassFromChar,
+            characterId: activeChar ? activeChar.id : "",
         };
         player.hpMax = computeHpMax(player);
         player.hp = player.hpMax;
@@ -2002,15 +2139,17 @@ function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
 // ===== Archer mods =====
 // Клиентские RPC: получить/записать выбор мод скиллов лучника.
 
+// Моды теперь живут внутри активного персонажа. Старые коллекции
+// gg_archer_mods/gg_mage_mods остаются как fallback для аккаунтов, у
+// которых ещё нет персонажей.
+
 function rpcArcherModsGet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
     if (!ctx.userId) throw new Error("auth required");
-    const stored = loadArcherMods(nk, ctx.userId);
-    const sanity = sanitizeArcherMods(stored.selected);
-    return JSON.stringify({
-        selected: sanity.cleaned,
-        cost: sanity.cost,
-        budget: ARCHER_POINTS_BUDGET,
-    });
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const ch = findActiveCharacter(state);
+    const raw = ch ? ch.archerMods : loadArcherMods(nk, ctx.userId).selected;
+    const sanity = sanitizeArcherMods(raw);
+    return JSON.stringify({ selected: sanity.cleaned, cost: sanity.cost, budget: ARCHER_POINTS_BUDGET });
 }
 
 function rpcArcherModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
@@ -2021,24 +2160,24 @@ function rpcArcherModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk:
     if (!sanity.ok) {
         return JSON.stringify({ ok: false, reason: sanity.reason, budget: ARCHER_POINTS_BUDGET });
     }
-    saveArcherMods(nk, ctx.userId, sanity.cleaned);
-    return JSON.stringify({
-        ok: true,
-        selected: sanity.cleaned,
-        cost: sanity.cost,
-        budget: ARCHER_POINTS_BUDGET,
-    });
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const ch = findActiveCharacter(state);
+    if (ch) {
+        ch.archerMods = sanity.cleaned;
+        saveCharacters(nk, ctx.userId, state);
+    } else {
+        saveArcherMods(nk, ctx.userId, sanity.cleaned);  // legacy fallback
+    }
+    return JSON.stringify({ ok: true, selected: sanity.cleaned, cost: sanity.cost, budget: ARCHER_POINTS_BUDGET });
 }
 
 function rpcMageModsGet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
     if (!ctx.userId) throw new Error("auth required");
-    const stored = loadMageMods(nk, ctx.userId);
-    const sanity = sanitizeMageMods(stored.selected);
-    return JSON.stringify({
-        selected: sanity.cleaned,
-        cost: sanity.cost,
-        budget: MAGE_POINTS_BUDGET,
-    });
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const ch = findActiveCharacter(state);
+    const raw = ch ? ch.mageMods : loadMageMods(nk, ctx.userId).selected;
+    const sanity = sanitizeMageMods(raw);
+    return JSON.stringify({ selected: sanity.cleaned, cost: sanity.cost, budget: MAGE_POINTS_BUDGET });
 }
 
 function rpcMageModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
@@ -2049,13 +2188,15 @@ function rpcMageModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
     if (!sanity.ok) {
         return JSON.stringify({ ok: false, reason: sanity.reason, budget: MAGE_POINTS_BUDGET });
     }
-    saveMageMods(nk, ctx.userId, sanity.cleaned);
-    return JSON.stringify({
-        ok: true,
-        selected: sanity.cleaned,
-        cost: sanity.cost,
-        budget: MAGE_POINTS_BUDGET,
-    });
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const ch = findActiveCharacter(state);
+    if (ch) {
+        ch.mageMods = sanity.cleaned;
+        saveCharacters(nk, ctx.userId, state);
+    } else {
+        saveMageMods(nk, ctx.userId, sanity.cleaned);
+    }
+    return JSON.stringify({ ok: true, selected: sanity.cleaned, cost: sanity.cost, budget: MAGE_POINTS_BUDGET });
 }
 
 // Первый выбор класса (один раз на аккаунт). Если класс уже есть в
@@ -2084,6 +2225,81 @@ function rpcSetClass(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkru
         permissionWrite: 0,
     }]);
     return JSON.stringify({ ok: true, class: want, locked: false });
+}
+
+// ===== Characters (multi-character account) =====
+
+function summarizeChars(state: StoredCharactersState): { active: string; chars: Array<{ id: string; name: string; charClass: string; level: number; gold: number }> } {
+    return {
+        active: state.active,
+        chars: state.chars.map(c => ({
+            id: c.id, name: c.name, charClass: c.charClass, level: c.level, gold: c.gold,
+        })),
+    };
+}
+
+function rpcCharactersList(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    return JSON.stringify(summarizeChars(state));
+}
+
+function rpcCharacterCreate(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { name?: string; class?: string } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const wantClass = String(req.class || "");
+    const wantName = String(req.name || "").trim();
+    if (ALLOWED_CLASSES.indexOf(wantClass) < 0) {
+        return JSON.stringify({ ok: false, reason: "unknown_class" });
+    }
+    if (!validCharacterName(wantName)) {
+        return JSON.stringify({ ok: false, reason: "bad_name" });
+    }
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    if (state.chars.length >= MAX_CHARS_PER_ACCOUNT) {
+        return JSON.stringify({ ok: false, reason: "char_limit", limit: MAX_CHARS_PER_ACCOUNT });
+    }
+    for (const c of state.chars) {
+        if (c.name.toLowerCase() === wantName.toLowerCase()) {
+            return JSON.stringify({ ok: false, reason: "name_taken" });
+        }
+    }
+    const id = "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const ch = defaultChar(id, wantName, wantClass);
+    state.chars.push(ch);
+    if (!state.active) state.active = id;  // первый персонаж — сразу активный
+    saveCharacters(nk, ctx.userId, state);
+    return JSON.stringify({ ok: true, id, ...summarizeChars(state) });
+}
+
+function rpcCharacterSelect(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { id?: string } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const id = String(req.id || "");
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const found = state.chars.find(c => c.id === id);
+    if (!found) return JSON.stringify({ ok: false, reason: "not_found" });
+    state.active = id;
+    saveCharacters(nk, ctx.userId, state);
+    return JSON.stringify({ ok: true, ...summarizeChars(state) });
+}
+
+function rpcCharacterDelete(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { id?: string } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const id = String(req.id || "");
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const idx = state.chars.findIndex(c => c.id === id);
+    if (idx < 0) return JSON.stringify({ ok: false, reason: "not_found" });
+    state.chars.splice(idx, 1);
+    if (state.active === id) {
+        state.active = state.chars.length > 0 ? state.chars[0].id : "";
+    }
+    saveCharacters(nk, ctx.userId, state);
+    return JSON.stringify({ ok: true, ...summarizeChars(state) });
 }
 
 // ===== ADMIN =====
@@ -2259,6 +2475,10 @@ function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkru
     initializer.registerRpc("mage_mods_get", rpcMageModsGet);
     initializer.registerRpc("mage_mods_set", rpcMageModsSet);
     initializer.registerRpc("set_class", rpcSetClass);
+    initializer.registerRpc("characters_list", rpcCharactersList);
+    initializer.registerRpc("character_create", rpcCharacterCreate);
+    initializer.registerRpc("character_select", rpcCharacterSelect);
+    initializer.registerRpc("character_delete", rpcCharacterDelete);
     logger.info("GG runtime loaded. mobs=" + WORLD.mobSpawns.length + " npcs=" + NPCS.length);
 }
 
