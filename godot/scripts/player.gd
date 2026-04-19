@@ -60,7 +60,7 @@ func setup(p_world: World, p_name: String, p_variant: int) -> void:
 
 func _ready() -> void:
 	sprite = Sprite2D.new()
-	sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
+	sprite.texture = load("res://assets/sprites/characters/char_%d.png" % variant)
 	sprite.hframes = WALK_HFRAMES
 	sprite.vframes = 4
 	sprite.frame = Dir.DOWN * WALK_HFRAMES
@@ -73,7 +73,7 @@ func _ready() -> void:
 	_setup_layers()
 
 	bow_sprite = Sprite2D.new()
-	bow_sprite.texture = load("res://assets/sprites/bow_hand.png")
+	bow_sprite.texture = load("res://assets/sprites/characters/bow_hand.png")
 	bow_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	bow_sprite.scale = Vector2(0.55, 0.55)
 	bow_sprite.visible = false
@@ -214,7 +214,7 @@ func set_has_bow(on: bool) -> void:
 	if bow_string: bow_string.visible = false
 	if bow_arrow: bow_arrow.visible = false
 	# Лучник и безоружный — один базовый rig; различие только в overlay-луке.
-	sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
+	sprite.texture = load("res://assets/sprites/characters/char_%d.png" % variant)
 	sprite.hframes = WALK_HFRAMES
 	sprite.vframes = 4
 	sprite.frame = facing * WALK_HFRAMES
@@ -263,7 +263,7 @@ const ROLL_FRAMES := 6
 
 func play_punch() -> void:
 	_punch_end_ms = Session.server_now_ms() + int(PUNCH_DURATION * 1000.0)
-	sprite.texture = load("res://assets/sprites/char_base_punch.png")
+	sprite.texture = load("res://assets/sprites/characters/char_base_punch.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
 	_apply_layer_state("punch")
@@ -275,7 +275,7 @@ func play_bow_shot() -> void:
 	# до генерации специфического ракурса.
 	if not _has_bow: return
 	_bow_shot_end_ms = Session.server_now_ms() + int(SHOOT_DURATION * 1000.0)
-	sprite.texture = load("res://assets/sprites/char_base_shoot.png")
+	sprite.texture = load("res://assets/sprites/characters/char_base_shoot.png")
 	sprite.hframes = SHOOT_HFRAMES
 	sprite.vframes = 4
 	_apply_layer_state("shoot")
@@ -283,7 +283,7 @@ func play_bow_shot() -> void:
 func play_roll() -> void:
 	# Временно: перекат = короткий punch-sprite (пока нет отдельного rig).
 	_roll_end_ms = Session.server_now_ms() + int(ROLL_DURATION * 1000.0)
-	sprite.texture = load("res://assets/sprites/char_base_punch.png")
+	sprite.texture = load("res://assets/sprites/characters/char_base_punch.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
 	_apply_layer_state("punch")
@@ -294,7 +294,7 @@ func play_bow_shot_upward() -> void:
 	play_bow_shot()
 
 func _restore_walk_sprite() -> void:
-	sprite.texture = load("res://assets/sprites/char_%d.png" % variant)
+	sprite.texture = load("res://assets/sprites/characters/char_%d.png" % variant)
 	sprite.hframes = WALK_HFRAMES
 	sprite.vframes = 4
 	sprite.frame = facing * WALK_HFRAMES
@@ -302,7 +302,7 @@ func _restore_walk_sprite() -> void:
 
 # ═══════════════════════ Paper-doll layers ═══════════════════════
 # Слои наследуют state (walk/punch/shoot) от базового sprite и дублируют
-# его frame. Текстура слоя — отдельный атлас в res://assets/sprites/wear/
+# его frame. Текстура слоя — отдельный атлас в res://assets/sprites/characters/wear/
 # <slot>/<item_id>_<state>.png. Если файла для state нет, слой скрыт.
 
 func _setup_layers() -> void:
@@ -329,7 +329,7 @@ func set_wear(slot: String, item_id: String) -> void:
 		return
 	var textures := {}
 	for state in ["walk", "punch", "shoot"]:
-		var path := "res://assets/sprites/wear/%s/%s_%s.png" % [slot, item_id, state]
+		var path := "res://assets/sprites/characters/wear/%s/%s_%s.png" % [slot, item_id, state]
 		if ResourceLoader.exists(path):
 			textures[state] = load(path)
 	if textures.is_empty():

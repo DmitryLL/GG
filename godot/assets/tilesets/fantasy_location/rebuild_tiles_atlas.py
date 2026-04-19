@@ -1,4 +1,4 @@
-"""Rebuild godot/assets/sprites/tiles.png with fantasy pixel-art tiles.
+"""Rebuild godot/assets/sprites/world/tiles.png with fantasy pixel-art tiles.
 
 Layout (preserved from old atlas):
   col 0 GRASS, 1 SAND, 2 WATER, 3 TREE, 4 STONE, 5 PATH — each 32x32.
@@ -13,8 +13,8 @@ from PIL import Image
 
 ROOT = Path(__file__).parent
 GODOT_ASSETS = ROOT.parent.parent  # godot/assets
-OLD_ATLAS = GODOT_ASSETS / "sprites" / "tiles.png"
-OUT = GODOT_ASSETS / "sprites" / "tiles.png"
+OLD_ATLAS = GODOT_ASSETS / "sprites" / "world" / "tiles.png"
+OUT = GODOT_ASSETS / "sprites" / "world" / "tiles.png"
 
 TS_GRASS_PATH = json.loads((ROOT / "grass_path.json").read_text())
 TS_WATER_GRASS = json.loads((ROOT / "water_grass.json").read_text())

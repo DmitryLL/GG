@@ -7,7 +7,7 @@ signal buy_requested(npc_id: String, item_id: String)
 signal sell_requested(slot_index: int)
 signal closed
 
-const ITEMS_TEX := preload("res://assets/sprites/items.png")
+const ITEMS_TEX := preload("res://assets/sprites/items/items.png")
 
 # Цены приходят с сервера (one-shot OP_NPCS).
 var prices: Dictionary = {}

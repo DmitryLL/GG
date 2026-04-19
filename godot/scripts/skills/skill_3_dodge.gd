@@ -4,7 +4,7 @@ extends SkillDef
 
 func _init() -> void:
 	display_name = "Отскок"
-	icon_path = "res://assets/sprites/skill_3.png"
+	icon_path = "res://assets/sprites/skills/skill_3.png"
 	cooldown = 8.0
 	server_id = 3
 	# Не таргет-скилл: исполняется на себе (с учётом текущей цели)

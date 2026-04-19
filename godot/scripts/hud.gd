@@ -9,10 +9,10 @@ signal logout_button_pressed
 signal admin_button_pressed
 signal stats_button_pressed
 
-const ICON_BAG := preload("res://assets/sprites/icon_bag.png")
-const ICON_CHAR := preload("res://assets/sprites/icon_character.png")
-const ICON_ADMIN := preload("res://assets/sprites/icon_admin.png")
-const ICON_STATS := preload("res://assets/sprites/icon_stats.png")
+const ICON_BAG := preload("res://assets/sprites/ui/icon_bag.png")
+const ICON_CHAR := preload("res://assets/sprites/ui/icon_character.png")
+const ICON_ADMIN := preload("res://assets/sprites/ui/icon_admin.png")
+const ICON_STATS := preload("res://assets/sprites/ui/icon_stats.png")
 
 const BTN_SIZE := 48
 const BTN_GAP := 6

@@ -31,9 +31,9 @@ func setup(id: String, p_kind: String) -> void:
 
 func _ready() -> void:
 	var def := {
-		"slime":  { "tex": "res://assets/sprites/slime.png",  "scale": 1.3, "frames": 8, "fps": 6.0 },
-		"goblin": { "tex": "res://assets/sprites/goblin.png", "scale": 1.25, "frames": 4, "fps": 4.0 },
-		"dummy":  { "tex": "res://assets/sprites/dummy.png",  "scale": 1.4, "frames": 1, "fps": 1.0 },
+		"slime":  { "tex": "res://assets/sprites/mobs/slime.png",  "scale": 1.3, "frames": 8, "fps": 6.0 },
+		"goblin": { "tex": "res://assets/sprites/mobs/goblin.png", "scale": 1.25, "frames": 4, "fps": 4.0 },
+		"dummy":  { "tex": "res://assets/sprites/mobs/dummy.png",  "scale": 1.4, "frames": 1, "fps": 1.0 },
 	}
 	var info: Dictionary = def.get(kind, def["slime"])
 

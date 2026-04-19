@@ -4,7 +4,7 @@ extends SkillDef
 
 func _init() -> void:
 	display_name = "Меткий выстрел"
-	icon_path = "res://assets/sprites/skill_1.png"
+	icon_path = "res://assets/sprites/skills/skill_1.png"
 	cooldown = 5.0
 	server_id = 1
 	requires_bow = true
