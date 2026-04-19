@@ -116,6 +116,8 @@ func _ready() -> void:
 	label = Label.new()
 	label.text = display_name
 	# Враждебные игроки — красные ники, свой — белый
+	# По умолчанию: свой белый, чужой красный. game.gd при получении
+	# OP_POSITIONS.faction может обновить через set_friendly().
 	var nick_color: Color = Color(1, 1, 1) if local else Color(1.0, 0.35, 0.30)
 	label.add_theme_color_override("font_color", nick_color)
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
@@ -214,6 +216,15 @@ func facing_vector() -> Vector2:
 		Dir.LEFT: return Vector2(-1, 0)
 		Dir.RIGHT: return Vector2(1, 0)
 	return Vector2(0, 1)
+
+func set_friendly(friendly: bool) -> void:
+	if label == null:
+		return
+	# Свой персонаж остаётся белым — не меняем.
+	if local:
+		return
+	label.add_theme_color_override("font_color",
+		Color(0.45, 0.9, 0.5) if friendly else Color(1.0, 0.35, 0.30))
 
 func set_sprint_remaining(ms: int) -> void:
 	# Вызывается из game._apply_me / _apply_positions когда сервер
