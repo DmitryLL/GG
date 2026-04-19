@@ -639,6 +639,14 @@ function weaponAllowedForClass(itemId: string, cls: string): boolean {
     if (cls === "mage") return k === "tome";
     return true;  // другие классы (на будущее)
 }
+// Дистанция атаки: у лука (лучник) полная, у книги (маг) на 1 тайл
+// меньше, без ranged-оружия — ближний бой.
+function attackRangeFor(weapon: string): number {
+    const k = weaponKind(weapon);
+    if (k === "bow") return PLAYER_ATTACK_RANGE;
+    if (k === "tome") return PLAYER_ATTACK_RANGE - TILE_SIZE;
+    return 36;
+}
 
 interface StoredArcherMods {
     // ключ — skillId как строка (JSON совместимость), значение — modId
@@ -1213,7 +1221,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     const weapon = player.equipment.weapon || "";
                     const hasBow = weapon.includes("bow");
                     const hasRanged = isRangedWeapon(weapon);
-                    const atkRange = hasRanged ? PLAYER_ATTACK_RANGE : 36;
+                    const atkRange = attackRangeFor(weapon);
 
                     // PvP: атакуем другого игрока
                     if (body.sid && body.sid !== player.sessionId) {

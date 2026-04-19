@@ -10,7 +10,7 @@ registerMageSkill(2, {
         const zx = Number(body.x); const zy = Number(body.y);
         if (!isFinite(zx) || !isFinite(zy)) return;
         const castDist = Math.sqrt((zx - player.pos.x) ** 2 + (zy - player.pos.y) ** 2);
-        if (castDist > PLAYER_ATTACK_RANGE + 40) return;
+        if (castDist > attackRangeFor(player.equipment.weapon || "") + 40) return;
 
         const mod = player.mageMods ? player.mageMods["2"] : "";
         const HALF = 32;  // 2×2 тайла по 32px → radius 32
