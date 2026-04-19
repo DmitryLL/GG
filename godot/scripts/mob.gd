@@ -225,6 +225,13 @@ func fire_active() -> bool:
 		return false
 	return _fire_end_ms > Time.get_ticks_msec()
 
+# Краткая вспышка диспелла — голубой flash поверх спрайта.
+func flash_dispel() -> void:
+	if sprite == null:
+		return
+	sprite.modulate = Color(0.4, 0.85, 1.5, 1.0)
+	_flash_t = 0.15
+
 func poison_active() -> bool:
 	if _poison_end_ms <= 0:
 		return false
