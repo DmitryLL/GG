@@ -196,6 +196,7 @@ interface MatchPlayer {
     archerMods: { [skillId: string]: string };  // выбранные модификации скиллов лучника
     mageMods: { [skillId: string]: string };    // выбранные модификации скиллов мага
     charClass: string;                           // "archer" | "mage"
+    faction: string;                             // "west" | "east"
     characterId: string;                         // id активного персонажа в storage (новая модель)
     empoweredAttackUntil?: number;  // мода эскейпа "empowered_attack": следующая атака ×2 до этого ms
     sprintUntil?: number;           // мода эскейпа "sprint": +50 к скорости до этого ms
@@ -553,6 +554,7 @@ interface StoredCharacter {
     id: string;
     name: string;
     charClass: string;  // "archer" | "mage"
+    faction: string;    // "west" | "east" — западные/восточные (союзники/враги PvP)
     level: number;
     xp: number;
     gold: number;
@@ -575,7 +577,7 @@ function starterWeaponForClass(cls: string): string {
     return "wood_bow";  // archer по умолчанию
 }
 
-function defaultChar(id: string, name: string, cls: string, fromLegacy?: StoredProgress): StoredCharacter {
+function defaultChar(id: string, name: string, cls: string, faction: string, fromLegacy?: StoredProgress): StoredCharacter {
     // Если мигрируем со старого прогресса — сохраняем всё как было.
     // Иначе выдаём стартовое оружие в зависимости от класса.
     let equipment: { [slot: string]: string } = {};
@@ -585,10 +587,12 @@ function defaultChar(id: string, name: string, cls: string, fromLegacy?: StoredP
     if (!fromLegacy && !equipment.weapon) {
         equipment.weapon = starterWeaponForClass(cls);
     }
+    const safeFaction = ALLOWED_FACTIONS.indexOf(faction) >= 0 ? faction : "west";
     return {
         id,
         name,
         charClass: cls,
+        faction: safeFaction,
         level: fromLegacy ? fromLegacy.level : 1,
         xp: fromLegacy ? fromLegacy.xp : 0,
         gold: fromLegacy ? fromLegacy.gold : 0,
@@ -633,7 +637,7 @@ function migrateCharactersIfNeeded(nk: nkruntime.Nakama, userId: string): Stored
     const id = "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const name = "Герой";
     const cls = (legacy.charClass === "mage") ? "mage" : "archer";
-    const ch = defaultChar(id, name, cls, legacy);
+    const ch = defaultChar(id, name, cls, "west", legacy);
     const newState: StoredCharactersState = { active: id, chars: [ch] };
     saveCharacters(nk, userId, newState);
     return newState;
@@ -710,6 +714,7 @@ const MAGE_MOD_COSTS: { [skillId: number]: { [modId: string]: number } } = {
 };
 const MAGE_POINTS_BUDGET = 5;
 const ALLOWED_CLASSES = ["archer", "mage"];
+const ALLOWED_FACTIONS = ["west", "east"];
 
 // ---------- weapon helpers ----------
 function weaponKind(w: string): string {
@@ -1091,6 +1096,9 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         const charClassFromChar = activeChar
             ? activeChar.charClass
             : ((saved && saved.charClass && ALLOWED_CLASSES.indexOf(saved.charClass) >= 0) ? saved.charClass : "archer");
+        const factionFromChar = activeChar && activeChar.faction && ALLOWED_FACTIONS.indexOf(activeChar.faction) >= 0
+            ? activeChar.faction
+            : "west";
         const displayUsername = activeChar ? activeChar.name : p.username;
         const player: MatchPlayer = {
             userId: p.userId, sessionId: p.sessionId, username: displayUsername,
@@ -1115,6 +1123,7 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             archerMods: archerModsFromChar,
             mageMods: mageModsFromChar,
             charClass: charClassFromChar,
+            faction: factionFromChar,
             characterId: activeChar ? activeChar.id : "",
         };
         player.hpMax = computeHpMax(player);
@@ -1208,6 +1217,7 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         effects: p.effects || [],
         skillCd: p.skillCd || {},
         charClass: p.charClass,
+        faction: p.faction || "west",
         name: p.username,  // имя активного персонажа (не email аккаунта)
         physDmg: computePhysDmg(p),
         magDmg: computeMagDmg(p),
@@ -2300,14 +2310,14 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
 
     // --- broadcasts ---
-    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; wpn: string; eqWeapon: string; effects: PlayerEffect[] }[] = [];
+    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; wpn: string; eqWeapon: string; faction: string; effects: PlayerEffect[] }[] = [];
     const pKeys = Object.keys(state.players);
     for (let i = 0; i < pKeys.length; i++) {
         const p = state.players[pKeys[i]];
         if (!p.dirtyPos) continue;
         const weaponB = p.equipment.weapon || "";
         const hasRangedB = isRangedWeapon(weaponB);
-        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, lv: p.level, hb: hasRangedB, wpn: weaponKind(weaponB), eqWeapon: weaponB, effects: p.effects || [] });
+        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, lv: p.level, hb: hasRangedB, wpn: weaponKind(weaponB), eqWeapon: weaponB, faction: p.faction || "west", effects: p.effects || [] });
         p.dirtyPos = false;
     }
     if (pUpdates.length > 0) {
@@ -2636,11 +2646,11 @@ function rpcSetClass(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkru
 
 // ===== Characters (multi-character account) =====
 
-function summarizeChars(state: StoredCharactersState): { active: string; chars: Array<{ id: string; name: string; charClass: string; level: number; gold: number }> } {
+function summarizeChars(state: StoredCharactersState): { active: string; chars: Array<{ id: string; name: string; charClass: string; faction: string; level: number; gold: number }> } {
     return {
         active: state.active,
         chars: state.chars.map(c => ({
-            id: c.id, name: c.name, charClass: c.charClass, level: c.level, gold: c.gold,
+            id: c.id, name: c.name, charClass: c.charClass, faction: c.faction || "west", level: c.level, gold: c.gold,
         })),
     };
 }
@@ -2653,12 +2663,16 @@ function rpcCharactersList(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk
 
 function rpcCharacterCreate(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
     if (!ctx.userId) throw new Error("auth required");
-    let req: { name?: string; class?: string } = {};
+    let req: { name?: string; class?: string; faction?: string } = {};
     try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
     const wantClass = String(req.class || "");
     const wantName = String(req.name || "").trim();
+    const wantFaction = String(req.faction || "west");
     if (ALLOWED_CLASSES.indexOf(wantClass) < 0) {
         return JSON.stringify({ ok: false, reason: "unknown_class" });
+    }
+    if (ALLOWED_FACTIONS.indexOf(wantFaction) < 0) {
+        return JSON.stringify({ ok: false, reason: "unknown_faction", allowed: ALLOWED_FACTIONS });
     }
     if (!validCharacterName(wantName)) {
         return JSON.stringify({ ok: false, reason: "bad_name" });
@@ -2673,7 +2687,7 @@ function rpcCharacterCreate(ctx: nkruntime.Context, _logger: nkruntime.Logger, n
         }
     }
     const id = "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const ch = defaultChar(id, wantName, wantClass);
+    const ch = defaultChar(id, wantName, wantClass, wantFaction);
     state.chars.push(ch);
     if (!state.active) state.active = id;  // первый персонаж — сразу активный
     saveCharacters(nk, ctx.userId, state);

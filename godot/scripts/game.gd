@@ -144,6 +144,7 @@ var stats_win: StatsWindow
 var skills_win: CanvasLayer
 var party_ui: CanvasLayer
 var party_members_cache: Array = []
+var my_faction: String = "west"  # обновляется из OP_ME
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -1354,6 +1355,10 @@ func _apply_positions(body: Dictionary) -> void:
 		remote.set_weapon_item(remote_wpn)
 		var hp_max_remote: float = float(p.get("hpMax", 100))
 		remote.set_hp(hp, hp_max_remote)
+		# Фракция: союзник — зелёный, враг — красный.
+		var remote_fac := String(p.get("faction", ""))
+		if remote_fac != "":
+			remote.set_friendly(remote_fac == my_faction)
 
 func _apply_mobs(body: Dictionary) -> void:
 	for m in body.get("mobs", []):
@@ -1431,6 +1436,11 @@ func _apply_me(body: Dictionary) -> void:
 	elif _wname.contains("sword"): _kind = "sword"
 	me.set_weapon_kind(_kind)
 	me.set_weapon_item(_wname)
+	# Фракция игрока (шлётся сервером в каждом OP_ME) — нужна чтобы
+	# раскрашивать remote-ников: союзник зелёный, враг красный.
+	var server_faction: String = str(body.get("faction", ""))
+	if server_faction != "":
+		my_faction = server_faction
 	# Баф sprint: если активен — сообщаем Player чтобы повысил скорость
 	# интерполяции клиентской позиции до SPEED_SPRINT.
 	var sprint_remaining := 0
