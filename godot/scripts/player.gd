@@ -21,6 +21,8 @@ const PUNCH_HFRAMES := 6
 const PUNCH_DURATION := 0.45
 const SHOOT_HFRAMES := 4
 const SHOOT_DURATION := 0.55
+const BOOK_ASSET_DIR := "res://assets/sprites/characters/books/"
+const BOOK_FALLBACK := "res://assets/sprites/characters/book_hand.png"
 enum Dir { DOWN = 0, LEFT = 1, RIGHT = 2, UP = 3 }
 
 # Paper-doll layers. Порядок = порядок отрисовки снизу вверх. На каждый
@@ -220,6 +222,7 @@ func remote_update(new_pos: Vector2) -> void:
 
 var _has_bow := false
 var _weapon_kind: String = ""  # "bow" | "tome" | "sword" | "" — для overlay
+var _weapon_item_id: String = ""
 
 func set_has_bow(on: bool) -> void:
 	# Обратно-совместимо: вызывают места, где только bow-флаг.
@@ -243,7 +246,25 @@ func set_weapon_kind(kind: String) -> void:
 	if book_sprite:
 		book_sprite.visible = (kind == "tome")
 		if kind == "tome":
+			_update_book_texture()
 			_update_book_position()
+
+func set_weapon_item(item_id: String) -> void:
+	_weapon_item_id = item_id
+	if _weapon_kind == "tome":
+		_update_book_texture()
+		_update_book_position()
+
+func _update_book_texture() -> void:
+	if book_sprite == null:
+		return
+	var visual_id := Items.tome_visual_id(_weapon_item_id)
+	var path := BOOK_FALLBACK
+	if visual_id != "":
+		var custom_path := "%s%s_open.png" % [BOOK_ASSET_DIR, visual_id]
+		if ResourceLoader.exists(custom_path):
+			path = custom_path
+	book_sprite.texture = load(path)
 
 func _update_bow_position() -> void:
 	if bow_sprite == null or not bow_sprite.visible:
@@ -375,6 +396,8 @@ func set_wear(slot: String, item_id: String) -> void:
 	var layer: Sprite2D = layers.get(slot)
 	if layer == null:
 		return
+	if slot == "weapon":
+		set_weapon_item(item_id)
 	if item_id == "":
 		layer.visible = false
 		layer.set_meta("textures", {})

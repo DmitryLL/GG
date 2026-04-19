@@ -1319,6 +1319,7 @@ func _apply_positions(body: Dictionary) -> void:
 		if remote_wpn == "" and has_bow_remote:
 			remote_wpn = "bow"
 		remote.set_weapon_kind(remote_wpn)
+		remote.set_weapon_item(remote_wpn)
 		var hp_max_remote: float = float(p.get("hpMax", 100))
 		remote.set_hp(hp, hp_max_remote)
 
@@ -1382,6 +1383,7 @@ func _apply_me(body: Dictionary) -> void:
 	elif _wname.contains("tome"): _kind = "tome"
 	elif _wname.contains("sword"): _kind = "sword"
 	me.set_weapon_kind(_kind)
+	me.set_weapon_item(_wname)
 	# Paper-doll слои: каждый слот → wear-atlas (если существует в assets).
 	const WEAR_SLOT_MAP := {
 		"boots":  "boots",

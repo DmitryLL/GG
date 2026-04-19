@@ -12,7 +12,7 @@ func _build_items_list() -> void:
 		return
 	# Сортировка: оружие → броня → шлемы → сапоги → пояса → плащи → кольца → амулеты → зелья → материалы
 	var groups := [
-		["weapon", "sword"], ["weapon", "bow"],
+		["weapon", "sword"], ["weapon", "bow"], ["weapon", "tome"],
 		["body"], ["head"], ["boots"], ["belt"],
 		["cloak"], ["ring"], ["amulet"],
 		["consumable"], ["material"],

@@ -137,3 +137,22 @@ static func kind_name(id: String) -> String:
 		"consumable": return "Расходник"
 		"material":   return "Материал"
 	return ""
+
+static func weapon_kind(id: String) -> String:
+	if id.contains("bow"):
+		return "bow"
+	if id.contains("tome"):
+		return "tome"
+	if id.contains("sword"):
+		return "sword"
+	return ""
+
+static func tome_visual_id(id: String) -> String:
+	match id:
+		"apprentice_tome":
+			return "apprentice_tome"
+		"mystic_tome":
+			return "mystic_tome"
+		"arcane_tome", "eldritch_tome", "celestial_tome":
+			return "arcane_tome"
+	return ""
