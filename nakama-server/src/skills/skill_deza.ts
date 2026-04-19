@@ -74,13 +74,22 @@ registerSkill(2, {
             const beforeCount = (mob.buffs || []).length;
             let removedType: string | null = null;
             if (mod === "dispel") {
-                const now = t;
-                const active = (mob.buffs || []).filter(b => b.endAt > now);
-                if (active.length > 0) {
-                    const removeIdx = Math.floor(Math.random() * active.length);
-                    const removed = active[removeIdx];
-                    removedType = removed.type;
-                    mob.buffs = (mob.buffs || []).filter(b => b !== removed);
+                // Index-based удаление: reference-equality (b !== removed)
+                // в Goja-runtime Nakama иногда не удаляет элемент, хотя в
+                // V8/Node работает. Поэтому работаем через индексы.
+                const buffs = mob.buffs || [];
+                const activeIdx: number[] = [];
+                for (let i = 0; i < buffs.length; i++) {
+                    if (buffs[i].endAt > t) activeIdx.push(i);
+                }
+                if (activeIdx.length > 0) {
+                    const pick = activeIdx[Math.floor(Math.random() * activeIdx.length)];
+                    removedType = buffs[pick].type;
+                    const next: MobBuff[] = [];
+                    for (let i = 0; i < buffs.length; i++) {
+                        if (i !== pick) next.push(buffs[i]);
+                    }
+                    mob.buffs = next;
                     mob.dirty = true;
                 }
             }
