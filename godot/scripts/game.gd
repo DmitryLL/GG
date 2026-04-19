@@ -35,7 +35,7 @@ const OP_SELL         := 13
 const OP_NPCS         := 14
 
 const MOVE_SEND_HZ := 10.0
-const PLAYER_ATTACK_RANGE := 220.0
+const PLAYER_ATTACK_RANGE := 192.0  # 6 тайлов × 32px (для лучника)
 const TILE := 32.0
 
 # Тип текущего оружия игрока ("" для безоружного). Берётся из last_me.eq.weapon.
@@ -608,7 +608,13 @@ func _tick_rain_zones() -> void:
 			_spawn_falling_arrow(c + Vector2(randf_range(-h, h), randf_range(-h, h)))
 
 func _on_logout() -> void:
-	Session.logout()
+	# HUD «×» — выход из мира к выбору персонажа (аккаунт остаётся).
+	# Закрываем сокет, чтобы сервер корректно прокинул matchLeave и
+	# сохранил прогресс активного персонажа.
+	if Session.socket and Session.socket.is_connected_to_host():
+		Session.socket.close()
+	Session.socket = null
+	Session.selected_character = ""
 	auth_changed.emit()
 
 func _send_tile_update(c: int, r: int, id: int) -> void:
