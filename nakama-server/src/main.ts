@@ -1094,6 +1094,7 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         effects: p.effects || [],
         skillCd: p.skillCd || {},
         charClass: p.charClass,
+        name: p.username,  // имя активного персонажа (не email аккаунта)
         t: now(),
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
