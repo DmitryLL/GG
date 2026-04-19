@@ -6,8 +6,9 @@ signal moved(pos: Vector2)
 
 const SPEED := 100.0
 # При активном бафе «sprint» (см. OP_ME.effects) клиент тоже должен
-# успевать интерполировать — иначе серверная +50% не видна визуально.
-const SPEED_SPRINT := 150.0
+# успевать интерполировать — иначе серверное +50 не видно визуально.
+# В абсолютных единицах px/sec, совпадает с сервером (PLAYER_SPEED + 50).
+const SPEED_SPRINT_BONUS := 50.0
 const SPRITE_VARIANTS := 6
 # Фундамент (pixellab walking-6-frames + cross-punch-6-frames):
 # walk-атлас: 6 walk frames × 4 directions (hframes=6, vframes=4)
@@ -150,7 +151,7 @@ func _process(delta: float) -> void:
 	if _remote_has_target:
 		var to := _remote_target - position
 		var dist := to.length()
-		var speed_now := SPEED_SPRINT if Time.get_ticks_msec() < _sprint_end_ms else SPEED
+		var speed_now := (SPEED + SPEED_SPRINT_BONUS) if Time.get_ticks_msec() < _sprint_end_ms else SPEED
 		var s := speed_now * delta
 		if dist <= s:
 			position = _remote_target

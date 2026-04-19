@@ -192,7 +192,7 @@ interface MatchPlayer {
     charClass: string;                           // "archer" | "mage"
     characterId: string;                         // id активного персонажа в storage (новая модель)
     empoweredAttackUntil?: number;  // мода эскейпа "empowered_attack": следующая атака ×2 до этого ms
-    sprintUntil?: number;           // мода эскейпа "sprint": ускорение +50% до этого ms
+    sprintUntil?: number;           // мода эскейпа "sprint": +50 к скорости до этого ms
     critBuffUntil?: number;         // Баф крита (skill 5): окно действия
     critBonus?: number;             // доп вероятность крита (0..1)
     pierceBuffUntil?: number;       // Мода penetration: окно
@@ -1889,9 +1889,10 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     for (const sk of Object.keys(state.players)) {
         const pl = state.players[sk];
         if (pl.hp <= 0 || !pl.moveTarget) continue;
-        // Мода Эскейпа "sprint": +50% к скорости пока sprintUntil не прошёл.
+        // Мода Эскейпа "sprint": +50 к скорости пока sprintUntil не прошёл
+        // (в абсолютных единицах, чтобы не зависело от базовой скорости класса).
         const speedNow = (pl.sprintUntil && t < pl.sprintUntil)
-            ? PLAYER_SPEED * 1.5
+            ? PLAYER_SPEED + 50
             : PLAYER_SPEED;
         let stepLeft = speedNow * TICK_DT;
         // Крутим цикл пока не израсходуем все шаги или не кончится путь —
