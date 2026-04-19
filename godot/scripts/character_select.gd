@@ -11,8 +11,8 @@ signal auth_changed  # main.gd слушает этот сигнал для пе�
 @onready var logout_btn: Button = %LogoutBtn
 @onready var email_label: Label = %EmailLabel
 
-const ARCHER_PREVIEW := preload("res://assets/sprites/ui/icon_character.png")
-const MAGE_PREVIEW := preload("res://assets/sprites/ui/icon_character.png")
+const ARCHER_PREVIEW: Texture2D = preload("res://assets/sprites/ui/icon_character.png")
+const MAGE_PREVIEW: Texture2D = preload("res://assets/sprites/ui/icon_mage_character.png")
 
 var _chars: Array = []           # [{id, name, charClass, level, gold}]
 var _active_id: String = ""
@@ -68,7 +68,7 @@ func _make_card(c: Dictionary) -> PanelContainer:
 	card.add_child(v)
 
 	var cls := str(c.get("charClass", "archer"))
-	var tex := MAGE_PREVIEW if cls == "mage" else ARCHER_PREVIEW
+	var tex: Texture2D = MAGE_PREVIEW if cls == "mage" else ARCHER_PREVIEW
 
 	var icon := TextureRect.new()
 	icon.texture = tex

@@ -219,7 +219,7 @@ func update_target(target) -> void:
 				if btype == "":
 					continue
 				var end_at := int(b.get("endAt", 0))
-				var rem := max(0, end_at - int(Time.get_unix_time_from_system() * 1000.0))
+				var rem: int = max(0, end_at - int(Time.get_unix_time_from_system() * 1000.0))
 				target_effects.add_child(_make_target_effect_icon("buff_" + btype, rem))
 	elif "display_name" in target:
 		# Player (PvP)
