@@ -190,6 +190,10 @@ interface MatchPlayer {
     archerMods: { [skillId: string]: string };  // выбранные модификации скиллов лучника
     empoweredAttackUntil?: number;  // мода эскейпа "empowered_attack": следующая атака ×2 до этого ms
     sprintUntil?: number;           // мода эскейпа "sprint": ускорение +25 до этого ms
+    critBuffUntil?: number;         // Баф крита (skill 5): окно действия
+    critBonus?: number;             // доп вероятность крита (0..1)
+    pierceBuffUntil?: number;       // Мода penetration: окно
+    pierceBonus?: number;           // доп множитель урона (заглушка пока нет брони мобов)
 }
 
 const PLAYER_SPEED = 100; // px/sec — должна совпадать с Godot Player.SPEED
@@ -984,6 +988,16 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                             dmgP = dmgP * 2;
                             player.empoweredAttackUntil = 0;  // один-шот
                         }
+                        let isCritP = false;
+                        if (player.critBuffUntil && t < player.critBuffUntil) {
+                            if (Math.random() < (player.critBonus || 0)) {
+                                isCritP = true;
+                                dmgP = dmgP * 2;
+                            }
+                        }
+                        if (player.pierceBuffUntil && t < player.pierceBuffUntil) {
+                            dmgP = Math.floor(dmgP * (1 + (player.pierceBonus || 0)));
+                        }
                         foe.hp -= dmgP;
                         if (foe.hp < 0) foe.hp = 0;
                         foe.dirtyPos = true;
@@ -993,7 +1007,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                             tx: foe.pos.x, ty: foe.pos.y,
                             melee: !hasBow,
                         }));
-                        dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: foe.sessionId, by: player.sessionId, dmg: dmgP }));
+                        dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: foe.sessionId, by: player.sessionId, dmg: dmgP, crit: isCritP }));
                         if (foe.hp <= 0) {
                             foe.pos.x = WORLD.playerSpawn.x; foe.pos.y = WORLD.playerSpawn.y;
                             foe.hp = foe.hpMax;
@@ -1014,6 +1028,16 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         dmg = dmg * 2;
                         player.empoweredAttackUntil = 0;  // один-шот
                     }
+                    let isCritM = false;
+                    if (player.critBuffUntil && t < player.critBuffUntil) {
+                        if (Math.random() < (player.critBonus || 0)) {
+                            isCritM = true;
+                            dmg = dmg * 2;
+                        }
+                    }
+                    if (player.pierceBuffUntil && t < player.pierceBuffUntil) {
+                        dmg = Math.floor(dmg * (1 + (player.pierceBonus || 0)));
+                    }
                     mob.hp -= dmg;
                     mob.dirty = true;
                     dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
@@ -1021,7 +1045,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         tx: mob.pos.x, ty: mob.pos.y,
                         melee: !hasBow,
                     }));
-                    dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mobId, dmg: dmg }));
+                    dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mobId, dmg: dmg, crit: isCritM }));
                     if (mob.hp <= 0) {
                         mob.hp = 0; mob.state = "dead";
                         mob.respawnAt = t + MOB_TYPES[mob.type].respawnMs;
