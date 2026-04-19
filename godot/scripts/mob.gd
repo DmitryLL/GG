@@ -244,6 +244,11 @@ func fire_active() -> bool:
 		return false
 	return _fire_end_ms > Time.get_ticks_msec()
 
+func fire_remaining_ms() -> int:
+	if _fire_end_ms <= 0:
+		return 0
+	return max(0, _fire_end_ms - Time.get_ticks_msec())
+
 # Краткая вспышка диспелла — голубой flash поверх спрайта.
 func flash_dispel() -> void:
 	if sprite == null:
