@@ -27,4 +27,12 @@ func on_fx(game, body: Dictionary) -> bool:
 	var dur_ms := int(body.get("duration", 3500))
 	var start_t := int(body.get("t", 0))
 	game._spawn_rain_zone(pos, r, dur_ms, start_t)
+	# Remote-кастер должен проиграть анимацию «стрела в небо». У себя мы
+	# её уже запустили в on_send, повторно не нужно.
+	var sid := String(body.get("sid", ""))
+	if sid != "" and sid != game.my_session_id:
+		var caster: Player = game.remotes.get(sid)
+		if caster != null and is_instance_valid(caster):
+			caster.face_toward(pos)
+			caster.play_bow_shot_upward()
 	return true
