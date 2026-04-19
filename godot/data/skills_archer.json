@@ -1,0 +1,108 @@
+{
+  "_comment": "Скиллы и модификации для класса Лучник. Читается skills_window.gd. Правила: одна мода на скилл, бюджет 5 поинтов. Согласовано с docs/game-design/archer.md.",
+
+  "class": "archer",
+  "points_budget": 5,
+  "skills": [
+    {
+      "id": 1,
+      "name": "РДД-удар",
+      "description": "Основной дальний удар по одиночной цели. Урон: 150% от силы атаки.",
+      "icon": "res://assets/sprites/skills/skill_1.png",
+      "modifications": [
+        {
+          "id": "stun",
+          "cost": 1,
+          "name": "Стан",
+          "description": "После попадания враг оглушён на 1 сек."
+        },
+        {
+          "id": "fire",
+          "cost": 2,
+          "name": "Поджог",
+          "description": "Враг горит: 20% от урона за тик × 3 тика."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Деза",
+      "description": "Враг отбегает назад на 2 шага.",
+      "icon": "res://assets/sprites/skills/skill_2.png",
+      "modifications": [
+        {
+          "id": "root",
+          "cost": 1,
+          "name": "Рут после отбрасывания",
+          "description": "После отбрасывания враг обездвижен на 0.5 сек."
+        },
+        {
+          "id": "dispel",
+          "cost": 2,
+          "name": "Снятие баффа",
+          "description": "Снимает 1 случайный положительный эффект с цели."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Эскейп",
+      "description": "Отскок вперёд на 3 шага.",
+      "icon": "res://assets/sprites/skills/skill_3.png",
+      "modifications": [
+        {
+          "id": "empowered_attack",
+          "cost": 1,
+          "name": "Усиленный выстрел",
+          "description": "Следующая базовая атака наносит +100% урона."
+        },
+        {
+          "id": "sprint",
+          "cost": 2,
+          "name": "Рывок",
+          "description": "На 2 сек скорость +25."
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Град стрел",
+      "description": "AoE-зона: 30% от урона, 3 сек, до 5 целей.",
+      "icon": "res://assets/sprites/skills/skill_4.png",
+      "modifications": [
+        {
+          "id": "slow",
+          "cost": 1,
+          "name": "Замедление",
+          "description": "Замедляет 5 случайных врагов в зоне на 20%."
+        },
+        {
+          "id": "final_stun",
+          "cost": 2,
+          "name": "Финальный стан",
+          "description": "Последний тик оглушает 5 случайных целей на 0.5 сек."
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Баф крита",
+      "description": "Шанс крита +75% на 2 сек.",
+      "icon": "res://assets/sprites/skills/skill_5.png",
+      "modifications": [
+        {
+          "id": "party_crit",
+          "cost": 1,
+          "name": "Командный крит",
+          "description": "Шанс крита союзников в группе в радиусе 5 м повышается на 20%."
+        },
+        {
+          "id": "penetration",
+          "cost": 2,
+          "name": "Пробив",
+          "description": "+20% к пробиванию защиты."
+        }
+      ]
+    }
+  ]
+}
