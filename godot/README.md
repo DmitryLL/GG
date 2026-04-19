@@ -7,7 +7,8 @@
 - Проект Godot 4.3 с настроенным окном 800×608, stretch mode `canvas_items`.
 - Вендорный Nakama SDK в `addons/com.heroiclabs.nakama/`.
 - Autoload `Session` держит `NakamaClient`, `NakamaSocket`, `NakamaSession`.
-- Сцены: `Main` (роутер), `Auth` (email+password), `Game` (заглушка с подключением к socket).
+- Сцены: `scenes/core/Main` (роутер), `scenes/core/Auth` (email+password), `scenes/core/Game` (заглушка с подключением к socket).
+- Структура: `scenes/core/` — логические сцены (Дима), `scenes/visual/` — визуальные префабы (Вова). См. `scenes/visual/README.md`.
 - Connection: `https://nk.193-238-134-75.sslip.io`, server key `defaultkey`.
 
 ## Как запустить

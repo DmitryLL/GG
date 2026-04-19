@@ -187,6 +187,16 @@ interface MatchPlayer {
     atkSpeedBoostUntil: number;
     preciseShotReady: boolean;
     effects: PlayerEffect[];
+    archerMods: { [skillId: string]: string };  // выбранные модификации скиллов лучника
+    mageMods: { [skillId: string]: string };    // выбранные модификации скиллов мага
+    charClass: string;                           // "archer" | "mage"
+    characterId: string;                         // id активного персонажа в storage (новая модель)
+    empoweredAttackUntil?: number;  // мода эскейпа "empowered_attack": следующая атака ×2 до этого ms
+    sprintUntil?: number;           // мода эскейпа "sprint": ускорение +25 до этого ms
+    critBuffUntil?: number;         // Баф крита (skill 5): окно действия
+    critBonus?: number;             // доп вероятность крита (0..1)
+    pierceBuffUntil?: number;       // Мода penetration: окно
+    pierceBonus?: number;           // доп множитель урона (заглушка пока нет брони мобов)
 }
 
 const PLAYER_SPEED = 100; // px/sec — должна совпадать с Godot Player.SPEED
@@ -198,6 +208,7 @@ interface ActiveZone {
     nextTickAt: number;
     endAt: number;
     ownerSid: string;
+    mod?: string;  // мода Града стрел на момент создания: "slow" | "final_stun" | ""
 }
 
 interface MobDebuff {
@@ -245,6 +256,11 @@ interface MatchMob {
     loot: InvEntry[];
     dirty: boolean;
     debuff?: MobDebuff;
+    stunUntil?: number;  // ms timestamp; пока t<stunUntil моб оглушён (не двигается, не атакует)
+    fireEndAt?: number;      // ms timestamp; пока t<fireEndAt — горит
+    nextFireTickAt?: number; // ms timestamp следующего тика огня
+    fireDmg?: number;        // урон за тик огня
+    armorDebuffUntil?: number; // Mage С2-1п: пока t<armorDebuffUntil у моба дебафф брони
 }
 
 // Универсальная сущность карты: портал, сундук, спавн-зона, (позже NPC).
@@ -393,6 +409,7 @@ interface StoredProgress {
     gold: number;
     inventory: InvEntry[];
     equipment?: { [slot: string]: string };
+    charClass?: string;  // "archer" | "mage" (default "archer" для старых аккаунтов)
     // legacy
     eqWeapon?: string;
     eqArmor?: string;
@@ -413,6 +430,7 @@ function saveProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
         const payload: StoredProgress = {
             level: p.level, xp: p.xp, gold: p.gold,
             inventory: p.inventory, equipment: p.equipment,
+            charClass: p.charClass,
         };
         nk.storageWrite([{
             collection: STORAGE_COLLECTION,
@@ -422,7 +440,251 @@ function saveProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
             permissionRead: 1,
             permissionWrite: 0,
         }]);
+        // Параллельно сохраняем в активного персонажа (новая модель).
+        if (p.characterId) {
+            saveActiveCharacterProgress(nk, p);
+        }
     } catch (_e) { /* swallow */ }
+}
+
+// ---------- Characters (multiple per account) ----------
+// Новая модель. Один аккаунт хранит несколько персонажей; каждый
+// персонаж держит свой прогресс (лвл/xp/gold/inv/eq) и выбор мод.
+// Storage: collection=CHARS_COLLECTION, key=CHARS_KEY, userId=ownerId.
+// Формат: { active: string, chars: StoredCharacter[] }.
+
+const CHARS_COLLECTION = "gg_chars";
+const CHARS_KEY = "list";
+const MAX_CHARS_PER_ACCOUNT = 5;
+const CHAR_NAME_MIN = 3;
+const CHAR_NAME_MAX = 20;
+
+interface StoredCharacter {
+    id: string;
+    name: string;
+    charClass: string;  // "archer" | "mage"
+    level: number;
+    xp: number;
+    gold: number;
+    inventory: InvEntry[];
+    equipment: { [slot: string]: string };
+    archerMods: { [skillId: string]: string };
+    mageMods: { [skillId: string]: string };
+    createdAt: number;
+}
+
+interface StoredCharactersState {
+    active: string;              // id активного персонажа ("" если не выбран)
+    chars: StoredCharacter[];
+}
+
+function defaultChar(id: string, name: string, cls: string, fromLegacy?: StoredProgress): StoredCharacter {
+    return {
+        id,
+        name,
+        charClass: cls,
+        level: fromLegacy ? fromLegacy.level : 1,
+        xp: fromLegacy ? fromLegacy.xp : 0,
+        gold: fromLegacy ? fromLegacy.gold : 0,
+        inventory: fromLegacy ? fromLegacy.inventory : [],
+        equipment: (fromLegacy && fromLegacy.equipment) ? fromLegacy.equipment : {},
+        archerMods: {},
+        mageMods: {},
+        createdAt: Date.now(),
+    };
+}
+
+function loadCharacters(nk: nkruntime.Nakama, userId: string): StoredCharactersState {
+    try {
+        const objs = nk.storageRead([{ collection: CHARS_COLLECTION, key: CHARS_KEY, userId: userId }]);
+        if (objs.length === 0) return { active: "", chars: [] };
+        const v = objs[0].value as StoredCharactersState;
+        return { active: v.active || "", chars: v.chars || [] };
+    } catch (_e) {
+        return { active: "", chars: [] };
+    }
+}
+
+function saveCharacters(nk: nkruntime.Nakama, userId: string, state: StoredCharactersState): void {
+    nk.storageWrite([{
+        collection: CHARS_COLLECTION,
+        key: CHARS_KEY,
+        userId: userId,
+        value: state as unknown as { [k: string]: any },
+        permissionRead: 1,
+        permissionWrite: 0,
+    }]);
+}
+
+// Миграция: если у игрока нет записи gg_chars/list, но есть старый
+// gg/progress — создаём одного персонажа "Герой" из старых данных.
+// Возвращаем актуальное состояние.
+function migrateCharactersIfNeeded(nk: nkruntime.Nakama, userId: string): StoredCharactersState {
+    const st = loadCharacters(nk, userId);
+    if (st.chars.length > 0) return st;
+    const legacy = loadProgress(nk, userId);
+    if (!legacy) return st;  // пусто — вернём пустое, клиент покажет «Создать»
+    const id = "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const name = "Герой";
+    const cls = (legacy.charClass === "mage") ? "mage" : "archer";
+    const ch = defaultChar(id, name, cls, legacy);
+    const newState: StoredCharactersState = { active: id, chars: [ch] };
+    saveCharacters(nk, userId, newState);
+    return newState;
+}
+
+function findActiveCharacter(state: StoredCharactersState): StoredCharacter | null {
+    if (!state.active) return null;
+    for (const c of state.chars) {
+        if (c.id === state.active) return c;
+    }
+    return null;
+}
+
+function saveActiveCharacterProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
+    const st = loadCharacters(nk, p.userId);
+    const ch = findActiveCharacter(st);
+    if (!ch) return;
+    ch.level = p.level;
+    ch.xp = p.xp;
+    ch.gold = p.gold;
+    ch.inventory = p.inventory;
+    ch.equipment = p.equipment;
+    ch.archerMods = p.archerMods;
+    ch.mageMods = p.mageMods;
+    saveCharacters(nk, p.userId, st);
+}
+
+function validCharacterName(name: string): boolean {
+    if (typeof name !== "string") return false;
+    const trimmed = name.trim();
+    if (trimmed.length < CHAR_NAME_MIN || trimmed.length > CHAR_NAME_MAX) return false;
+    // Проверяем вручную по code points — Goja (Nakama runtime) не
+    // поддерживает \p{L} / флаг `u`, из-за чего \p{L}-regex падал
+    // на любом русском имени.
+    for (let i = 0; i < trimmed.length; i++) {
+        const c = trimmed.charCodeAt(i);
+        const latin = (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A);
+        const cyr = (c >= 0x0410 && c <= 0x044F) || c === 0x0401 || c === 0x0451;  // А-Я а-я Ёё
+        const digit = c >= 0x30 && c <= 0x39;
+        const puncto = c === 0x20 /* пробел */ || c === 0x2D /* - */ || c === 0x5F /* _ */;
+        if (!(latin || cyr || digit || puncto)) return false;
+    }
+    return true;
+}
+
+// ================================================================== //
+// Archer class: выбор модификаций скиллов.
+// Источник истины — godot/data/skills_archer.json (клиент).
+// На сервере держим канонический список для валидации.
+// ================================================================== //
+
+const ARCHER_MODS_COLLECTION = "gg_archer_mods";
+const ARCHER_MODS_KEY = "archer";
+const ARCHER_POINTS_BUDGET = 5;
+
+// Синхронизировать с godot/data/skills_archer.json при изменении.
+const ARCHER_MOD_COSTS: { [skillId: number]: { [modId: string]: number } } = {
+    1: { "stun": 1, "fire": 2 },
+    2: { "root": 1, "dispel": 2 },
+    3: { "empowered_attack": 1, "sprint": 2 },
+    4: { "slow": 1, "final_stun": 2 },
+    5: { "party_crit": 1, "penetration": 2 },
+};
+
+// Синхронизировать с godot/data/skills_mage.json при изменении.
+const MAGE_MODS_COLLECTION = "gg_mage_mods";
+const MAGE_MODS_KEY = "mage";
+const MAGE_MOD_COSTS: { [skillId: number]: { [modId: string]: number } } = {
+    1: { "armor_pierce": 1, "slow": 2 },
+    2: { "armor_debuff": 1, "freeze_legs": 2 },
+    3: { "no_slow": 1, "mana_hunger": 2 },
+    4: { "cd_reduce": 1, "blink_explode": 2 },
+    5: { "reactive_slow": 1, "shield_burst": 2 },
+};
+const MAGE_POINTS_BUDGET = 5;
+const ALLOWED_CLASSES = ["archer", "mage"];
+
+interface StoredArcherMods {
+    // ключ — skillId как строка (JSON совместимость), значение — modId
+    selected: { [skillId: string]: string };
+}
+
+function loadArcherMods(nk: nkruntime.Nakama, userId: string): StoredArcherMods {
+    try {
+        const objs = nk.storageRead([{ collection: ARCHER_MODS_COLLECTION, key: ARCHER_MODS_KEY, userId: userId }]);
+        if (objs.length === 0) return { selected: {} };
+        const v = objs[0].value as StoredArcherMods;
+        return { selected: (v && v.selected) ? v.selected : {} };
+    } catch (_e) {
+        return { selected: {} };
+    }
+}
+
+function saveArcherMods(nk: nkruntime.Nakama, userId: string, selected: { [k: string]: string }): void {
+    nk.storageWrite([{
+        collection: ARCHER_MODS_COLLECTION,
+        key: ARCHER_MODS_KEY,
+        userId: userId,
+        value: { selected } as unknown as { [k: string]: any },
+        permissionRead: 1,
+        permissionWrite: 0,
+    }]);
+}
+
+// Валидация выбора мод для архетипа costs → таблица {skillId: {modId: cost}}.
+function sanitizeModsByCosts(
+    selected: { [k: string]: any },
+    costs: { [skillId: number]: { [modId: string]: number } },
+    budget: number,
+): { ok: boolean; cleaned: { [k: string]: string }; cost: number; reason?: string } {
+    const cleaned: { [k: string]: string } = {};
+    let cost = 0;
+    for (const k of Object.keys(selected || {})) {
+        const skillId = parseInt(k);
+        if (isNaN(skillId)) continue;
+        const mods = costs[skillId];
+        if (!mods) continue;
+        const modId = String(selected[k] || "");
+        const c = mods[modId];
+        if (c == null) continue;
+        cleaned[String(skillId)] = modId;
+        cost += c;
+    }
+    if (cost > budget) {
+        return { ok: false, cleaned: {}, cost, reason: "budget_exceeded" };
+    }
+    return { ok: true, cleaned, cost };
+}
+
+// Обёртка старого имени для archer — чтобы не ломать существующие вызовы.
+function sanitizeArcherMods(selected: { [k: string]: any }): { ok: boolean; cleaned: { [k: string]: string }; cost: number; reason?: string } {
+    return sanitizeModsByCosts(selected, ARCHER_MOD_COSTS, ARCHER_POINTS_BUDGET);
+}
+
+// Аналог для mage.
+function loadMageMods(nk: nkruntime.Nakama, userId: string): { selected: { [k: string]: string } } {
+    try {
+        const objs = nk.storageRead([{ collection: MAGE_MODS_COLLECTION, key: MAGE_MODS_KEY, userId: userId }]);
+        if (objs.length === 0) return { selected: {} };
+        const v = objs[0].value as { selected?: { [k: string]: string } };
+        return { selected: (v && v.selected) ? v.selected : {} };
+    } catch (_e) {
+        return { selected: {} };
+    }
+}
+function saveMageMods(nk: nkruntime.Nakama, userId: string, selected: { [k: string]: string }): void {
+    nk.storageWrite([{
+        collection: MAGE_MODS_COLLECTION,
+        key: MAGE_MODS_KEY,
+        userId: userId,
+        value: { selected } as unknown as { [k: string]: any },
+        permissionRead: 1,
+        permissionWrite: 0,
+    }]);
+}
+function sanitizeMageMods(selected: { [k: string]: any }): { ok: boolean; cleaned: { [k: string]: string }; cost: number; reason?: string } {
+    return sanitizeModsByCosts(selected, MAGE_MOD_COSTS, MAGE_POINTS_BUDGET);
 }
 
 // ================================================================== //
@@ -657,27 +919,42 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 delete state.players[oldSid];
             }
         }
+        // Новая модель: грузим активного персонажа из gg_chars/list.
+        // Если нет — пытаемся мигрировать из старого gg/progress.
+        const chState = migrateCharactersIfNeeded(nk, p.userId);
+        const activeChar: StoredCharacter | null = findActiveCharacter(chState);
         const saved = loadProgress(nk, p.userId);
         const equipment: { [slot: string]: string } = {};
         for (const s of EQUIP_SLOTS) equipment[s] = "";
-        if (saved && saved.equipment) {
+        // Приоритет: активный персонаж → legacy progress → default.
+        const progSource: Partial<StoredCharacter> & Partial<StoredProgress> = activeChar
+            ? activeChar
+            : (saved || {}) as any;
+        if (progSource.equipment) {
             for (const s of EQUIP_SLOTS) {
-                if (saved.equipment[s]) equipment[s] = saved.equipment[s];
+                if (progSource.equipment[s]) equipment[s] = progSource.equipment[s];
             }
         } else if (saved) {
-            // миграция со старого формата (eqWeapon / eqArmor → weapon/body)
             if (saved.eqWeapon) equipment.weapon = saved.eqWeapon;
             if (saved.eqArmor) equipment.body = saved.eqArmor;
         }
+        // Моды, класс, id — из активного персонажа, если он есть.
+        // Иначе legacy: отдельные коллекции и saved.charClass.
+        const archerModsFromChar = activeChar ? activeChar.archerMods : loadArcherMods(nk, p.userId).selected;
+        const mageModsFromChar = activeChar ? activeChar.mageMods : loadMageMods(nk, p.userId).selected;
+        const charClassFromChar = activeChar
+            ? activeChar.charClass
+            : ((saved && saved.charClass && ALLOWED_CLASSES.indexOf(saved.charClass) >= 0) ? saved.charClass : "archer");
+        const displayUsername = activeChar ? activeChar.name : p.username;
         const player: MatchPlayer = {
-            userId: p.userId, sessionId: p.sessionId, username: p.username,
+            userId: p.userId, sessionId: p.sessionId, username: displayUsername,
             presence: p,
             pos: { x: WORLD.playerSpawn.x, y: WORLD.playerSpawn.y },
             hp: 0, hpMax: 0,
-            level: saved ? saved.level : 1,
-            xp: saved ? saved.xp : 0,
-            gold: saved ? saved.gold : 0,
-            inventory: saved ? saved.inventory : [],
+            level: activeChar ? activeChar.level : (saved ? saved.level : 1),
+            xp: activeChar ? activeChar.xp : (saved ? saved.xp : 0),
+            gold: activeChar ? activeChar.gold : (saved ? saved.gold : 0),
+            inventory: activeChar ? activeChar.inventory : (saved ? saved.inventory : []),
             equipment: equipment,
             dirtyPos: true, dirtyMe: true,
             lastAttackAt: 0,
@@ -689,6 +966,10 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             effects: [],
             moveTarget: null,
             movePath: [],
+            archerMods: archerModsFromChar,
+            mageMods: mageModsFromChar,
+            charClass: charClassFromChar,
+            characterId: activeChar ? activeChar.id : "",
         };
         player.hpMax = computeHpMax(player);
         player.hp = player.hpMax;
@@ -769,6 +1050,7 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         eq: p.equipment,
         effects: p.effects || [],
         skillCd: p.skillCd || {},
+        charClass: p.charClass,
         t: now(),
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
@@ -903,7 +1185,21 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         if (dist(foe.pos, player.pos) > atkRange) break;
                         if (t < foe.invulnUntil) break;
                         player.lastAttackAt = t;
-                        const dmgP = computeDamage(player);
+                        let dmgP = computeDamage(player);
+                        if (player.empoweredAttackUntil && t < player.empoweredAttackUntil) {
+                            dmgP = dmgP * 2;
+                            player.empoweredAttackUntil = 0;  // один-шот
+                        }
+                        let isCritP = false;
+                        if (player.critBuffUntil && t < player.critBuffUntil) {
+                            if (Math.random() < (player.critBonus || 0)) {
+                                isCritP = true;
+                                dmgP = dmgP * 2;
+                            }
+                        }
+                        if (player.pierceBuffUntil && t < player.pierceBuffUntil) {
+                            dmgP = Math.floor(dmgP * (1 + (player.pierceBonus || 0)));
+                        }
                         foe.hp -= dmgP;
                         if (foe.hp < 0) foe.hp = 0;
                         foe.dirtyPos = true;
@@ -913,7 +1209,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                             tx: foe.pos.x, ty: foe.pos.y,
                             melee: !hasBow,
                         }));
-                        dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: foe.sessionId, by: player.sessionId, dmg: dmgP }));
+                        dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: foe.sessionId, by: player.sessionId, dmg: dmgP, crit: isCritP }));
                         if (foe.hp <= 0) {
                             foe.pos.x = WORLD.playerSpawn.x; foe.pos.y = WORLD.playerSpawn.y;
                             foe.hp = foe.hpMax;
@@ -929,7 +1225,21 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                     if (!mob || mob.state !== "alive") break;
                     if (dist(mob.pos, player.pos) > atkRange) break;
                     player.lastAttackAt = t;
-                    const dmg = computeDamage(player);
+                    let dmg = computeDamage(player);
+                    if (player.empoweredAttackUntil && t < player.empoweredAttackUntil) {
+                        dmg = dmg * 2;
+                        player.empoweredAttackUntil = 0;  // один-шот
+                    }
+                    let isCritM = false;
+                    if (player.critBuffUntil && t < player.critBuffUntil) {
+                        if (Math.random() < (player.critBonus || 0)) {
+                            isCritM = true;
+                            dmg = dmg * 2;
+                        }
+                    }
+                    if (player.pierceBuffUntil && t < player.pierceBuffUntil) {
+                        dmg = Math.floor(dmg * (1 + (player.pierceBonus || 0)));
+                    }
                     mob.hp -= dmg;
                     mob.dirty = true;
                     dispatcher.broadcastMessage(OP_ARROW, JSON.stringify({
@@ -937,7 +1247,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         tx: mob.pos.x, ty: mob.pos.y,
                         melee: !hasBow,
                     }));
-                    dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mobId, dmg: dmg }));
+                    dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mobId, dmg: dmg, crit: isCritM }));
                     if (mob.hp <= 0) {
                         mob.hp = 0; mob.state = "dead";
                         mob.respawnAt = t + MOB_TYPES[mob.type].respawnMs;
@@ -1092,7 +1402,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 try {
                     const body = JSON.parse(nk.binaryToString(msg.data)) as { skill?: number; mobId?: string; x?: number; y?: number };
                     const skill = Number(body.skill);
-                    const spec = SKILLS[skill];
+                    const classTable = skillsForClass(player.charClass);
+                    const spec = classTable[skill];
                     if (!spec) {
                         dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill }), [player.presence]);
                         break;
@@ -1347,23 +1658,64 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         }
     }
 
-    // --- active zones (arrow rain) ---
+    // --- active zones (arrow rain / град стрел) ---
     for (let zi = state.zones.length - 1; zi >= 0; zi--) {
         const z = state.zones[zi];
-        if (t >= z.endAt) { state.zones.splice(zi, 1); continue; }
-        if (t < z.nextTickAt) continue;
+        // Финальный тик перед удалением — возможность применить final_stun.
+        const isLastTick = (t >= z.endAt);
+        if (t >= z.endAt && z.mod !== "final_stun") { state.zones.splice(zi, 1); continue; }
+        if (!isLastTick && t < z.nextTickAt) continue;
         z.nextTickAt = t + 400;
         const owner = state.players[z.ownerSid];
         const ownerDmg = owner ? Math.floor(computeDamage(owner) * 0.45) : 3;
+        // Собираем мобов в зоне одним проходом — пригодится для мод.
+        const mobsInZone: MatchMob[] = [];
         for (const mk of Object.keys(state.mobs)) {
             const m = state.mobs[mk];
             if (m.state !== "alive") continue;
             if (Math.abs(m.pos.x - z.x) > z.radius || Math.abs(m.pos.y - z.y) > z.radius) continue;
+            mobsInZone.push(m);
+        }
+        for (const m of mobsInZone) {
             m.hp -= ownerDmg;
             m.dirty = true;
             dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: m.id, dmg: ownerDmg }));
             if (m.hp <= 0 && owner) killMob(m, owner, t);
         }
+        // Мода slow — 5 случайных живых целей, slowEndAt = t + 800 (держим до след. тика).
+        if (z.mod === "slow" && mobsInZone.length > 0) {
+            const alive = mobsInZone.filter(m => m.hp > 0 && m.state === "alive");
+            for (let i = alive.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [alive[i], alive[j]] = [alive[j], alive[i]];
+            }
+            const picks = alive.slice(0, 5);
+            for (const m of picks) {
+                if (!m.debuff) {
+                    m.debuff = { poisonStacks: 0, poisonEndAt: 0, slowEndAt: 0, nextPoisonTickAt: 0, poisonDmg: 0 };
+                }
+                m.debuff.slowEndAt = Math.max(m.debuff.slowEndAt, t + 800);
+                m.dirty = true;
+            }
+        }
+        // Мода final_stun — только на последнем тике, до 5 случайных живых, стан 500мс.
+        if (isLastTick && z.mod === "final_stun") {
+            const alive = mobsInZone.filter(m => m.hp > 0 && m.state === "alive");
+            for (let i = alive.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [alive[i], alive[j]] = [alive[j], alive[i]];
+            }
+            const picks = alive.slice(0, 5);
+            for (const m of picks) {
+                m.stunUntil = t + 500;
+                dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
+                    kind: "stun", mobId: m.id, duration: 500,
+                }));
+            }
+            state.zones.splice(zi, 1);
+            continue;
+        }
+        if (isLastTick) { state.zones.splice(zi, 1); continue; }
         // PvP: бьём чужих игроков в зоне (исключая владельца)
         for (const sk of Object.keys(state.players)) {
             const tp = state.players[sk];
@@ -1405,7 +1757,11 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     for (const sk of Object.keys(state.players)) {
         const pl = state.players[sk];
         if (pl.hp <= 0 || !pl.moveTarget) continue;
-        let stepLeft = PLAYER_SPEED * TICK_DT;
+        // Мода Эскейпа "sprint": +25% к скорости пока sprintUntil не прошёл.
+        const speedNow = (pl.sprintUntil && t < pl.sprintUntil)
+            ? PLAYER_SPEED * 1.25
+            : PLAYER_SPEED;
+        let stepLeft = speedNow * TICK_DT;
         // Крутим цикл пока не израсходуем все шаги или не кончится путь —
         // чтобы на тике можно было перейти через несколько коротких waypoint-ов.
         while (stepLeft > 0 && pl.moveTarget) {
@@ -1515,6 +1871,31 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             }
         }
         if (mob.debuff && t >= mob.debuff.poisonEndAt) mob.debuff = undefined;
+        // Fire DoT (мода "fire" РДД-удара)
+        if (mob.fireEndAt && t < mob.fireEndAt && mob.nextFireTickAt && t >= mob.nextFireTickAt) {
+            const fdmg = Math.max(1, Math.floor(mob.fireDmg || 0));
+            mob.hp -= fdmg;
+            mob.dirty = true;
+            mob.nextFireTickAt = t + 1000;
+            dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mob.id, dmg: fdmg, fire: true }));
+            if (mob.hp <= 0) {
+                const pKeys3 = Object.keys(state.players);
+                if (pKeys3.length > 0) killMob(mob, state.players[pKeys3[0]], t);
+                else { mob.hp = 0; mob.state = "dead"; mob.respawnAt = t + def.respawnMs; }
+                continue;
+            }
+        }
+        if (mob.fireEndAt && t >= mob.fireEndAt) {
+            mob.fireEndAt = undefined;
+            mob.nextFireTickAt = undefined;
+            mob.fireDmg = undefined;
+        }
+        // Stun: оглушённый моб не двигается и не бьёт. Poison/fire DoT выше
+        // продолжают тикать — стан не отменяет эти эффекты.
+        if (mob.stunUntil && t < mob.stunUntil) {
+            mob.dirty = true;
+            continue;
+        }
         const slowed = mob.debuff && t < mob.debuff.slowEndAt;
         const speed = slowed ? def.speed * 0.7 : def.speed;
         if (!mob.target || dist(mob.pos, mob.target) < 4) {
@@ -1765,6 +2146,172 @@ function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
     return JSON.stringify(snap);
 }
 
+// ===== Archer mods =====
+// Клиентские RPC: получить/записать выбор мод скиллов лучника.
+
+// Моды теперь живут внутри активного персонажа. Старые коллекции
+// gg_archer_mods/gg_mage_mods остаются как fallback для аккаунтов, у
+// которых ещё нет персонажей.
+
+function rpcArcherModsGet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const ch = findActiveCharacter(state);
+    const raw = ch ? ch.archerMods : loadArcherMods(nk, ctx.userId).selected;
+    const sanity = sanitizeArcherMods(raw);
+    return JSON.stringify({ selected: sanity.cleaned, cost: sanity.cost, budget: ARCHER_POINTS_BUDGET });
+}
+
+function rpcArcherModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { selected?: { [k: string]: any } } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const sanity = sanitizeArcherMods(req.selected || {});
+    if (!sanity.ok) {
+        return JSON.stringify({ ok: false, reason: sanity.reason, budget: ARCHER_POINTS_BUDGET });
+    }
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const ch = findActiveCharacter(state);
+    if (ch) {
+        ch.archerMods = sanity.cleaned;
+        saveCharacters(nk, ctx.userId, state);
+    } else {
+        saveArcherMods(nk, ctx.userId, sanity.cleaned);  // legacy fallback
+    }
+    return JSON.stringify({ ok: true, selected: sanity.cleaned, cost: sanity.cost, budget: ARCHER_POINTS_BUDGET });
+}
+
+function rpcMageModsGet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const ch = findActiveCharacter(state);
+    const raw = ch ? ch.mageMods : loadMageMods(nk, ctx.userId).selected;
+    const sanity = sanitizeMageMods(raw);
+    return JSON.stringify({ selected: sanity.cleaned, cost: sanity.cost, budget: MAGE_POINTS_BUDGET });
+}
+
+function rpcMageModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { selected?: { [k: string]: any } } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const sanity = sanitizeMageMods(req.selected || {});
+    if (!sanity.ok) {
+        return JSON.stringify({ ok: false, reason: sanity.reason, budget: MAGE_POINTS_BUDGET });
+    }
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const ch = findActiveCharacter(state);
+    if (ch) {
+        ch.mageMods = sanity.cleaned;
+        saveCharacters(nk, ctx.userId, state);
+    } else {
+        saveMageMods(nk, ctx.userId, sanity.cleaned);
+    }
+    return JSON.stringify({ ok: true, selected: sanity.cleaned, cost: sanity.cost, budget: MAGE_POINTS_BUDGET });
+}
+
+// Первый выбор класса (один раз на аккаунт). Если класс уже есть в
+// прогрессе — возвращаем его, запрос игнорируется.
+function rpcSetClass(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { class?: string } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const want = String(req.class || "");
+    if (ALLOWED_CLASSES.indexOf(want) < 0) {
+        return JSON.stringify({ ok: false, reason: "unknown_class", allowed: ALLOWED_CLASSES });
+    }
+    const existing = loadProgress(nk, ctx.userId);
+    if (existing && existing.charClass) {
+        return JSON.stringify({ ok: true, class: existing.charClass, locked: true });
+    }
+    const payloadToSave: StoredProgress = existing
+        ? { ...existing, charClass: want }
+        : { level: 1, xp: 0, gold: 0, inventory: [], equipment: {}, charClass: want };
+    nk.storageWrite([{
+        collection: STORAGE_COLLECTION,
+        key: STORAGE_KEY,
+        userId: ctx.userId,
+        value: payloadToSave as unknown as { [k: string]: any },
+        permissionRead: 1,
+        permissionWrite: 0,
+    }]);
+    return JSON.stringify({ ok: true, class: want, locked: false });
+}
+
+// ===== Characters (multi-character account) =====
+
+function summarizeChars(state: StoredCharactersState): { active: string; chars: Array<{ id: string; name: string; charClass: string; level: number; gold: number }> } {
+    return {
+        active: state.active,
+        chars: state.chars.map(c => ({
+            id: c.id, name: c.name, charClass: c.charClass, level: c.level, gold: c.gold,
+        })),
+    };
+}
+
+function rpcCharactersList(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    return JSON.stringify(summarizeChars(state));
+}
+
+function rpcCharacterCreate(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { name?: string; class?: string } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const wantClass = String(req.class || "");
+    const wantName = String(req.name || "").trim();
+    if (ALLOWED_CLASSES.indexOf(wantClass) < 0) {
+        return JSON.stringify({ ok: false, reason: "unknown_class" });
+    }
+    if (!validCharacterName(wantName)) {
+        return JSON.stringify({ ok: false, reason: "bad_name" });
+    }
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    if (state.chars.length >= MAX_CHARS_PER_ACCOUNT) {
+        return JSON.stringify({ ok: false, reason: "char_limit", limit: MAX_CHARS_PER_ACCOUNT });
+    }
+    for (const c of state.chars) {
+        if (c.name.toLowerCase() === wantName.toLowerCase()) {
+            return JSON.stringify({ ok: false, reason: "name_taken" });
+        }
+    }
+    const id = "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const ch = defaultChar(id, wantName, wantClass);
+    state.chars.push(ch);
+    if (!state.active) state.active = id;  // первый персонаж — сразу активный
+    saveCharacters(nk, ctx.userId, state);
+    return JSON.stringify({ ok: true, id, ...summarizeChars(state) });
+}
+
+function rpcCharacterSelect(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { id?: string } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const id = String(req.id || "");
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const found = state.chars.find(c => c.id === id);
+    if (!found) return JSON.stringify({ ok: false, reason: "not_found" });
+    state.active = id;
+    saveCharacters(nk, ctx.userId, state);
+    return JSON.stringify({ ok: true, ...summarizeChars(state) });
+}
+
+function rpcCharacterDelete(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { id?: string } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const id = String(req.id || "");
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const idx = state.chars.findIndex(c => c.id === id);
+    if (idx < 0) return JSON.stringify({ ok: false, reason: "not_found" });
+    state.chars.splice(idx, 1);
+    if (state.active === id) {
+        state.active = state.chars.length > 0 ? state.chars[0].id : "";
+    }
+    saveCharacters(nk, ctx.userId, state);
+    return JSON.stringify({ ok: true, ...summarizeChars(state) });
+}
+
 // ===== ADMIN =====
 // Whitelist админ-имён (lowercase). Нельзя редактировать через API — только в коде.
 const ADMIN_USERNAMES = ["dimka4344", "v_tip"];
@@ -1933,6 +2480,15 @@ function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkru
     initializer.registerRpc("get_world_match", rpcGetWorldMatch);
     initializer.registerRpc("debug_state", rpcDebugState);
     initializer.registerRpc("admin", rpcAdmin);
+    initializer.registerRpc("archer_mods_get", rpcArcherModsGet);
+    initializer.registerRpc("archer_mods_set", rpcArcherModsSet);
+    initializer.registerRpc("mage_mods_get", rpcMageModsGet);
+    initializer.registerRpc("mage_mods_set", rpcMageModsSet);
+    initializer.registerRpc("set_class", rpcSetClass);
+    initializer.registerRpc("characters_list", rpcCharactersList);
+    initializer.registerRpc("character_create", rpcCharacterCreate);
+    initializer.registerRpc("character_select", rpcCharacterSelect);
+    initializer.registerRpc("character_delete", rpcCharacterDelete);
     logger.info("GG runtime loaded. mobs=" + WORLD.mobSpawns.length + " npcs=" + NPCS.length);
 }
 

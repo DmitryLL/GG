@@ -17,6 +17,7 @@ const LOOT_SCRIPT := preload("res://scripts/loot_window.gd")
 const SKILLBAR_SCRIPT := preload("res://scripts/skillbar.gd")
 const ADMIN_SCRIPT := preload("res://scripts/admin_panel.gd")
 const STATS_SCRIPT := preload("res://scripts/stats_window.gd")
+const SKILLS_WIN_SCRIPT := preload("res://scripts/skills_window.gd")
 const BUTTERFLIES_SCRIPT := preload("res://scripts/butterflies.gd")
 
 const OP_POSITIONS    := 1
@@ -113,6 +114,7 @@ var targeting_skill: int = -1  # -1 = нет таргетинга, иначе и
 var _targeting_ring: Sprite2D
 var admin_panel: AdminPanel
 var stats_win: StatsWindow
+var skills_win: SkillsWindow
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -202,6 +204,10 @@ func _ready() -> void:
 	add_child(stats_win)
 	hud.stats_button_pressed.connect(stats_win.toggle)
 
+	skills_win = SKILLS_WIN_SCRIPT.new()
+	add_child(skills_win)
+	hud.skills_button_pressed.connect(skills_win.toggle)
+
 	admin_panel = ADMIN_SCRIPT.new()
 	add_child(admin_panel)
 	# Показать значок гаечного ключа в HUD, если текущий юзер — админ.
@@ -246,6 +252,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if pk == KEY_P:
 			if stats_win: stats_win.toggle()
+			return
+		if pk == KEY_K:
+			if skills_win: skills_win.toggle()
 			return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and targeting_skill >= 0:
 		targeting_skill = -1
@@ -1312,6 +1321,12 @@ func _apply_me(body: Dictionary) -> void:
 	last_me = body
 	if body.has("t"):
 		Session.server_offset_ms = int(body["t"]) - Time.get_ticks_msec()
+	# Класс от сервера — источник истины (может отличаться от локального выбора).
+	var server_class: String = str(body.get("charClass", ""))
+	if server_class != "" and server_class != Session.selected_character:
+		Session.selected_character = server_class
+		if skills_win and skills_win.has_method("set_class"):
+			skills_win.set_class(server_class)
 	hud.update_me(body)
 	if nameplate:
 		nameplate.update_me(body)
@@ -1360,7 +1375,7 @@ func _apply_npcs(body: Dictionary) -> void:
 		var npc_root := Node2D.new()
 		npc_root.position = Vector2(float(entry.get("x", 0)), float(entry.get("y", 0)))
 		var sprite := Sprite2D.new()
-		sprite.texture = load("res://assets/sprites/npc.png")
+		sprite.texture = load("res://assets/sprites/mobs/npc.png")
 		sprite.scale = Vector2(1.2, 1.2)
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		npc_root.add_child(sprite)
@@ -1506,7 +1521,34 @@ func _on_chat_send(text: String) -> void:
 	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text}))
 
 func _handle_skill_fx(body: Dictionary) -> void:
-	# Передаём событие каждому скиллу — кто узнал свой kind, тот и обрабатывает.
+	# Общие эффекты (не привязаны к конкретному скиллу): обрабатываем сразу.
+	var kind := String(body.get("kind", ""))
+	if kind == "stun":
+		var mid := String(body.get("mobId", ""))
+		var m: Mob = mobs.get(mid)
+		if m:
+			m.apply_stun(int(body.get("duration", 1000)))
+		return
+	if kind == "fire":
+		var mid2 := String(body.get("mobId", ""))
+		var m2: Mob = mobs.get(mid2)
+		if m2:
+			m2.apply_fire(int(body.get("duration", 3500)))
+		return
+	if kind == "root":
+		var mid3 := String(body.get("mobId", ""))
+		var m3: Mob = mobs.get(mid3)
+		if m3:
+			# Root — визуально тот же знак, что stun. Игромеханика: моб не движется.
+			m3.apply_stun(int(body.get("duration", 500)))
+		return
+	if kind == "dispel":
+		var mid4 := String(body.get("mobId", ""))
+		var m4: Mob = mobs.get(mid4)
+		if m4:
+			m4.flash_dispel()
+		return
+	# Скиллы сами слушают свои kind.
 	for def in SkillRegistry.all():
 		if def.on_fx(self, body):
 			return

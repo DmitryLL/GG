@@ -10,8 +10,8 @@ const STYLE_POISON := "poison"
 const STYLE_GHOST := "ghost"
 
 const FLIGHT_S := 0.18
-const ARROW_TEX := preload("res://assets/sprites/arrow.png")
-const ARROW_CRIT_TEX := preload("res://assets/sprites/arrow_crit.png")
+const ARROW_TEX := preload("res://assets/sprites/projectiles/arrow.png")
+const ARROW_CRIT_TEX := preload("res://assets/sprites/projectiles/arrow_crit.png")
 
 func shoot(from: Vector2, to: Vector2, style: String = "normal") -> void:
 	position = from

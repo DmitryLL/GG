@@ -1,10 +1,12 @@
-# Скилл 3: Отскок — телепорт, неуязвимость, x2 атак-спид.
+# Скилл 3: Эскейп — отскок вперёд на 3 шага.
+# Старое имя: «Отскок». Механика уже совпадает с дизайном —
+# переименование только в UI.
 class_name SkillDodge
 extends SkillDef
 
 func _init() -> void:
-	display_name = "Отскок"
-	icon_path = "res://assets/sprites/skill_3.png"
+	display_name = "Эскейп"
+	icon_path = "res://assets/sprites/skills/skill_3.png"
 	cooldown = 8.0
 	server_id = 3
 	# Не таргет-скилл: исполняется на себе (с учётом текущей цели)

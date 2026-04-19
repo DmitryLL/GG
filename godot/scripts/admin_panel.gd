@@ -667,7 +667,7 @@ func _make_brush_preview_texture(tile_id: int) -> AtlasTexture:
 	if tile_id == WorldData.Tile.TREE:
 		base_id = WorldData.Tile.GRASS  # дерево поверх — но для превью хватит травы
 	var atlas := AtlasTexture.new()
-	atlas.atlas = preload("res://assets/sprites/tiles.png")
+	atlas.atlas = preload("res://assets/sprites/world/tiles.png")
 	atlas.region = Rect2(base_id * WorldData.TILE_SIZE, 0, WorldData.TILE_SIZE, WorldData.TILE_SIZE)
 	return atlas
 

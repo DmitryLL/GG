@@ -1,14 +1,14 @@
 """Build 64x32 mob atlases (2 frames of 32x32) from PixelLab rotations.
 
 Frame 0 = south view, Frame 1 = east view (for subtle variation).
-Output: godot/assets/sprites/{slime,goblin}.png
+Output: godot/assets/sprites/mobs/{slime,goblin}.png
 """
 import io
 import subprocess
 from pathlib import Path
 from PIL import Image
 
-OUT_DIR = Path(__file__).resolve().parent.parent.parent / "sprites"
+OUT_DIR = Path(__file__).resolve().parent.parent.parent / "sprites" / "mobs"
 TILE = 32
 
 MOBS = {

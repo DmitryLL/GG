@@ -1,6 +1,12 @@
-// Скилл 2: Отравленная стрела.
-// Удар = 80% от baseDmg, яд = 20% от baseDmg за каждый тик (7 тиков за 7с).
-// На мобе stacks до 3 (суммируются при повторном касте), длительность обновляется.
+// Скилл 2: Деза — отбрасывание цели назад на 2 шага.
+// Легаси: пока сохраняется старая механика (hit 80% + poison+slow) —
+// чтобы не ломать баланс до полной переписки. Базовый knockback
+// добавлен как дополнительный эффект.
+// Модификации:
+//   "root"   (1п) — после отбрасывания цель обездвижена 0.5 сек
+//                   (переиспользует stunUntil на мобе).
+//   "dispel" (2п) — снимает один положительный бафф. Заглушка:
+//                   на мобах сейчас баффов нет, только визуал.
 registerSkill(2, {
     requiresBow: true,
     cooldownMs: 6000,
@@ -9,6 +15,9 @@ registerSkill(2, {
 
         const hitDmg = Math.max(1, Math.floor(baseDmg * 0.8));
         const tickDmg = Math.max(1, Math.floor(baseDmg * 0.2));
+        const mod = player.archerMods ? player.archerMods["2"] : "";
+        const KNOCK_PX = 64;  // 2 тайла по 32px
+        const ROOT_MS = 500;
 
         // PvP
         if (body.sid && body.sid !== player.sessionId) {
@@ -67,6 +76,35 @@ registerSkill(2, {
         dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({
             mobId: mob.id, dmg: hitDmg, poison: true,
         }));
+
+        // Knockback на 2 тайла от игрока. Проверка проходимости по осям.
+        if (mob.hp > 0) {
+            const dirx = mob.pos.x - player.pos.x;
+            const diry = mob.pos.y - player.pos.y;
+            const dlen = Math.sqrt(dirx * dirx + diry * diry) || 1;
+            const nx = mob.pos.x + (dirx / dlen) * KNOCK_PX;
+            const ny = mob.pos.y + (diry / dlen) * KNOCK_PX;
+            if (isWalkableAt(currentTiles(state), nx, mob.pos.y)) mob.pos.x = nx;
+            if (isWalkableAt(currentTiles(state), mob.pos.x, ny)) mob.pos.y = ny;
+            // После телепорта моб сбрасывает цель — подберёт следующую точку AI.
+            mob.target = null;
+            mob.dirty = true;
+
+            if (mod === "root") {
+                mob.stunUntil = t + ROOT_MS;
+                dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
+                    kind: "root", mobId: mob.id, duration: ROOT_MS,
+                }));
+            }
+            if (mod === "dispel") {
+                // TODO: система баффов на мобах ещё не реализована. Клиент
+                // получит вспышку, серверного эффекта нет.
+                dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
+                    kind: "dispel", mobId: mob.id,
+                }));
+            }
+        }
+
         if (mob.hp <= 0) killMob(mob, player, t);
         player.skillCd[2] = t + 6000;
     },

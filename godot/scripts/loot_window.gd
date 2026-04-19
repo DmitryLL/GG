@@ -7,7 +7,7 @@ signal take_requested(mob_id: String, index: int)
 signal take_all_requested(mob_id: String)
 signal closed
 
-const ITEMS_TEX := preload("res://assets/sprites/items.png")
+const ITEMS_TEX := preload("res://assets/sprites/items/items.png")
 
 var overlay: ColorRect
 var card: PanelContainer

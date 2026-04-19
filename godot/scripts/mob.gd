@@ -3,6 +3,9 @@
 class_name Mob
 extends Node2D
 
+const MOBS_DATA_PATH := "res://data/mobs.json"
+static var _mobs_data: Dictionary = {}
+
 var _anim_fps := 4.0
 var _anim_frames := 4
 
@@ -24,18 +27,34 @@ var _flash_t := 0.0
 var _glow_t := 0.0
 var _highlight := false
 var _highlight_ring: Sprite2D
+var _stun_end_ms: int = 0
+var _stun_label: Label
+var _fire_end_ms: int = 0
+var _fire_label: Label
 
 func setup(id: String, p_kind: String) -> void:
 	mob_id = id
 	kind = p_kind
 
+static func _load_mobs_data() -> Dictionary:
+	if not _mobs_data.is_empty():
+		return _mobs_data
+	var f := FileAccess.open(MOBS_DATA_PATH, FileAccess.READ)
+	if f == null:
+		push_error("mobs.json not found at %s" % MOBS_DATA_PATH)
+		return {}
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_error("mobs.json is not a JSON object")
+		return {}
+	_mobs_data = parsed
+	return _mobs_data
+
 func _ready() -> void:
-	var def := {
-		"slime":  { "tex": "res://assets/sprites/slime.png",  "scale": 1.3, "frames": 8, "fps": 6.0 },
-		"goblin": { "tex": "res://assets/sprites/goblin.png", "scale": 1.25, "frames": 4, "fps": 4.0 },
-		"dummy":  { "tex": "res://assets/sprites/dummy.png",  "scale": 1.4, "frames": 1, "fps": 1.0 },
-	}
-	var info: Dictionary = def.get(kind, def["slime"])
+	var def: Dictionary = _load_mobs_data()
+	var info: Dictionary = def.get(kind, def.get("slime", {
+		"texture": "res://assets/sprites/mobs/slime.png", "scale": 1.3, "frames": 8, "fps": 6.0
+	}))
 
 	# Лёгкое свечение вокруг моба — виден только если есть лут.
 	glow = Sprite2D.new()
@@ -48,7 +67,7 @@ func _ready() -> void:
 	add_child(glow)
 
 	sprite = Sprite2D.new()
-	sprite.texture = load(info["tex"])
+	sprite.texture = load(info["texture"])
 	sprite.hframes = int(info["frames"])
 	sprite.vframes = 1
 	sprite.frame = 0
@@ -158,6 +177,61 @@ func set_debuff(d, server_now_ms: int) -> void:
 	if server_now_ms > 0:
 		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
 
+func apply_stun(duration_ms: int) -> void:
+	# Используем локальный таймер (не зависим от server_offset): сервер
+	# шлёт продолжительность, клиент сам меряет от текущего момента.
+	_stun_end_ms = Time.get_ticks_msec() + maxi(200, duration_ms)
+	_show_stun_icon()
+
+func _show_stun_icon() -> void:
+	if _stun_label == null:
+		_stun_label = Label.new()
+		_stun_label.text = "✦"
+		_stun_label.add_theme_font_size_override("font_size", 18)
+		_stun_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.4))
+		_stun_label.position = Vector2(-7, -42)
+		add_child(_stun_label)
+	_stun_label.visible = true
+
+func _hide_stun_icon() -> void:
+	if _stun_label:
+		_stun_label.visible = false
+
+func stun_active() -> bool:
+	if _stun_end_ms <= 0:
+		return false
+	return _stun_end_ms > Time.get_ticks_msec()
+
+func apply_fire(duration_ms: int) -> void:
+	_fire_end_ms = Time.get_ticks_msec() + maxi(500, duration_ms)
+	_show_fire_icon()
+
+func _show_fire_icon() -> void:
+	if _fire_label == null:
+		_fire_label = Label.new()
+		_fire_label.text = "✦"
+		_fire_label.add_theme_font_size_override("font_size", 16)
+		_fire_label.add_theme_color_override("font_color", Color(1.0, 0.45, 0.15))
+		_fire_label.position = Vector2(4, -42)  # сдвинут вправо чтобы не накладывался на stun
+		add_child(_fire_label)
+	_fire_label.visible = true
+
+func _hide_fire_icon() -> void:
+	if _fire_label:
+		_fire_label.visible = false
+
+func fire_active() -> bool:
+	if _fire_end_ms <= 0:
+		return false
+	return _fire_end_ms > Time.get_ticks_msec()
+
+# Краткая вспышка диспелла — голубой flash поверх спрайта.
+func flash_dispel() -> void:
+	if sprite == null:
+		return
+	sprite.modulate = Color(0.4, 0.85, 1.5, 1.0)
+	_flash_t = 0.15
+
 func poison_active() -> bool:
 	if _poison_end_ms <= 0:
 		return false
@@ -180,6 +254,19 @@ func flash() -> void:
 func _process(delta: float) -> void:
 	_glow_t += delta
 	_update_debuff_visible()
+	# Снять stun-иконку когда оглушение истекло.
+	if _stun_end_ms > 0 and not stun_active():
+		_stun_end_ms = 0
+		_hide_stun_icon()
+	# Покачивание иконки стана для читаемости.
+	if _stun_label and _stun_label.visible:
+		_stun_label.position.y = -42 + 2.0 * sin(_glow_t * 6.0)
+	# Снять fire-иконку когда огонь погас.
+	if _fire_end_ms > 0 and not fire_active():
+		_fire_end_ms = 0
+		_hide_fire_icon()
+	if _fire_label and _fire_label.visible:
+		_fire_label.position.y = -42 + 2.0 * sin(_glow_t * 8.0 + 1.5)
 	if glow and glow.visible:
 		var g_pulse: float = 0.5 + 0.4 * sin(_glow_t * 3.0)
 		glow.modulate.a = g_pulse

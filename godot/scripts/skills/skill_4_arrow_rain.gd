@@ -1,10 +1,12 @@
-# Скилл 4: Ливень стрел — AoE-зона с падающими стрелами и пуфами.
+# Скилл 4: Град стрел — AoE-зона, 30% урона × 3 сек × 5 целей.
+# Старое имя: «Ливень стрел». Механика уже совпадает с дизайном —
+# переименование + исправленная иконка (дождь вместо стрелы).
 class_name SkillArrowRain
 extends SkillDef
 
 func _init() -> void:
-	display_name = "Ливень стрел"
-	icon_path = "res://assets/sprites/skill_2.png"
+	display_name = "Град стрел"
+	icon_path = "res://assets/sprites/skills/skill_4.png"
 	cooldown = 12.0
 	server_id = 4
 	requires_bow = true

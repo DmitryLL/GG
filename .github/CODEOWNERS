@@ -1,0 +1,27 @@
+# CODEOWNERS — владельцы директорий.
+# GitHub автоматически запросит ревью у владельца при ПР в эти пути.
+# Синтаксис: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ─── Визуал / ассеты / анимации ─── Вова
+/godot/assets/               @protiik
+/godot/scenes/visual/        @protiik
+/godot/themes/               @protiik
+/godot/data/                 @protiik
+
+# ─── Логика / скелетные сцены / сервер ─── Дима
+/godot/scripts/              @DmitryLL
+/godot/scenes/core/          @DmitryLL
+/godot/scenes/ui/            @DmitryLL
+/godot/project.godot         @DmitryLL
+/godot/export_presets.cfg    @DmitryLL
+/nakama-server/              @DmitryLL
+/deploy/                     @DmitryLL
+/scripts/                    @DmitryLL
+/.github/                    @DmitryLL
+
+# Корневые настройки — оба смотрят
+/.gitignore                  @DmitryLL @protiik
+/.gitattributes              @DmitryLL @protiik
+/README.md                   @DmitryLL @protiik
+/CLAUDE.md                   @DmitryLL @protiik
+/godot/AGENTS.md             @DmitryLL @protiik

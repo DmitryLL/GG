@@ -6,7 +6,7 @@ extends CanvasLayer
 signal use_or_equip(slot_index: int)
 signal closed
 
-const ITEMS_TEX := preload("res://assets/sprites/items.png")
+const ITEMS_TEX := preload("res://assets/sprites/items/items.png")
 const SLOT_COUNT := 25
 const GRID_COLS := 5
 

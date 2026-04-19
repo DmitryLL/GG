@@ -1,5 +1,7 @@
 .claude/
-CLAUDE.md
+# CLAUDE.md теперь коммитим — общий гайд для AI-ассистентов команды.
+# Для локального оверрайда используй CLAUDE.local.md (в gitignore).
+CLAUDE.local.md
 
 node_modules/
 dist/
