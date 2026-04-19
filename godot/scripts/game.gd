@@ -1529,6 +1529,19 @@ func _handle_skill_fx(body: Dictionary) -> void:
 		if m2:
 			m2.apply_fire(int(body.get("duration", 3500)))
 		return
+	if kind == "root":
+		var mid3 := String(body.get("mobId", ""))
+		var m3: Mob = mobs.get(mid3)
+		if m3:
+			# Root — визуально тот же знак, что stun. Игромеханика: моб не движется.
+			m3.apply_stun(int(body.get("duration", 500)))
+		return
+	if kind == "dispel":
+		var mid4 := String(body.get("mobId", ""))
+		var m4: Mob = mobs.get(mid4)
+		if m4:
+			m4.flash_dispel()
+		return
 	# Скиллы сами слушают свои kind.
 	for def in SkillRegistry.all():
 		if def.on_fx(self, body):
