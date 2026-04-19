@@ -90,6 +90,8 @@ const OP_PARTY_ACCEPT        := 41
 const OP_PARTY_DECLINE       := 42
 const OP_PARTY_UPDATE        := 43
 const OP_PARTY_LEAVE         := 44
+const OP_PLAYER_DEAD         := 45
+const OP_RESPAWN             := 46
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -145,6 +147,9 @@ var skills_win: CanvasLayer
 var party_ui: CanvasLayer
 var party_members_cache: Array = []
 var my_faction: String = "west"  # обновляется из OP_ME
+var death_overlay: CanvasLayer
+var _death_pos: Vector2 = Vector2.ZERO
+var _am_dead: bool = false
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -1193,6 +1198,10 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 		OP_MOBS:       _apply_mobs(body)
 		OP_SKILL_FX:
 			_handle_skill_fx(body)
+		OP_PLAYER_DEAD:
+			var dx := float(body.get("deathX", 0))
+			var dy := float(body.get("deathY", 0))
+			_show_death_screen(Vector2(dx, dy))
 		OP_SKILL_REJECT:
 			# Сервер отверг скилл — сбрасываем локальный кулдаун слота,
 			# в котором стоит этот скилл. Server.skill = server_id.
@@ -1398,6 +1407,9 @@ func _apply_me(body: Dictionary) -> void:
 	last_me = body
 	if body.has("t"):
 		Session.server_offset_ms = int(body["t"]) - Time.get_ticks_msec()
+	# Если hp > 0 и мы были мертвы — сервер уже респавнил нас, убираем модалку.
+	if _am_dead and int(body.get("hp", 0)) > 0:
+		_hide_death_screen()
 	# Класс от сервера — источник истины (может отличаться от локального выбора).
 	var server_class: String = str(body.get("charClass", ""))
 	if server_class != "" and server_class != Session.selected_character:
@@ -1621,17 +1633,98 @@ func _apply_chat(body: Dictionary) -> void:
 	var sid: String = String(body.get("sid", ""))
 	var who: String = String(body.get("n", "?"))
 	var text: String = String(body.get("t", ""))
+	var ch: String = String(body.get("ch", "global"))
 	if text.is_empty():
 		return
-	chat_panel.append_line(who, text)
+	chat_panel.append_line(who, text, ch)
 	var speaker: Player = me if sid == my_session_id else remotes.get(sid)
 	if speaker:
 		speaker.show_bubble(text)
 
-func _on_chat_send(text: String) -> void:
+func _on_chat_send(text: String, channel: String = "global") -> void:
 	if match_id == "":
 		return
-	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text}))
+	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text, "ch": channel}))
+
+# ─── Экран смерти ────────────────────────────────────────────────
+# Сервер шлёт OP_PLAYER_DEAD → показываем модалку с двумя кнопками.
+# Нажатие → OP_RESPAWN {place:"here"|"spawn"}. Сервер восстанавливает
+# HP/ману и телепортирует, шлёт OP_ME с hp>0 → модалку убираем.
+
+func _show_death_screen(death_pos: Vector2) -> void:
+	_am_dead = true
+	_death_pos = death_pos
+	if death_overlay != null and is_instance_valid(death_overlay):
+		return
+	death_overlay = CanvasLayer.new()
+	death_overlay.layer = 50
+	add_child(death_overlay)
+
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.65)
+	bg.anchor_right = 1.0; bg.anchor_bottom = 1.0
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	death_overlay.add_child(bg)
+
+	var card := PanelContainer.new()
+	card.anchor_left = 0.5; card.anchor_top = 0.5
+	card.anchor_right = 0.5; card.anchor_bottom = 0.5
+	card.offset_left = -220; card.offset_top = -110
+	card.offset_right = 220; card.offset_bottom = 110
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.10, 0.07, 0.07, 0.98)
+	sb.border_color = Color(0.85, 0.30, 0.30, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(18)
+	card.add_theme_stylebox_override("panel", sb)
+	death_overlay.add_child(card)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 12)
+	card.add_child(col)
+
+	var title := Label.new()
+	title.text = "Вы погибли"
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(title)
+
+	var hint := Label.new()
+	hint.text = "Выберите место возрождения:"
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(hint)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_child(row)
+
+	var here_btn := Button.new()
+	here_btn.text = "Возродиться здесь"
+	here_btn.custom_minimum_size = Vector2(170, 36)
+	here_btn.pressed.connect(func(): _send_respawn("here"))
+	row.add_child(here_btn)
+
+	var town_btn := Button.new()
+	town_btn.text = "В городе"
+	town_btn.custom_minimum_size = Vector2(170, 36)
+	town_btn.pressed.connect(func(): _send_respawn("spawn"))
+	row.add_child(town_btn)
+
+func _hide_death_screen() -> void:
+	_am_dead = false
+	if death_overlay != null and is_instance_valid(death_overlay):
+		death_overlay.queue_free()
+	death_overlay = null
+
+func _send_respawn(place: String) -> void:
+	if match_id == "":
+		return
+	Session.socket.send_match_state_async(match_id, OP_RESPAWN, JSON.stringify({"place": place}))
 
 func _handle_skill_fx(body: Dictionary) -> void:
 	# Общие эффекты (не привязаны к конкретному скиллу): обрабатываем сразу.

@@ -42,7 +42,7 @@ const banner = `// AUTO-GENERATED FROM data/*.json by scripts/gen-data.js — DO
 
 const out =
     banner +
-    `interface ItemDefData { kind: string; slot?: string; damage?: number; physDmg?: number; magDmg?: number; hp?: number; heal?: number; price?: number; sellPrice?: number; }\n` +
+    `interface ItemDefData { kind: string; slot?: string; damage?: number; physDmg?: number; magDmg?: number; physDef?: number; magDef?: number; hp?: number; mana?: number; heal?: number; price?: number; sellPrice?: number; }\n` +
     `interface MobTypeDataX { hpMax: number; touchDamage: number; speed: number; wanderRadius: number; touchRange: number; touchCooldownMs: number; respawnMs: number; xp: number; gold: number; }\n` +
     `interface DropEntryData { itemId: string; weight: number; }\n` +
     `interface DropTableData { missWeight: number; table: DropEntryData[]; }\n` +

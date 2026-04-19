@@ -153,8 +153,9 @@ func refresh(me: Dictionary) -> void:
 	var hp := int(me.get("hp", 0)); var hp_max := int(me.get("hpMax", 0))
 	_set_stat(_char_lbl, "hp", "%d / %d" % [hp, hp_max])
 	_set_stat(_char_lbl, "hp_regen", "0")
-	_set_stat(_char_lbl, "mp", "0")
-	_set_stat(_char_lbl, "mp_regen", "0")
+	var mp := int(me.get("mana", 0)); var mp_max := int(me.get("manaMax", 0))
+	_set_stat(_char_lbl, "mp", "%d / %d" % [mp, mp_max])
+	_set_stat(_char_lbl, "mp_regen", "5")
 	_set_stat(_char_lbl, "speed", str(int(me.get("moveSpeed", 100))))
 	# Атака — сервер шлёт два раздельных значения (physDmg, magDmg).
 	var phys: int = int(me.get("physDmg", me.get("damage", 0)))
@@ -173,8 +174,8 @@ func refresh(me: Dictionary) -> void:
 	_set_stat(_atk_lbl, "stun", "0")
 	_set_stat(_atk_lbl, "pvp_bonus", "0")
 	# Защита
-	_set_stat(_def_lbl, "phys_def", "0")
-	_set_stat(_def_lbl, "mag_def", "0")
+	_set_stat(_def_lbl, "phys_def", str(int(me.get("physDef", 0))))
+	_set_stat(_def_lbl, "mag_def", str(int(me.get("magDef", 0))))
 	_set_stat(_def_lbl, "dodge", "0")
 	_set_stat(_def_lbl, "pvp_resist", "0")
 	_set_stat(_def_lbl, "block", "0")

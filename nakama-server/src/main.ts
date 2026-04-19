@@ -155,6 +155,8 @@ const OP_PARTY_ACCEPT        = 41; // client→server {fromSid}
 const OP_PARTY_DECLINE       = 42; // client→server {fromSid}
 const OP_PARTY_UPDATE        = 43; // server→members {partyId, members:[{sid, name, level, hp, hpMax}]}
 const OP_PARTY_LEAVE         = 44; // client→server {} — выйти из группы
+const OP_PLAYER_DEAD         = 45; // server→self {deathX, deathY}
+const OP_RESPAWN             = 46; // client→server {place:"here"|"spawn"}
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -207,6 +209,8 @@ interface MatchPlayer {
     pierceBuffUntil?: number;       // Мода penetration: окно
     pierceBonus?: number;           // доп множитель урона (заглушка пока нет брони мобов)
     partyId?: string;               // id группы, в которой состоит игрок
+    dead?: boolean;                 // hp упал до 0 → true; сидим в экране смерти до OP_RESPAWN
+    deathPos?: Vec2;                // точка, где умер (для "Возродиться здесь")
 }
 
 const PLAYER_SPEED = 100; // px/sec — должна совпадать с Godot Player.SPEED
@@ -421,6 +425,69 @@ function computeMagDmg(p: MatchPlayer): number {
 function computeDamage(p: MatchPlayer): number {
     if (p.charClass === "mage") return computeMagDmg(p);
     return computePhysDmg(p);
+}
+
+// Защита: сумма physDef/magDef со всех слотов экипировки. База класса 0.
+// Применение: incomingDmg - def, но всегда хотя бы 1 урон.
+function computePhysDef(p: MatchPlayer): number {
+    let total = 0;
+    for (const slot of EQUIP_SLOTS) {
+        const id = p.equipment[slot];
+        if (!id) continue;
+        const def = ITEMS[id] as any;
+        if (def && def.physDef) total += Number(def.physDef) || 0;
+    }
+    return total;
+}
+function computeMagDef(p: MatchPlayer): number {
+    let total = 0;
+    for (const slot of EQUIP_SLOTS) {
+        const id = p.equipment[slot];
+        if (!id) continue;
+        const def = ITEMS[id] as any;
+        if (def && def.magDef) total += Number(def.magDef) || 0;
+    }
+    return total;
+}
+// Применить защиту игрока к входящему урону. Минимум 1.
+// kind: "phys" → physDef, "mag" → magDef.
+function applyPlayerArmor(foe: MatchPlayer, raw: number, kind: "phys" | "mag"): number {
+    const def = kind === "mag" ? computeMagDef(foe) : computePhysDef(foe);
+    const out = raw - def;
+    return out < 1 ? 1 : out;
+}
+// Смерть игрока: вместо мгновенного респа оставляем игрока в dead-состоянии
+// и отправляем ему OP_PLAYER_DEAD. Дальше ждём OP_RESPAWN с выбором места.
+function killPlayer(p: MatchPlayer, dispatcher: nkruntime.MatchDispatcher): void {
+    p.hp = 0;
+    p.dead = true;
+    p.deathPos = { x: p.pos.x, y: p.pos.y };
+    p.moveTarget = null;
+    p.movePath = [];
+    p.lastTouchedByMob = {};
+    p.effects = [];
+    p.empoweredAttackUntil = 0;
+    p.sprintUntil = 0;
+    p.critBuffUntil = 0;
+    p.pierceBuffUntil = 0;
+    p.dirtyPos = true;
+    markMe(p);
+    dispatcher.broadcastMessage(OP_PLAYER_DEAD, JSON.stringify({
+        deathX: p.deathPos.x, deathY: p.deathPos.y,
+    }), [p.presence]);
+}
+// Реальный респаун — восстановление HP/маны и телепорт. Вызывается из OP_RESPAWN.
+function respawnPlayer(p: MatchPlayer, place: "here" | "spawn"): void {
+    const pos = (place === "here" && p.deathPos)
+        ? { x: p.deathPos.x, y: p.deathPos.y }
+        : { x: WORLD.playerSpawn.x, y: WORLD.playerSpawn.y };
+    p.pos.x = pos.x; p.pos.y = pos.y;
+    p.hp = p.hpMax;
+    p.mana = p.manaMax;
+    p.dead = false;
+    p.deathPos = undefined;
+    p.dirtyPos = true;
+    markMe(p);
 }
 function markMe(p: MatchPlayer): void { p.dirtyMe = true; }
 
@@ -1288,6 +1355,8 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         name: p.username,  // имя активного персонажа (не email аккаунта)
         physDmg: computePhysDmg(p),
         magDmg: computeMagDmg(p),
+        physDef: computePhysDef(p),
+        magDef: computeMagDef(p),
         // Временные баффы в процентах — для статус-окна.
         critChance: critActive ? Math.round((p.critBonus || 0) * 100) : 0,
         critPower: 100,  // базовый крит = ×2 урон, то есть +100%
@@ -1541,6 +1610,9 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         if (player.pierceBuffUntil && t < player.pierceBuffUntil) {
                             dmgP = Math.floor(dmgP * (1 + (player.pierceBonus || 0)));
                         }
+                        // Вычитание защиты цели: phys для лучника/меча, mag для мага.
+                        const dmgKindP: "phys" | "mag" = (player.charClass === "mage") ? "mag" : "phys";
+                        dmgP = applyPlayerArmor(foe, dmgP, dmgKindP);
                         foe.hp -= dmgP;
                         if (foe.hp < 0) foe.hp = 0;
                         foe.dirtyPos = true;
@@ -1551,13 +1623,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                             melee: !hasRanged,
                         }));
                         dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: foe.sessionId, by: player.sessionId, dmg: dmgP, crit: isCritP }));
-                        if (foe.hp <= 0) {
-                            foe.pos.x = WORLD.playerSpawn.x; foe.pos.y = WORLD.playerSpawn.y;
-                            foe.hp = foe.hpMax;
-                            foe.lastTouchedByMob = {};
-                            foe.dirtyPos = true;
-                            markMe(foe);
-                        }
+                        if (foe.hp <= 0) killPlayer(foe, dispatcher);
                         break;
                     }
 
@@ -1728,16 +1794,49 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             }
             case OP_CHAT_SEND: {
                 try {
-                    const body = JSON.parse(nk.binaryToString(msg.data)) as { text?: string };
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { text?: string; ch?: string };
                     const text = String(body.text || "").slice(0, 140).trim();
                     if (text.length === 0) break;
-                    dispatcher.broadcastMessage(OP_CHAT_RELAY, JSON.stringify({
+                    // Поддерживаемые каналы: "global" (default), "faction", "party".
+                    // Для неизвестных значений — global. Сервер решает набор
+                    // получателей: faction → те же фракции, party → члены
+                    // одной группы, global → все.
+                    let ch = String(body.ch || "global");
+                    if (ch !== "global" && ch !== "faction" && ch !== "party") ch = "global";
+                    let targets: nkruntime.Presence[] | undefined = undefined;
+                    if (ch === "faction") {
+                        targets = [];
+                        for (const sk of Object.keys(state.players)) {
+                            const o = state.players[sk];
+                            if (areAllies(player, o)) targets.push(o.presence);
+                        }
+                    } else if (ch === "party") {
+                        targets = [];
+                        if (player.partyId) {
+                            const pp = state.parties[player.partyId];
+                            if (pp) {
+                                for (const sid of pp.members) {
+                                    const mp = state.players[sid];
+                                    if (mp) targets.push(mp.presence);
+                                }
+                            }
+                        }
+                        // Нет группы — сообщение видит только сам автор.
+                        if (targets.length === 0) targets.push(player.presence);
+                    }
+                    const relayPayload = JSON.stringify({
                         sid: player.sessionId,
                         uid: player.userId,
                         n: player.username,
                         t: text,
+                        ch: ch,
                         ts: t,
-                    }));
+                    });
+                    if (targets) {
+                        dispatcher.broadcastMessage(OP_CHAT_RELAY, relayPayload, targets);
+                    } else {
+                        dispatcher.broadcastMessage(OP_CHAT_RELAY, relayPayload);
+                    }
                 } catch (_e) {}
                 break;
             }
@@ -2069,6 +2168,15 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 leaveParty(state, dispatcher, player);
                 break;
             }
+            case OP_RESPAWN: {
+                try {
+                    if (!player.dead) break;
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { place?: string };
+                    const place = (body.place === "here") ? "here" : "spawn";
+                    respawnPlayer(player, place);
+                } catch (_e) {}
+                break;
+            }
         }
     }
 
@@ -2139,18 +2247,16 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             if (owner && areAllies(owner, tp)) continue;  // по союзнику не бьём
             if (t < tp.invulnUntil) continue;
             if (Math.abs(tp.pos.x - z.x) > z.radius || Math.abs(tp.pos.y - z.y) > z.radius) continue;
-            tp.hp -= ownerDmg;
+            // Град стрел — физический PvP-урон.
+            const zoneDmg = applyPlayerArmor(tp, ownerDmg, "phys");
+            tp.hp -= zoneDmg;
             if (tp.hp < 0) tp.hp = 0;
             tp.dirtyPos = true;
             markMe(tp);
             dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({
-                sessionId: tp.sessionId, by: z.ownerSid, dmg: ownerDmg,
+                sessionId: tp.sessionId, by: z.ownerSid, dmg: zoneDmg,
             }));
-            if (tp.hp <= 0) {
-                tp.pos.x = WORLD.playerSpawn.x; tp.pos.y = WORLD.playerSpawn.y;
-                tp.hp = tp.hpMax; tp.lastTouchedByMob = {};
-                tp.dirtyPos = true; markMe(tp);
-            }
+            if (tp.hp <= 0) killPlayer(tp, dispatcher);
         }
     }
 
@@ -2166,14 +2272,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             pl.mana = next;
         }
         tickPlayerEffects(pl, t);
-        if (pl.hp <= 0) {
-            pl.pos.x = WORLD.playerSpawn.x; pl.pos.y = WORLD.playerSpawn.y;
-            pl.hp = pl.hpMax; pl.lastTouchedByMob = {};
-            pl.mana = pl.manaMax;
-            pl.effects = [];
-            pl.moveTarget = null; pl.movePath = [];
-            pl.dirtyPos = true; markMe(pl);
-        }
+        if (pl.hp <= 0) killPlayer(pl, dispatcher);
     }
 
     // --- server-authoritative player movement ---
@@ -2393,15 +2492,13 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             const last = p.lastTouchedByMob[mob.id] || 0;
             if (t - last < def.touchCooldownMs) continue;
             p.lastTouchedByMob[mob.id] = t;
-            p.hp -= def.touchDamage;
+            // Касание моба считается физическим уроном для применения защиты.
+            const mobDmg = applyPlayerArmor(p, def.touchDamage, "phys");
+            p.hp -= mobDmg;
             if (p.hp < 0) p.hp = 0;
             p.dirtyPos = true; markMe(p);
-            dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: p.sessionId, by: mob.id }));
-            if (p.hp <= 0) {
-                p.pos.x = WORLD.playerSpawn.x; p.pos.y = WORLD.playerSpawn.y;
-                p.hp = p.hpMax;
-                p.lastTouchedByMob = {};
-            }
+            dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({ sessionId: p.sessionId, by: mob.id, dmg: mobDmg }));
+            if (p.hp <= 0) killPlayer(p, dispatcher);
         }
     }
 

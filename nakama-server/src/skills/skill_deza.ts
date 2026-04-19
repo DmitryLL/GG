@@ -22,7 +22,8 @@ registerSkill(2, {
             if (areAllies(player, foe)) return;  // по союзнику не бьём
             if (dist(foe.pos, player.pos) > attackRangeFor(player.equipment.weapon || "") + 40) return;
             if (t < foe.invulnUntil) return;
-            foe.hp -= hitDmg;
+            const finalDmg = applyPlayerArmor(foe, hitDmg, "phys");
+            foe.hp -= finalDmg;
             if (foe.hp < 0) foe.hp = 0;
             foe.dirtyPos = true;
             markMe(foe);
@@ -31,7 +32,7 @@ registerSkill(2, {
                 tx: foe.pos.x, ty: foe.pos.y,
             }));
             dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({
-                sessionId: foe.sessionId, by: player.sessionId, dmg: hitDmg,
+                sessionId: foe.sessionId, by: player.sessionId, dmg: finalDmg,
             }));
             if (foe.hp <= 0) {
                 foe.pos.x = WORLD.playerSpawn.x; foe.pos.y = WORLD.playerSpawn.y;

@@ -3,17 +3,28 @@
 class_name ChatPanel
 extends CanvasLayer
 
-signal send_requested(text: String)
+signal send_requested(text: String, channel: String)
 
 const COMPACT_KEEP := 7     # сколько сообщений показываем в компактном логе
 const HISTORY_MAX := 200    # сколько хранится в локальной истории для модала
 
-var history: Array = []  # [{name, text}]
+# Каналы: global — всем в матче; faction — только своей фракции;
+# party — только группе. Сервер фильтрует получателей по ch.
+const CHANNELS := ["global", "faction", "party"]
+const CHANNEL_LABEL := {
+	"global":  { "short": "Гл",  "full": "Общий",   "color": Color(0.97, 0.97, 0.97) },
+	"faction": { "short": "Фр",  "full": "Фракция", "color": Color(0.60, 0.85, 1.0) },
+	"party":   { "short": "Гр",  "full": "Группа",  "color": Color(0.70, 0.95, 0.60) },
+}
+var current_channel: String = "global"
+
+var history: Array = []  # [{name, text, channel}]
 
 # Compact (bottom-left)
 var compact_panel: Control
 var compact_log: VBoxContainer
 var input: LineEdit
+var channel_btn: Button
 
 # History modal
 var history_overlay: ColorRect
@@ -57,10 +68,19 @@ func _ready() -> void:
 	compact_log.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	cv.add_child(compact_log)
 
-	# Нижняя строка: поле ввода + кнопка «История».
+	# Нижняя строка: селектор канала + поле ввода + кнопка «История».
 	var bottom_row := HBoxContainer.new()
 	bottom_row.add_theme_constant_override("separation", 4)
 	cv.add_child(bottom_row)
+
+	channel_btn = Button.new()
+	channel_btn.custom_minimum_size = Vector2(48, 24)
+	channel_btn.focus_mode = Control.FOCUS_NONE
+	channel_btn.add_theme_font_size_override("font_size", 11)
+	channel_btn.tooltip_text = "Клик: сменить канал (Общий / Фракция / Группа)"
+	channel_btn.pressed.connect(_cycle_channel)
+	bottom_row.add_child(channel_btn)
+	_refresh_channel_btn()
 
 	input = LineEdit.new()
 	input.placeholder_text = "Enter — написать"
@@ -164,28 +184,51 @@ func _on_submit(text: String) -> void:
 	input.release_focus()
 	if trimmed.is_empty():
 		return
-	send_requested.emit(trimmed)
+	send_requested.emit(trimmed, current_channel)
 
-func append_line(name: String, text: String) -> void:
-	history.append({ "name": name, "text": text })
+func _cycle_channel() -> void:
+	var idx := CHANNELS.find(current_channel)
+	idx = (idx + 1) % CHANNELS.size()
+	current_channel = CHANNELS[idx]
+	_refresh_channel_btn()
+
+func _refresh_channel_btn() -> void:
+	if channel_btn == null:
+		return
+	var meta: Dictionary = CHANNEL_LABEL.get(current_channel, CHANNEL_LABEL["global"])
+	channel_btn.text = String(meta.get("short", "Гл"))
+	channel_btn.add_theme_color_override("font_color", meta.get("color", Color.WHITE))
+
+func append_line(name: String, text: String, channel: String = "global") -> void:
+	history.append({ "name": name, "text": text, "channel": channel })
 	while history.size() > HISTORY_MAX:
 		history.pop_front()
 
 	# Compact view: новые снизу, старше 7-го удаляется.
-	compact_log.add_child(_make_message_row(name, text, false))
+	compact_log.add_child(_make_message_row(name, text, channel, false))
 	while compact_log.get_child_count() > COMPACT_KEEP:
 		compact_log.get_child(0).queue_free()
 
 	# History view (если открыт)
 	if history_overlay.visible:
-		history_log.add_child(_make_message_row(name, text, true))
+		history_log.add_child(_make_message_row(name, text, channel, true))
 		await get_tree().process_frame
 		_scroll_history_to_bottom()
 
-func _make_message_row(name: String, text: String, full: bool) -> Control:
+func _make_message_row(name: String, text: String, channel: String, full: bool) -> Control:
 	# Чат прозрачный — текст с чёрной обводкой чтобы читался на любом фоне.
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 6)
+
+	var meta: Dictionary = CHANNEL_LABEL.get(channel, CHANNEL_LABEL["global"])
+	var col_chan: Color = meta.get("color", Color.WHITE)
+	var tag := Label.new()
+	tag.text = "[%s]" % String(meta.get("short", "Гл"))
+	tag.add_theme_color_override("font_color", col_chan)
+	tag.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+	tag.add_theme_constant_override("outline_size", 3)
+	h.add_child(tag)
+
 	var who := Label.new()
 	who.text = name + ":"
 	who.add_theme_color_override("font_color", Color(0.55, 0.78, 0.98, 1.0))
@@ -196,7 +239,11 @@ func _make_message_row(name: String, text: String, full: bool) -> Control:
 	body.text = text
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.custom_minimum_size.x = (520 if full else 280)
-	body.add_theme_color_override("font_color", Color(0.97, 0.97, 0.97, 1.0))
+	# Тинтим тело под канал — чтобы в истории «гр» был зеленоватым, «фр» синим.
+	var body_col: Color = Color(0.97, 0.97, 0.97)
+	if channel != "global":
+		body_col = col_chan.lerp(Color.WHITE, 0.4)
+	body.add_theme_color_override("font_color", body_col)
 	body.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
 	body.add_theme_constant_override("outline_size", 3)
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -207,7 +254,7 @@ func open_history() -> void:
 	for c in history_log.get_children():
 		c.queue_free()
 	for entry in history:
-		history_log.add_child(_make_message_row(String(entry["name"]), String(entry["text"]), true))
+		history_log.add_child(_make_message_row(String(entry["name"]), String(entry["text"]), String(entry.get("channel", "global")), true))
 	history_overlay.visible = true
 	await get_tree().process_frame
 	_scroll_history_to_bottom()

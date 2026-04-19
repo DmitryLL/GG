@@ -117,7 +117,13 @@ func _redraw() -> void:
 			var p: Player = p_v
 			if not is_instance_valid(p):
 				continue
-			_dot(frame_image, p.position.x, p.position.y, 3, Color.WHITE)
+			# Союзник — зелёный, враг — красный. По дефолту (unknown fac) белый.
+			var col: Color = Color.WHITE
+			if p.is_friendly:
+				col = Color(0.45, 0.90, 0.50)
+			else:
+				col = Color(1.0, 0.35, 0.30)
+			_dot(frame_image, p.position.x, p.position.y, 3, col)
 	if get_me.is_valid():
 		var m_pos: Vector2 = get_me.call()
 		_dot(frame_image, m_pos.x, m_pos.y, 5, Color(0.29, 0.87, 0.5))

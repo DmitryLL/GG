@@ -20,7 +20,16 @@ registerMageSkill(1, {
             if (areAllies(player, foe)) return;  // по союзнику не бьём
             if (dist(foe.pos, player.pos) > maxDist) return;
             if (t < foe.invulnUntil) return;
-            foe.hp -= dmg;
+            // armor_pierce мод: игнорировать 30% магзащиты цели.
+            const armorKind: "mag" = "mag";
+            let finalDmg = applyPlayerArmor(foe, dmg, armorKind);
+            if (mod === "armor_pierce") {
+                // Грубый бонус: +30% урона, пока нет отдельного пути
+                // «игнор дефа». Эквивалентно снятию 30% от дефа при
+                // среднем раскладе.
+                finalDmg = Math.max(1, Math.floor(finalDmg * 1.30));
+            }
+            foe.hp -= finalDmg;
             if (foe.hp < 0) foe.hp = 0;
             foe.dirtyPos = true;
             markMe(foe);
@@ -29,7 +38,7 @@ registerMageSkill(1, {
                 tx: foe.pos.x, ty: foe.pos.y, ghost: true,
             }));
             dispatcher.broadcastMessage(OP_PLAYER_HIT, JSON.stringify({
-                sessionId: foe.sessionId, by: player.sessionId, dmg: dmg, ghost: true,
+                sessionId: foe.sessionId, by: player.sessionId, dmg: finalDmg, ghost: true,
             }));
             if (foe.hp <= 0) {
                 foe.pos.x = WORLD.playerSpawn.x; foe.pos.y = WORLD.playerSpawn.y;
