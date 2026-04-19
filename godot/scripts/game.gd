@@ -1406,6 +1406,17 @@ func _apply_me(body: Dictionary) -> void:
 	elif _wname.contains("sword"): _kind = "sword"
 	me.set_weapon_kind(_kind)
 	me.set_weapon_item(_wname)
+	# Баф sprint: если активен — сообщаем Player чтобы повысил скорость
+	# интерполяции клиентской позиции до SPEED_SPRINT.
+	var sprint_remaining := 0
+	var server_now_ms: int = int(body.get("t", 0))
+	for eff in body.get("effects", []):
+		if String(eff.get("type", "")) == "sprint":
+			var end_at := int(eff.get("endAt", 0))
+			if server_now_ms > 0 and end_at > server_now_ms:
+				sprint_remaining = end_at - server_now_ms
+			break
+	me.set_sprint_remaining(sprint_remaining)
 	# Paper-doll слои: каждый слот → wear-atlas (если существует в assets).
 	const WEAR_SLOT_MAP := {
 		"boots":  "boots",
