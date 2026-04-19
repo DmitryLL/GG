@@ -1808,21 +1808,24 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             if (Math.abs(m.pos.x - z.x) > z.radius || Math.abs(m.pos.y - z.y) > z.radius) continue;
             mobsInZone.push(m);
         }
-        for (const m of mobsInZone) {
+        // Правило целей: за тик бьём до 5 мобов из текущих-в-зоне.
+        // Если ≤5 — бьём по всем. Если больше — shuffle, первые 5.
+        // Моды slow / final_stun применяются к тем же выбранным целям.
+        const pool = mobsInZone.filter(m => m.hp > 0 && m.state === "alive");
+        for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        const picks = pool.slice(0, 5);
+        for (const m of picks) {
             m.hp -= ownerDmg;
             m.dirty = true;
             dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: m.id, dmg: ownerDmg }));
             if (m.hp <= 0 && owner) killMob(m, owner, t);
         }
-        // Мода slow — 5 случайных живых целей, slowEndAt = t + 800 (держим до след. тика).
-        if (z.mod === "slow" && mobsInZone.length > 0) {
-            const alive = mobsInZone.filter(m => m.hp > 0 && m.state === "alive");
-            for (let i = alive.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [alive[i], alive[j]] = [alive[j], alive[i]];
-            }
-            const picks = alive.slice(0, 5);
+        if (z.mod === "slow") {
             for (const m of picks) {
+                if (m.hp <= 0) continue;
                 if (!m.debuff) {
                     m.debuff = { poisonStacks: 0, poisonEndAt: 0, slowEndAt: 0, nextPoisonTickAt: 0, poisonDmg: 0 };
                 }
@@ -1830,15 +1833,9 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 m.dirty = true;
             }
         }
-        // Мода final_stun — только на последнем тике, до 5 случайных живых, стан 500мс.
         if (isLastTick && z.mod === "final_stun") {
-            const alive = mobsInZone.filter(m => m.hp > 0 && m.state === "alive");
-            for (let i = alive.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [alive[i], alive[j]] = [alive[j], alive[i]];
-            }
-            const picks = alive.slice(0, 5);
             for (const m of picks) {
+                if (m.hp <= 0) continue;
                 m.stunUntil = t + 500;
                 dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
                     kind: "stun", mobId: m.id, duration: 500,
@@ -2005,7 +2002,12 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 continue;
             }
         }
-        if (mob.debuff && t >= mob.debuff.poisonEndAt) mob.debuff = undefined;
+        // Сбрасываем debuff только когда И poison, И slow истекли. Иначе
+        // slow от Града стрел (ставит только slowEndAt, poisonEndAt=0)
+        // терялся ещё до первого тика AI.
+        if (mob.debuff && t >= mob.debuff.poisonEndAt && t >= mob.debuff.slowEndAt) {
+            mob.debuff = undefined;
+        }
         // Fire DoT (мода "fire" РДД-удара)
         if (mob.fireEndAt && t < mob.fireEndAt && mob.nextFireTickAt && t >= mob.nextFireTickAt) {
             const fdmg = Math.max(1, Math.floor(mob.fireDmg || 0));
@@ -2046,7 +2048,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             continue;
         }
         const slowed = mob.debuff && t < mob.debuff.slowEndAt;
-        const speed = slowed ? def.speed * 0.7 : def.speed;
+        const speed = slowed ? def.speed * 0.8 : def.speed;  // −20%
         if (!mob.target || dist(mob.pos, mob.target) < 4) {
             const angle = Math.random() * Math.PI * 2;
             const r = Math.random() * def.wanderRadius;
