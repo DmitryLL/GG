@@ -1523,6 +1523,12 @@ func _handle_skill_fx(body: Dictionary) -> void:
 		if m:
 			m.apply_stun(int(body.get("duration", 1000)))
 		return
+	if kind == "fire":
+		var mid2 := String(body.get("mobId", ""))
+		var m2: Mob = mobs.get(mid2)
+		if m2:
+			m2.apply_fire(int(body.get("duration", 3500)))
+		return
 	# Скиллы сами слушают свои kind.
 	for def in SkillRegistry.all():
 		if def.on_fx(self, body):

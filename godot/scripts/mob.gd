@@ -29,6 +29,8 @@ var _highlight := false
 var _highlight_ring: Sprite2D
 var _stun_end_ms: int = 0
 var _stun_label: Label
+var _fire_end_ms: int = 0
+var _fire_label: Label
 
 func setup(id: String, p_kind: String) -> void:
 	mob_id = id
@@ -200,6 +202,29 @@ func stun_active() -> bool:
 		return false
 	return _stun_end_ms > Time.get_ticks_msec()
 
+func apply_fire(duration_ms: int) -> void:
+	_fire_end_ms = Time.get_ticks_msec() + maxi(500, duration_ms)
+	_show_fire_icon()
+
+func _show_fire_icon() -> void:
+	if _fire_label == null:
+		_fire_label = Label.new()
+		_fire_label.text = "✦"
+		_fire_label.add_theme_font_size_override("font_size", 16)
+		_fire_label.add_theme_color_override("font_color", Color(1.0, 0.45, 0.15))
+		_fire_label.position = Vector2(4, -42)  # сдвинут вправо чтобы не накладывался на stun
+		add_child(_fire_label)
+	_fire_label.visible = true
+
+func _hide_fire_icon() -> void:
+	if _fire_label:
+		_fire_label.visible = false
+
+func fire_active() -> bool:
+	if _fire_end_ms <= 0:
+		return false
+	return _fire_end_ms > Time.get_ticks_msec()
+
 func poison_active() -> bool:
 	if _poison_end_ms <= 0:
 		return false
@@ -229,6 +254,12 @@ func _process(delta: float) -> void:
 	# Покачивание иконки стана для читаемости.
 	if _stun_label and _stun_label.visible:
 		_stun_label.position.y = -42 + 2.0 * sin(_glow_t * 6.0)
+	# Снять fire-иконку когда огонь погас.
+	if _fire_end_ms > 0 and not fire_active():
+		_fire_end_ms = 0
+		_hide_fire_icon()
+	if _fire_label and _fire_label.visible:
+		_fire_label.position.y = -42 + 2.0 * sin(_glow_t * 8.0 + 1.5)
 	if glow and glow.visible:
 		var g_pulse: float = 0.5 + 0.4 * sin(_glow_t * 3.0)
 		glow.modulate.a = g_pulse
