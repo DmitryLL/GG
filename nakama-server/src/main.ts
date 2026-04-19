@@ -306,15 +306,37 @@ function computeHpMax(p: MatchPlayer): number {
     }
     return total;
 }
-function computeDamage(p: MatchPlayer): number {
+// Два типа урона: физический и магический. Оружие даёт свой тип
+// (`physDmg` у лука/меча, `magDmg` у книги), украшения с общим `damage`
+// суммируются в оба типа.
+function computePhysDmg(p: MatchPlayer): number {
     let total = playerBaseDamage(p.level);
     for (const slot of EQUIP_SLOTS) {
         const id = p.equipment[slot];
         if (!id) continue;
-        const def = ITEMS[id];
-        if (def && def.damage) total += def.damage;
+        const def = ITEMS[id] as any;
+        if (!def) continue;
+        if (def.physDmg) total += def.physDmg;
+        if (def.damage) total += def.damage;
     }
     return total;
+}
+function computeMagDmg(p: MatchPlayer): number {
+    let total = 0;
+    for (const slot of EQUIP_SLOTS) {
+        const id = p.equipment[slot];
+        if (!id) continue;
+        const def = ITEMS[id] as any;
+        if (!def) continue;
+        if (def.magDmg) total += def.magDmg;
+        if (def.damage) total += def.damage;
+    }
+    return total;
+}
+// Legacy: текущий класс определяет какой тип возвращается как базовый.
+function computeDamage(p: MatchPlayer): number {
+    if (p.charClass === "mage") return computeMagDmg(p);
+    return computePhysDmg(p);
 }
 function markMe(p: MatchPlayer): void { p.dirtyMe = true; }
 
@@ -1095,6 +1117,8 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         skillCd: p.skillCd || {},
         charClass: p.charClass,
         name: p.username,  // имя активного персонажа (не email аккаунта)
+        physDmg: computePhysDmg(p),
+        magDmg: computeMagDmg(p),
         t: now(),
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
