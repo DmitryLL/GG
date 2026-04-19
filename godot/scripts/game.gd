@@ -18,6 +18,7 @@ const SKILLBAR_SCRIPT := preload("res://scripts/skillbar.gd")
 const ADMIN_SCRIPT := preload("res://scripts/admin_panel.gd")
 const STATS_SCRIPT := preload("res://scripts/stats_window.gd")
 const SKILLS_WIN_SCRIPT := preload("res://scripts/skills_window.gd")
+const PARTY_UI_SCRIPT := preload("res://scripts/party_ui.gd")
 const BUTTERFLIES_SCRIPT := preload("res://scripts/butterflies.gd")
 
 const OP_POSITIONS    := 1
@@ -83,6 +84,12 @@ const OP_OBJ_DEL      := 35
 const OP_OBJS         := 36
 const OP_OBJ_INTERACT := 37
 const OP_ZONE_SWITCH  := 38
+const OP_PARTY_INVITE        := 39
+const OP_PARTY_INVITE_NOTIFY := 40
+const OP_PARTY_ACCEPT        := 41
+const OP_PARTY_DECLINE       := 42
+const OP_PARTY_UPDATE        := 43
+const OP_PARTY_LEAVE         := 44
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -135,6 +142,8 @@ var _targeting_ring: Sprite2D
 var admin_panel: AdminPanel
 var stats_win: StatsWindow
 var skills_win: CanvasLayer
+var party_ui: CanvasLayer
+var party_members_cache: Array = []
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -227,6 +236,12 @@ func _ready() -> void:
 	skills_win = SKILLS_WIN_SCRIPT.new()
 	add_child(skills_win)
 	hud.skills_button_pressed.connect(skills_win.toggle)
+
+	party_ui = PARTY_UI_SCRIPT.new()
+	add_child(party_ui)
+	party_ui.invite_accepted.connect(_on_invite_accepted)
+	party_ui.invite_declined.connect(_on_invite_declined)
+	party_ui.party_leave_requested.connect(_on_party_leave_request)
 
 	admin_panel = ADMIN_SCRIPT.new()
 	add_child(admin_panel)
@@ -401,9 +416,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				_send_move_intent(mob_hit.position)
 			return
-		# Check for remote player click (PvP)
+		# Check for remote player click (PvP или дружественное действие).
 		var sid_hit: String = _player_at(world_pos)
 		if sid_hit != "":
+			# Режим «Действия с игроками» → приглашение в группу.
+			if hud and hud.actions_mode:
+				_send_party_invite(sid_hit)
+				hud.reset_actions_mode()
+				_hide_marker()
+				return
 			pvp_target = remotes.get(sid_hit)
 			pvp_target_sid = sid_hit
 			attack_target = null
@@ -1232,6 +1253,10 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 			_apply_objects(body)
 		OP_ZONE_SWITCH:
 			_handle_zone_switch(body)
+		OP_PARTY_INVITE_NOTIFY:
+			_on_party_invite_notify(body)
+		OP_PARTY_UPDATE:
+			_on_party_update(body)
 
 var _last_intent_ms: int = 0
 
@@ -1910,6 +1935,44 @@ func _send_skill(index: int, payload: Dictionary) -> void:
 	var sk_def := SkillRegistry.by_index(index)
 	if sk_def:
 		sk_def.on_send(self)
+
+# ─── Party (группы) ───
+
+func _send_party_invite(target_sid: String) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_PARTY_INVITE,
+		JSON.stringify({ "targetSid": target_sid }))
+
+func _on_party_invite_notify(body: Dictionary) -> void:
+	var from_sid := String(body.get("fromSid", ""))
+	var from_name := String(body.get("fromName", "Игрок"))
+	if party_ui:
+		party_ui.show_invite(from_sid, from_name)
+
+func _on_party_update(body: Dictionary) -> void:
+	var members: Array = body.get("members", [])
+	party_members_cache = members
+	if party_ui:
+		# my_session_id — уже хранится в my_session_id переменной game.gd
+		party_ui.update_party(members, my_session_id)
+
+func _on_invite_accepted(from_sid: String) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_PARTY_ACCEPT,
+		JSON.stringify({ "fromSid": from_sid }))
+
+func _on_invite_declined(from_sid: String) -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_PARTY_DECLINE,
+		JSON.stringify({ "fromSid": from_sid }))
+
+func _on_party_leave_request() -> void:
+	if match_id == "" or Session.socket == null:
+		return
+	Session.socket.send_match_state_async(match_id, OP_PARTY_LEAVE, "{}")
 
 # Server id скилла в данном слоте hotbar. Пока hotbar = SkillRegistry.all()
 # 1:1, но когда игрок сможет раскладывать скиллы по слотам — эта
