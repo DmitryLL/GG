@@ -1,10 +1,10 @@
-# Скилл 3: Эскейп — отскок вперёд на 3 шага.
-# Старое имя: «Отскок». Механика уже совпадает с дизайном —
-# переименование только в UI.
-class_name SkillDodge
+# Эскейп — отскок вперёд на 3 шага (INSTANT, self).
+# Модификации: усиленная следующая атака (1п) / рывок +25% скорости (2п).
+class_name SkillEscape
 extends SkillDef
 
 func _init() -> void:
+	id = "escape"
 	display_name = "Эскейп"
 	icon_path = "res://assets/sprites/skills/skill_3.png"
 	cooldown = 8.0

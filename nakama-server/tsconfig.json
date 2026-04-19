@@ -16,11 +16,16 @@
     "./nakama-runtime.d.ts",
     "./src/data.gen.ts",
     "./src/skills/types.ts",
-    "./src/skills/skill_1_precise_shot.ts",
-    "./src/skills/skill_2_poison_arrow.ts",
-    "./src/skills/skill_3_dodge.ts",
-    "./src/skills/skill_4_arrow_rain.ts",
-    "./src/skills/skill_5_ghost_volley.ts",
+    "./src/skills/skill_rdd_shot.ts",
+    "./src/skills/skill_deza.ts",
+    "./src/skills/skill_escape.ts",
+    "./src/skills/skill_arrow_hail.ts",
+    "./src/skills/skill_crit_buff.ts",
+    "./src/skills/skill_mage_magic_arrow.ts",
+    "./src/skills/skill_mage_earthquake.ts",
+    "./src/skills/skill_mage_mana_surge.ts",
+    "./src/skills/skill_mage_blink.ts",
+    "./src/skills/skill_mage_shield.ts",
     "./src/main.ts"
   ]
 }

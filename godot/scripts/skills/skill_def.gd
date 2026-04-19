@@ -34,10 +34,11 @@ extends RefCounted
 enum Kind { INSTANT = 0, TARGET = 1, GROUND = 2 }
 
 # UI/мета
+var id: String = ""        # стабильный символьный id, напр. "rdd_shot", "deza" — для hotbar-конфигов
 var display_name: String = ""
 var icon_path: String = ""
 var cooldown: float = 5.0
-var server_id: int = 0     # номер для сервера (1..5+)
+var server_id: int = 0     # номер для сервера (1..5+), не совпадает со слотом в hotbar
 
 # Требования
 var requires_bow: bool = false
