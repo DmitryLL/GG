@@ -33,6 +33,7 @@ const LAYER_SLOTS := ["pants", "boots", "body", "cloak", "gloves", "head", "weap
 var world: World
 var sprite: Sprite2D
 var bow_sprite: Sprite2D
+var book_sprite: Sprite2D
 var bow_string: Line2D
 var bow_arrow: Line2D
 var label: Label
@@ -78,6 +79,13 @@ func _ready() -> void:
 	bow_sprite.scale = Vector2(0.55, 0.55)
 	bow_sprite.visible = false
 	add_child(bow_sprite)
+
+	book_sprite = Sprite2D.new()
+	book_sprite.texture = load("res://assets/sprites/characters/book_hand.png")
+	book_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	book_sprite.scale = Vector2(1.1, 1.1)
+	book_sprite.visible = false
+	add_child(book_sprite)
 
 	# Видимая тетива и стрела, появляются во время выстрела
 	bow_string = Line2D.new()
@@ -208,20 +216,31 @@ func remote_update(new_pos: Vector2) -> void:
 		_remote_has_target = true
 
 var _has_bow := false
+var _weapon_kind: String = ""  # "bow" | "tome" | "sword" | "" — для overlay
+
 func set_has_bow(on: bool) -> void:
-	if _has_bow == on: return
-	_has_bow = on
+	# Обратно-совместимо: вызывают места, где только bow-флаг.
+	set_weapon_kind("bow" if on else "")
+
+func set_weapon_kind(kind: String) -> void:
+	if _weapon_kind == kind: return
+	_weapon_kind = kind
+	_has_bow = (kind == "bow")
 	if bow_string: bow_string.visible = false
 	if bow_arrow: bow_arrow.visible = false
-	# Лучник и безоружный — один базовый rig; различие только в overlay-луке.
 	sprite.texture = load("res://assets/sprites/characters/char_%d.png" % variant)
 	sprite.hframes = WALK_HFRAMES
 	sprite.vframes = 4
 	sprite.frame = facing * WALK_HFRAMES
 	if bow_sprite:
-		bow_sprite.visible = on
-		if on:
+		bow_sprite.visible = (kind == "bow")
+		if kind == "bow":
 			_update_bow_position()
+	_update_book_position()
+	if book_sprite:
+		book_sprite.visible = (kind == "tome")
+		if kind == "tome":
+			_update_book_position()
 
 func _update_bow_position() -> void:
 	if bow_sprite == null or not bow_sprite.visible:
@@ -250,6 +269,29 @@ func _update_bow_position() -> void:
 			bow_sprite.rotation = 0
 			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
+
+func _update_book_position() -> void:
+	if book_sprite == null or not book_sprite.visible:
+		return
+	book_sprite.centered = true
+	# Книга лежит в левой руке, слегка ниже центра. Просто overlay.
+	match facing:
+		Dir.DOWN:
+			book_sprite.position = Vector2(6, -14)
+			book_sprite.flip_h = false
+			book_sprite.z_index = 1
+		Dir.UP:
+			book_sprite.position = Vector2(-6, -16)
+			book_sprite.flip_h = true
+			book_sprite.z_index = -1
+		Dir.LEFT:
+			book_sprite.position = Vector2(-6, -14)
+			book_sprite.flip_h = true
+			book_sprite.z_index = 1
+		Dir.RIGHT:
+			book_sprite.position = Vector2(6, -14)
+			book_sprite.flip_h = false
+			book_sprite.z_index = 1
 
 # Все анимационные таймеры — абсолютный server-time (мс), чтобы при
 # сворачивании вкладки клиентский process не тормозил длительность.
@@ -385,6 +427,7 @@ func _set_facing_from(delta: Vector2) -> void:
 	else:
 		facing = Dir.DOWN if delta.y > 0 else Dir.UP
 	_update_bow_position()
+	_update_book_position()
 
 func _animate(delta: float) -> void:
 	var base := facing * WALK_HFRAMES
@@ -429,6 +472,7 @@ func _animate(delta: float) -> void:
 	if bow_sprite and bow_sprite.visible:
 		bow_sprite.scale = Vector2(0.6, 0.6)
 		_update_bow_position()
+	_update_book_position()
 	if not moving:
 		sprite.frame = base
 		anim_t = 0.0

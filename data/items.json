@@ -19,6 +19,12 @@
   "iron_bow":        { "kind": "weapon", "slot": "weapon", "damage": 12, "sellPrice": 22, "price": 60 },
   "golden_bow":      { "kind": "weapon", "slot": "weapon", "damage": 20, "sellPrice": 55, "price": 160 },
 
+  "apprentice_tome": { "kind": "weapon", "slot": "weapon", "damage": 5,  "sellPrice": 6,  "price": 18 },
+  "mystic_tome":     { "kind": "weapon", "slot": "weapon", "damage": 9,  "sellPrice": 14, "price": 38 },
+  "arcane_tome":     { "kind": "weapon", "slot": "weapon", "damage": 14, "sellPrice": 24, "price": 70 },
+  "eldritch_tome":   { "kind": "weapon", "slot": "weapon", "damage": 20, "sellPrice": 45, "price": 130 },
+  "celestial_tome":  { "kind": "weapon", "slot": "weapon", "damage": 28, "sellPrice": 80, "price": 240 },
+
   "cloth_armor":     { "kind": "armor",  "slot": "body",   "hp": 12, "sellPrice": 6,  "price": 16 },
   "leather_armor":   { "kind": "armor",  "slot": "body",   "hp": 22, "sellPrice": 10, "price": 28 },
   "bronze_armor":    { "kind": "armor",  "slot": "body",   "hp": 32, "sellPrice": 16, "price": 45 },
