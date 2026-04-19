@@ -77,16 +77,18 @@ registerSkill(2, {
             mobId: mob.id, dmg: hitDmg, poison: true,
         }));
 
-        // Knockback на 2 тайла от игрока. Проверка проходимости по осям.
+        // Knockback на 2 тайла от игрока через velocity: mob AI в
+        // последующих тиках двигает моба постепенно, визуально отлетает,
+        // а не телепортируется.
         if (mob.hp > 0) {
             const dirx = mob.pos.x - player.pos.x;
             const diry = mob.pos.y - player.pos.y;
             const dlen = Math.sqrt(dirx * dirx + diry * diry) || 1;
-            const nx = mob.pos.x + (dirx / dlen) * KNOCK_PX;
-            const ny = mob.pos.y + (diry / dlen) * KNOCK_PX;
-            if (isWalkableAt(currentTiles(state), nx, mob.pos.y)) mob.pos.x = nx;
-            if (isWalkableAt(currentTiles(state), mob.pos.x, ny)) mob.pos.y = ny;
-            // После телепорта моб сбрасывает цель — подберёт следующую точку AI.
+            const KNOCK_MS = 200;
+            mob.knockbackVx = (dirx / dlen) * KNOCK_PX / (KNOCK_MS / 1000);
+            mob.knockbackVy = (diry / dlen) * KNOCK_PX / (KNOCK_MS / 1000);
+            mob.knockbackEndAt = t + KNOCK_MS;
+            // Моб сбрасывает цель — после knockback подберёт новую точку AI.
             mob.target = null;
             mob.dirty = true;
 
