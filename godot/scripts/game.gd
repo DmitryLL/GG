@@ -1604,6 +1604,14 @@ func _handle_skill_fx(body: Dictionary) -> void:
 	if kind == "dispel":
 		var mid4 := String(body.get("mobId", ""))
 		var m4: Mob = mobs.get(mid4)
+		# Debug: что сервер видит для Дезы (должно быть mod="dispel",
+		# before > after, removed != null).
+		print("[deza/dispel] mod=%s before=%d after=%d removed=%s" % [
+			String(body.get("mod", "")),
+			int(body.get("before", -1)),
+			int(body.get("after", -1)),
+			String(body.get("removed", "")),
+		])
 		if m4:
 			m4.flash_dispel()
 		return

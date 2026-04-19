@@ -70,20 +70,27 @@ registerSkill(2, {
                     kind: "root", mobId: mob.id, duration: ROOT_MS,
                 }));
             }
+            // Всегда шлём FX с актуальным mod'ом — для отладки и вспышки на клиенте.
+            const beforeCount = (mob.buffs || []).length;
+            let removedType: string | null = null;
             if (mod === "dispel") {
-                // Снимаем один случайный активный положительный бафф.
                 const now = t;
                 const active = (mob.buffs || []).filter(b => b.endAt > now);
                 if (active.length > 0) {
                     const removeIdx = Math.floor(Math.random() * active.length);
                     const removed = active[removeIdx];
+                    removedType = removed.type;
                     mob.buffs = (mob.buffs || []).filter(b => b !== removed);
                     mob.dirty = true;
                 }
-                dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
-                    kind: "dispel", mobId: mob.id,
-                }));
             }
+            dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
+                kind: "dispel", mobId: mob.id,
+                mod: mod,
+                before: beforeCount,
+                after: (mob.buffs || []).length,
+                removed: removedType,
+            }));
         }
 
         if (mob.hp <= 0) killMob(mob, player, t);
