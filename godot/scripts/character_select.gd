@@ -94,6 +94,21 @@ func _make_card(c: Dictionary) -> PanelContainer:
 	meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(meta)
 
+	# Кнопка-плашка фракции под уровнем. Клик — переключение Запад↔Восток
+	# через rpc character_set_faction (тестовый режим, меняется в любой момент).
+	var fac := String(c.get("faction", "west"))
+	var fac_btn := Button.new()
+	fac_btn.focus_mode = Control.FOCUS_NONE
+	fac_btn.flat = true
+	fac_btn.text = ("Запад" if fac == "west" else "Восток") + " ↺"
+	fac_btn.add_theme_font_size_override("font_size", 11)
+	fac_btn.add_theme_color_override("font_color",
+		Color(0.60, 0.85, 1.0) if fac == "west" else Color(1.0, 0.65, 0.55))
+	fac_btn.tooltip_text = "Сменить фракцию"
+	var this_char_id := str(c.get("id", ""))
+	fac_btn.pressed.connect(func(): _on_toggle_faction(this_char_id, fac))
+	v.add_child(fac_btn)
+
 	var del := Button.new()
 	del.text = "Удалить"
 	del.focus_mode = Control.FOCUS_NONE
@@ -173,6 +188,17 @@ func _on_delete(char_id: String) -> void:
 		return
 	await _refresh_from_server()
 
+# Тоггл фракции существующего персонажа (тестовый режим).
+func _on_toggle_faction(char_id: String, current: String) -> void:
+	var next_fac := "east" if current == "west" else "west"
+	var res: NakamaAPI.ApiRpc = await Session.client.rpc_async(
+		Session.auth, "character_set_faction",
+		JSON.stringify({ "id": char_id, "faction": next_fac })
+	)
+	if res == null or res.is_exception():
+		return
+	await _refresh_from_server()
+
 # ─── Модалка создания персонажа ───
 
 var _modal: PanelContainer
@@ -201,7 +227,9 @@ func _open_create_modal() -> void:
 	_modal.add_child(center)
 
 	var inner := PanelContainer.new()
-	inner.custom_minimum_size = Vector2(440, 380)
+	# С появлением раздела «Фракция» высота выросла — даём модалке простор,
+	# чтобы секцию не обрезало на низких разрешениях.
+	inner.custom_minimum_size = Vector2(480, 520)
 	var sb2 := StyleBoxFlat.new()
 	sb2.bg_color = Color(0.12, 0.09, 0.06, 1)
 	sb2.border_color = Color(0.85, 0.65, 0.30, 1)
