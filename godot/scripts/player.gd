@@ -5,6 +5,9 @@ extends Node2D
 signal moved(pos: Vector2)
 
 const SPEED := 100.0
+# При активном бафе «sprint» (см. OP_ME.effects) клиент тоже должен
+# успевать интерполировать — иначе серверная +50% не видна визуально.
+const SPEED_SPRINT := 150.0
 const SPRITE_VARIANTS := 6
 # Фундамент (pixellab walking-6-frames + cross-punch-6-frames):
 # walk-атлас: 6 walk frames × 4 directions (hframes=6, vframes=4)
@@ -52,6 +55,7 @@ var _path: PackedVector2Array = PackedVector2Array()
 var _path_idx: int = 0
 var _remote_target: Vector2 = Vector2.ZERO
 var _remote_has_target: bool = false
+var _sprint_end_ms: int = 0  # когда активен баф sprint — локальное ms
 var facing: int = Dir.DOWN
 var moving: bool = false
 var anim_t: float = 0.0
@@ -146,7 +150,8 @@ func _process(delta: float) -> void:
 	if _remote_has_target:
 		var to := _remote_target - position
 		var dist := to.length()
-		var s := SPEED * delta
+		var speed_now := SPEED_SPRINT if Time.get_ticks_msec() < _sprint_end_ms else SPEED
+		var s := speed_now * delta
 		if dist <= s:
 			position = _remote_target
 			_remote_has_target = false
@@ -208,6 +213,15 @@ func facing_vector() -> Vector2:
 		Dir.LEFT: return Vector2(-1, 0)
 		Dir.RIGHT: return Vector2(1, 0)
 	return Vector2(0, 1)
+
+func set_sprint_remaining(ms: int) -> void:
+	# Вызывается из game._apply_me / _apply_positions когда сервер
+	# подтверждает активный sprint-баф. Клиент временно повышает
+	# скорость интерполяции, чтобы визуально догонять серверную pos.
+	if ms <= 0:
+		_sprint_end_ms = 0
+		return
+	_sprint_end_ms = Time.get_ticks_msec() + ms
 
 func remote_update(new_pos: Vector2) -> void:
 	# Если позиция далеко (>120px) — телепорт. Иначе плавное движение.
