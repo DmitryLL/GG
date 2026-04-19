@@ -372,6 +372,7 @@ func _make_effect_icon(eff: Dictionary) -> Control:
 		var fallback_sym := ""
 		match eff_type:
 			"empowered": fallback_sym = "⚔"
+			"sprint":    fallback_sym = "»"
 			"haste":     fallback_sym = "»"
 			"regen":     fallback_sym = "+"
 			"shield":    fallback_sym = "▲"

@@ -117,7 +117,8 @@
   `res://assets/sprites/ui/effect_<type>.png`; если не найдена —
   рисует fallback-символ (⚔/»/+/▲) чтобы хоть что-то было видно.
 - Что нужно: отдельные 16×16 иконки эффектов в
-  `godot/assets/sprites/ui/effect_empowered.png` (срочно — уже в проде),
+  `godot/assets/sprites/ui/effect_empowered.png` и
+  `effect_sprint.png` (оба в проде через Эскейп-моды),
   и при наличии — `effect_haste.png`, `effect_regen.png`,
   `effect_shield.png` (для положительных эффектов на мобах).
 - Контракт: 16×16 прозрачный, nearest-filter, цвет зелёный (баффы).
