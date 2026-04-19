@@ -265,6 +265,7 @@ interface MatchMob {
     knockbackVx?: number;      // px/sec по X
     knockbackVy?: number;      // px/sec по Y
     buffs?: MobBuff[];         // положительные эффекты (для dispel-тестов)
+    buffsNextRefreshAt?: number; // ms timestamp: для dummy — когда восполнять тестовые баффы
 }
 
 // Положительный бафф на мобе. Пока — пустышки (не влияют на бой),
@@ -397,6 +398,7 @@ function spawnMob(id: string, spec: MobSpawn): MatchMob {
     };
     // Манекены: 3 разных положительных эффекта-пустышки для теста
     // Дезы-dispel. Длительность большая (24ч) — не истекают в бою.
+    // Каждые 60 сек mob AI восполняет удалённые — см. refreshDummyBuffs.
     if (type === "dummy") {
         const farFuture = Date.now() + 86_400_000;
         mob.buffs = [
@@ -404,8 +406,30 @@ function spawnMob(id: string, spec: MobSpawn): MatchMob {
             { type: "regen",  endAt: farFuture },
             { type: "shield", endAt: farFuture },
         ];
+        mob.buffsNextRefreshAt = Date.now() + 60_000;
     }
     return mob;
+}
+
+// Восполнение тестовых баффов у манекена — чтобы можно было снова и
+// снова тренировать Дезу-dispel без пересоздания моба.
+const DUMMY_BUFF_TYPES = ["haste", "regen", "shield"];
+function refreshDummyBuffs(mob: MatchMob, t: number): void {
+    if (mob.type !== "dummy") return;
+    if (!mob.buffsNextRefreshAt || t < mob.buffsNextRefreshAt) return;
+    const have: { [k: string]: boolean } = {};
+    for (const b of (mob.buffs || [])) have[b.type] = true;
+    const farFuture = t + 86_400_000;
+    const next = (mob.buffs || []).slice();
+    let added = false;
+    for (const bt of DUMMY_BUFF_TYPES) {
+        if (!have[bt]) { next.push({ type: bt, endAt: farFuture }); added = true; }
+    }
+    if (added) {
+        mob.buffs = next;
+        mob.dirty = true;
+    }
+    mob.buffsNextRefreshAt = t + 60_000;
 }
 
 function rollMobLoot(mobType: string): InvEntry[] {
@@ -1949,6 +1973,8 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             continue;
         }
         const def = MOB_TYPES[mob.type];
+        // Манекен: восполнение тестовых баффов раз в минуту.
+        refreshDummyBuffs(mob, t);
         // Poison DoT
         if (mob.debuff && t < mob.debuff.poisonEndAt && t >= mob.debuff.nextPoisonTickAt) {
             const perTick = mob.debuff.poisonDmg || 3;
