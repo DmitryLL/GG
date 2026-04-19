@@ -1361,6 +1361,20 @@ func _apply_me(body: Dictionary) -> void:
 		Session.selected_character = server_class
 		if skills_win and skills_win.has_method("set_class"):
 			skills_win.set_class(server_class)
+	# Иконка класса в nameplate.
+	if server_class != "" and nameplate and nameplate.has_method("set_class"):
+		nameplate.set_class(server_class)
+	# Имя активного персонажа — замена email-заглушке.
+	var server_name: String = str(body.get("name", ""))
+	if server_name != "":
+		if nameplate:
+			nameplate.set_player_name(server_name)
+		if me:
+			me.display_name = server_name
+			if me.label:
+				me.label.text = server_name
+		if character_win and character_win.has_method("set_nickname"):
+			character_win.set_nickname(server_name)
 	hud.update_me(body)
 	if nameplate:
 		nameplate.update_me(body)

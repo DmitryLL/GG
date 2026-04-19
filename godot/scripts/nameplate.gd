@@ -6,6 +6,7 @@ signal logout_requested
 
 var name_label: Label
 var level_label: Label
+var class_icon: TextureRect
 var hp_text: Label
 var hp_bar: ProgressBar
 var xp_bar: ProgressBar
@@ -54,7 +55,7 @@ func _ready() -> void:
 	top.add_theme_constant_override("separation", 4)
 	v.add_child(top)
 
-	var class_icon := TextureRect.new()
+	class_icon = TextureRect.new()
 	class_icon.texture = load("res://assets/sprites/skills/class_archer.png")
 	class_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	class_icon.custom_minimum_size = Vector2(24, 24)
@@ -252,6 +253,15 @@ func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
 
 func set_player_name(n: String) -> void:
 	name_label.text = n
+
+func set_class(class_id: String) -> void:
+	if class_icon == null:
+		return
+	var path := "res://assets/sprites/skills/class_archer.png"
+	if class_id == "mage":
+		path = "res://assets/sprites/skills/class_mage.png"
+	if ResourceLoader.exists(path):
+		class_icon.texture = load(path)
 
 func update_me(me: Dictionary) -> void:
 	level_label.text = "Ур. %d" % int(me.get("level", 1))
