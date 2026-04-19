@@ -510,8 +510,11 @@ func _process(delta: float) -> void:
 			var atk_range_now: float = _my_atk_range()
 			# Queued skill — пока не выпустили, авто-атака НЕ работает (ждём).
 			if queued_skill >= 0:
-				# Чуть меньше серверной дальности — компенсация лага позиции
-				var q_range: float = (atk_range_now - 20.0) if has_ranged else 30.0
+				# Дистанция каста = дальность атаки (сервер сам толерирует
+				# +40px лага). Для melee — 30px. Раньше был -20 «на лаг»,
+				# из-за чего лучник зря подходил ближе при Дезе, хотя
+				# серверная дальность та же что у обычного выстрела.
+				var q_range: float = atk_range_now if has_ranged else 30.0
 				var q_d: float = me.position.distance_to(attack_target.position)
 				if q_d > q_range:
 					_send_move_intent(attack_target.position)

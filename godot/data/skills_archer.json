@@ -27,8 +27,8 @@
     {
       "id": 2,
       "name": "Деза",
-      "description": "Враг отбегает назад на 2 шага.",
-      "icon": "res://assets/sprites/skills/skill_2.png",
+      "description": "Враг отбегает назад на 2 шага (2 тайла = 64 px).",
+      "icon": "res://assets/sprites/skills/skill_deza.png",
       "modifications": [
         {
           "id": "root",
