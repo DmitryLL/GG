@@ -2048,7 +2048,7 @@ function matchTerminate(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: 
     return { state: state };
 }
 
-function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, tick: number, state: WorldState, data: string): { state: WorldState; data?: string } | null {
+function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, tick: number, state: WorldState, data: string): { state: WorldState; data?: string } | null {
     if (data === "snapshot") {
         const snapPlayers: any[] = [];
         const tNow = Date.now();
@@ -2083,6 +2083,23 @@ function matchSignal(_ctx: nkruntime.Context, _logger: nkruntime.Logger, _nk: nk
     if (data && data.indexOf("admin:") === 0) {
         const result = adminApply(state, data.substring("admin:".length));
         return { state: state, data: JSON.stringify(result) };
+    }
+    // Перезагрузка мод активного персонажа, когда клиент их поменял
+    // через RPC (storage обновился, но live-MatchPlayer — нет).
+    if (data && data.indexOf("reload_mods:") === 0) {
+        const rest = data.substring("reload_mods:".length);
+        let body: any;
+        try { body = JSON.parse(rest); } catch { return { state: state }; }
+        const uid = String(body.userId || "");
+        if (!uid) return { state: state };
+        for (const sk of Object.keys(state.players)) {
+            const p = state.players[sk];
+            if (p.userId !== uid) continue;
+            if (body.archerMods) p.archerMods = body.archerMods;
+            if (body.mageMods) p.mageMods = body.mageMods;
+            markMe(p);
+        }
+        return { state: state, data: "ok" };
     }
     return { state: state };
 }
@@ -2222,6 +2239,22 @@ function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
 // ===== Archer mods =====
 // Клиентские RPC: получить/записать выбор мод скиллов лучника.
 
+// Уведомить все активные матчи, что у игрока userId обновился набор
+// мод. Нужно чтобы живой MatchPlayer.archerMods/mageMods совпал со
+// storage без перелогина. Шлёт matchSignal во все зоны.
+function notifyModsReload(nk: nkruntime.Nakama, userId: string, mods: { archerMods?: { [k: string]: string }; mageMods?: { [k: string]: string } }): void {
+    try {
+        const payload = "reload_mods:" + JSON.stringify({ userId, ...mods });
+        // Пытаемся во все зоны — активный матч может быть в любой.
+        for (const zone of KNOWN_ZONES) {
+            const matches = nk.matchList(2, true, MATCH_LABEL_PREFIX + zone);
+            for (const m of matches) {
+                try { nk.matchSignal(m.matchId, payload); } catch (_e) {}
+            }
+        }
+    } catch (_e) { /* swallow */ }
+}
+
 // Моды теперь живут внутри активного персонажа. Старые коллекции
 // gg_archer_mods/gg_mage_mods остаются как fallback для аккаунтов, у
 // которых ещё нет персонажей.
@@ -2251,6 +2284,7 @@ function rpcArcherModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk:
     } else {
         saveArcherMods(nk, ctx.userId, sanity.cleaned);  // legacy fallback
     }
+    notifyModsReload(nk, ctx.userId, { archerMods: sanity.cleaned });
     return JSON.stringify({ ok: true, selected: sanity.cleaned, cost: sanity.cost, budget: ARCHER_POINTS_BUDGET });
 }
 
@@ -2279,6 +2313,7 @@ function rpcMageModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
     } else {
         saveMageMods(nk, ctx.userId, sanity.cleaned);
     }
+    notifyModsReload(nk, ctx.userId, { mageMods: sanity.cleaned });
     return JSON.stringify({ ok: true, selected: sanity.cleaned, cost: sanity.cost, budget: MAGE_POINTS_BUDGET });
 }
 

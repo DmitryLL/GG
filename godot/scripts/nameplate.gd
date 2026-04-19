@@ -206,6 +206,9 @@ func update_target(target) -> void:
 		if target.has_method("poison_active") and target.poison_active():
 			var remain_ms: int = target.poison_remaining_ms()
 			target_effects.add_child(_make_target_effect_icon("poison", remain_ms))
+		if target.has_method("stun_active") and target.stun_active():
+			var stun_ms: int = target.stun_remaining_ms()
+			target_effects.add_child(_make_target_effect_icon("stun", stun_ms))
 	elif "display_name" in target:
 		# Player (PvP)
 		target_name.text = target.display_name
@@ -220,7 +223,9 @@ func _clear_target_effects() -> void:
 		c.queue_free()
 
 func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
-	var col := Color(0.95, 0.30, 0.28, 1.0)  # debuff red
+	var col := Color(0.95, 0.30, 0.28, 1.0)  # debuff red по умолчанию
+	if eff_type == "stun":
+		col = Color(1.0, 0.95, 0.4, 1.0)  # жёлтый для стана
 	var wrap := Panel.new()
 	wrap.custom_minimum_size = Vector2(20, 26)
 	var sb := StyleBoxFlat.new()
@@ -229,15 +234,27 @@ func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(3)
 	wrap.add_theme_stylebox_override("panel", sb)
-	var icon := TextureRect.new()
-	icon.texture = POISON_ICON if eff_type == "poison" else null
-	icon.custom_minimum_size = Vector2(16, 16)
-	icon.position = Vector2(2, 1)
-	icon.size = Vector2(16, 16)
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	wrap.add_child(icon)
+	if eff_type == "stun":
+		# Для стана — текстовая звёздочка (иконки в атласе нет).
+		var star := Label.new()
+		star.text = "✦"
+		star.add_theme_font_size_override("font_size", 16)
+		star.add_theme_color_override("font_color", col)
+		star.position = Vector2(3, -3)
+		star.size = Vector2(16, 20)
+		star.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		star.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		wrap.add_child(star)
+	else:
+		var icon := TextureRect.new()
+		icon.texture = POISON_ICON if eff_type == "poison" else null
+		icon.custom_minimum_size = Vector2(16, 16)
+		icon.position = Vector2(2, 1)
+		icon.size = Vector2(16, 16)
+		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		wrap.add_child(icon)
 	var timer_lbl := Label.new()
 	timer_lbl.text = ("%.1fс" % (remain_ms / 1000.0)) if remain_ms < 10000 else ("%dс" % int(remain_ms / 1000))
 	timer_lbl.add_theme_font_size_override("font_size", 7)
