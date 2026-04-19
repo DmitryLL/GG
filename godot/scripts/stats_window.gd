@@ -19,6 +19,7 @@ const CHAR_ROWS := [
 	["hp_regen",  "Регенерация здоровья"],
 	["mp",        "Мана"],
 	["mp_regen",  "Регенерация маны"],
+	["speed",     "Скорость бега"],
 ]
 const ATK_ROWS := [
 	["phys_dmg",      "Физический урон"],
@@ -154,6 +155,7 @@ func refresh(me: Dictionary) -> void:
 	_set_stat(_char_lbl, "hp_regen", "0")
 	_set_stat(_char_lbl, "mp", "0")
 	_set_stat(_char_lbl, "mp_regen", "0")
+	_set_stat(_char_lbl, "speed", str(int(me.get("moveSpeed", 100))))
 	# Атака — сервер шлёт два раздельных значения (physDmg, magDmg).
 	var phys: int = int(me.get("physDmg", me.get("damage", 0)))
 	var mag: int = int(me.get("magDmg", 0))
