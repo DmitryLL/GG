@@ -30,6 +30,7 @@ registerSkill(5, {
             for (const sk of Object.keys(state.players)) {
                 const ally = state.players[sk];
                 if (ally.sessionId === player.sessionId) continue;
+                if (!areAllies(player, ally)) continue;  // чужая фракция — мимо
                 if (dist(ally.pos, player.pos) > PARTY_RADIUS) continue;
                 ally.critBuffUntil = t + BUFF_MS;
                 ally.critBonus = Math.max(ally.critBonus || 0, 0.20);
