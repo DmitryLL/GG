@@ -8,10 +8,13 @@ const SPEED := 100.0
 const SPRITE_VARIANTS := 6
 # Фундамент (pixellab walking-6-frames + cross-punch-6-frames):
 # walk-атлас: 6 walk frames × 4 directions (hframes=6, vframes=4)
+# idle-атлас: 6 idle frames × 4 directions (hframes=6, vframes=4)
 # punch-атлас: 6 punch frames × 4 directions (hframes=6, vframes=4)
 # Row 0 DOWN (south), 1 LEFT (west), 2 RIGHT (east), 3 UP (north).
 # Все варианты char_0..5 и archer_walk — копии char_base_walk.png,
 # различия между персонажами только через overlay оружия/одежды.
+const IDLE_HFRAMES := 6
+const IDLE_FPS := 4.0
 const WALK_HFRAMES := 6
 const WALK_FPS := 10.0
 const PUNCH_HFRAMES := 6
@@ -342,6 +345,13 @@ func _restore_walk_sprite() -> void:
 	sprite.frame = facing * WALK_HFRAMES
 	_apply_layer_state("walk")
 
+func _apply_idle_sprite() -> void:
+	sprite.texture = load("res://assets/sprites/characters/char_base_idle.png")
+	sprite.hframes = IDLE_HFRAMES
+	sprite.vframes = 4
+	sprite.frame = facing * IDLE_HFRAMES
+	_apply_layer_state("idle")
+
 # ═══════════════════════ Paper-doll layers ═══════════════════════
 # Слои наследуют state (walk/punch/shoot) от базового sprite и дублируют
 # его frame. Текстура слоя — отдельный атлас в res://assets/sprites/characters/wear/
@@ -400,6 +410,14 @@ func _apply_layer_state_for(layer: Sprite2D, state: String) -> void:
 	if texts.is_empty():
 		layer.visible = false
 		return
+	if state == "idle":
+		layer.texture = texts.get("walk")
+		layer.hframes = WALK_HFRAMES
+		layer.vframes = 4
+		layer.frame = facing * WALK_HFRAMES
+		layer.offset = sprite.offset
+		layer.scale = sprite.scale
+		return
 	layer.texture = texts.get(state)
 	match state:
 		"walk":  layer.hframes = WALK_HFRAMES
@@ -415,7 +433,10 @@ func _sync_layers() -> void:
 		var l: Sprite2D = layers.get(slot)
 		if l == null or not l.visible or l.texture == null:
 			continue
-		l.frame = sprite.frame
+		if _current_anim_state == "idle":
+			l.frame = facing * WALK_HFRAMES
+		else:
+			l.frame = sprite.frame
 		l.offset = sprite.offset
 		l.scale = sprite.scale
 
@@ -474,10 +495,17 @@ func _animate(delta: float) -> void:
 		_update_bow_position()
 	_update_book_position()
 	if not moving:
-		sprite.frame = base
-		anim_t = 0.0
+		if _current_anim_state != "idle":
+			_apply_idle_sprite()
+			anim_t = 0.0
+		anim_t += delta
+		var idle_base := facing * IDLE_HFRAMES
+		var idle_cycle := int(anim_t * IDLE_FPS) % IDLE_HFRAMES
+		sprite.frame = idle_base + idle_cycle
 		_sync_layers()
 		return
+	if _current_anim_state == "idle":
+		_restore_walk_sprite()
 	anim_t += delta
 	var cycle := int(anim_t * WALK_FPS) % WALK_HFRAMES
 	sprite.frame = base + cycle
