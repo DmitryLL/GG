@@ -2061,12 +2061,14 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             continue;
         }
         const slowed = mob.debuff && t < mob.debuff.slowEndAt;
-        const speed = slowed ? def.speed * 0.8 : def.speed;  // −20%
+        const speed = slowed ? Math.max(0, def.speed - 25) : def.speed;  // −25 единиц
         // Патрульный режим: движение по X туда-обратно в пределах ±range
         // от home. Используется для тестовых манекенов, которые dummy
         // по статам неподвижны (speed=0), но мы дадим фиксированную.
         if (mob.patrol) {
-            const patrolSpeed = 50;  // px/sec, чтобы было хорошо видно движение
+            // Патрульная скорость 50 px/sec; slow от Града стрел её
+            // тоже режет на −25, чтобы замедление визуально было заметно.
+            const patrolSpeed = slowed ? Math.max(0, 50 - 25) : 50;
             const leftX = mob.home.x - mob.patrol.range;
             const rightX = mob.home.x + mob.patrol.range;
             mob.target = { x: (mob.patrol.dir > 0 ? rightX : leftX), y: mob.home.y };
