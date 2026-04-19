@@ -2005,7 +2005,12 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 continue;
             }
         }
-        if (mob.debuff && t >= mob.debuff.poisonEndAt) mob.debuff = undefined;
+        // Сбрасываем debuff только когда И poison, И slow истекли. Иначе
+        // slow от Града стрел (ставит только slowEndAt, poisonEndAt=0)
+        // терялся ещё до первого тика AI.
+        if (mob.debuff && t >= mob.debuff.poisonEndAt && t >= mob.debuff.slowEndAt) {
+            mob.debuff = undefined;
+        }
         // Fire DoT (мода "fire" РДД-удара)
         if (mob.fireEndAt && t < mob.fireEndAt && mob.nextFireTickAt && t >= mob.nextFireTickAt) {
             const fdmg = Math.max(1, Math.floor(mob.fireDmg || 0));
@@ -2046,7 +2051,7 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             continue;
         }
         const slowed = mob.debuff && t < mob.debuff.slowEndAt;
-        const speed = slowed ? def.speed * 0.7 : def.speed;
+        const speed = slowed ? def.speed * 0.8 : def.speed;  // −20%
         if (!mob.target || dist(mob.pos, mob.target) < 4) {
             const angle = Math.random() * Math.PI * 2;
             const r = Math.random() * def.wanderRadius;

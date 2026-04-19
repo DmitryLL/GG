@@ -212,6 +212,9 @@ func update_target(target) -> void:
 		if target.has_method("fire_active") and target.fire_active():
 			var fire_ms: int = target.fire_remaining_ms()
 			target_effects.add_child(_make_target_effect_icon("fire", fire_ms))
+		if target.has_method("slow_active") and target.slow_active():
+			var slow_ms: int = target.slow_remaining_ms()
+			target_effects.add_child(_make_target_effect_icon("slow", slow_ms))
 		# Положительные баффы на мобе (haste/regen/shield и т.п.).
 		if "buffs" in target:
 			for b in target.buffs:
@@ -240,6 +243,8 @@ func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
 		col = Color(1.0, 0.95, 0.4, 1.0)  # жёлтый для стана
 	elif eff_type == "fire":
 		col = Color(1.0, 0.5, 0.15, 1.0)  # оранжевый для огня
+	elif eff_type == "slow":
+		col = Color(0.55, 0.75, 0.95, 1.0)  # голубой для замедления
 	elif eff_type.begins_with("buff_"):
 		col = Color(0.45, 0.9, 0.5, 1.0)  # зелёный для положительных
 	var wrap := Panel.new()
@@ -255,6 +260,8 @@ func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
 		sym_text = "✦"
 	elif eff_type == "fire":
 		sym_text = "✶"
+	elif eff_type == "slow":
+		sym_text = "▼"
 	elif eff_type == "buff_haste":
 		sym_text = "»"  # стрелка — скорость
 	elif eff_type == "buff_regen":
