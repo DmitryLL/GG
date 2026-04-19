@@ -266,6 +266,7 @@ interface MatchMob {
     knockbackVy?: number;      // px/sec по Y
     buffs?: MobBuff[];         // положительные эффекты (для dispel-тестов)
     buffsNextRefreshAt?: number; // ms timestamp: для dummy — когда восполнять тестовые баффы
+    patrol?: { dir: number; range: number }; // двигается по X от home на ±range (для тестовых манекенов)
 }
 
 // Положительный бафф на мобе. Пока — пустышки (не влияют на бой),
@@ -982,6 +983,18 @@ function matchInit(_ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkrunt
     for (let i = 0; i < mobSpawns.length; i++) {
         const mobId = "m" + i;
         mobs[mobId] = spawnMob(mobId, mobSpawns[i]);
+    }
+    // Тестовый ряд патрульных манекенов в village — для проверки
+    // Града стрел и прочих AoE-модификаторов.
+    if (isVillage) {
+        const baseX = 800, baseY = 1100, step = 48;  // ряд на поле спавна
+        for (let i = 0; i < 10; i++) {
+            const id = "patrol_dummy_" + i;
+            const m = spawnMob(id, { x: baseX + i * step, y: baseY, type: "dummy" });
+            // Патруль по X: ±64 px от home, стартуем в случайную сторону.
+            m.patrol = { dir: (i % 2 === 0 ? 1 : -1), range: 64 };
+            mobs[id] = m;
+        }
     }
     const savedTiles = loadMapFromStorage(nk, zoneId);
     const tiles = savedTiles ? savedTiles : defaultTiles;
@@ -2049,6 +2062,24 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         }
         const slowed = mob.debuff && t < mob.debuff.slowEndAt;
         const speed = slowed ? def.speed * 0.8 : def.speed;  // −20%
+        // Патрульный режим: движение по X туда-обратно в пределах ±range
+        // от home. Используется для тестовых манекенов, которые dummy
+        // по статам неподвижны (speed=0), но мы дадим фиксированную.
+        if (mob.patrol) {
+            const patrolSpeed = 50;  // px/sec, чтобы было хорошо видно движение
+            const leftX = mob.home.x - mob.patrol.range;
+            const rightX = mob.home.x + mob.patrol.range;
+            mob.target = { x: (mob.patrol.dir > 0 ? rightX : leftX), y: mob.home.y };
+            if (mob.pos.x >= rightX - 1) mob.patrol.dir = -1;
+            else if (mob.pos.x <= leftX + 1) mob.patrol.dir = 1;
+            const stepPatrol = patrolSpeed * TICK_DT;
+            const dxp = (mob.patrol.dir > 0 ? 1 : -1) * stepPatrol;
+            const nxp = mob.pos.x + dxp;
+            if (isWalkableAt(currentTiles(state), nxp, mob.pos.y)) mob.pos.x = nxp;
+            mob.dirty = true;
+            // Патрульные манекены не касаются игроков — не продолжаем в touch-damage.
+            continue;
+        }
         if (!mob.target || dist(mob.pos, mob.target) < 4) {
             const angle = Math.random() * Math.PI * 2;
             const r = Math.random() * def.wanderRadius;
