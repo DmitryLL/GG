@@ -134,7 +134,7 @@ var targeting_skill: int = -1  # -1 = нет таргетинга, иначе и
 var _targeting_ring: Sprite2D
 var admin_panel: AdminPanel
 var stats_win: StatsWindow
-var skills_win: SkillsWindow
+var skills_win: CanvasLayer
 
 func _ready() -> void:
 	var display := Session.auth.username if Session.auth.username != "" else _short_id(Session.auth.user_id)
@@ -1318,16 +1318,12 @@ func _apply_positions(body: Dictionary) -> void:
 			remotes[sid] = remote
 		var new_pos := Vector2(x, y)
 		remote.remote_update(new_pos)
-		# eqWeapon — точный item id ("wood_bow", "apprentice_tome"...).
-		# Фалбэк на wpn (kind) если сервер старый, затем на hb.
-		var remote_item := String(p.get("eqWeapon", ""))
-		if remote_item != "":
-			remote.set_weapon_item(remote_item)
-		else:
-			var remote_wpn := String(p.get("wpn", ""))
-			if remote_wpn == "" and has_bow_remote:
-				remote_wpn = "bow"
-			remote.set_weapon_kind(remote_wpn)
+		# wpn приходит от сервера ("bow"/"tome"/"sword"/""), если его нет — fallback на hb.
+		var remote_wpn := String(p.get("wpn", ""))
+		if remote_wpn == "" and has_bow_remote:
+			remote_wpn = "bow"
+		remote.set_weapon_kind(remote_wpn)
+		remote.set_weapon_item(remote_wpn)
 		var hp_max_remote: float = float(p.get("hpMax", 100))
 		remote.set_hp(hp, hp_max_remote)
 
@@ -1401,7 +1397,11 @@ func _apply_me(body: Dictionary) -> void:
 		skillbar.update_skill_cd(body.get("skillCd", {}), int(body.get("t", 0)))
 	var eq_dict: Dictionary = body.get("eq", {})
 	var _wname := String(eq_dict.get("weapon", ""))
-	# Свой персонаж — передаём точный item id (книга/лук с индивидуальным оверлеем).
+	var _kind := ""
+	if _wname.contains("bow"): _kind = "bow"
+	elif _wname.contains("tome"): _kind = "tome"
+	elif _wname.contains("sword"): _kind = "sword"
+	me.set_weapon_kind(_kind)
 	me.set_weapon_item(_wname)
 	# Paper-doll слои: каждый слот → wear-atlas (если существует в assets).
 	const WEAR_SLOT_MAP := {
@@ -1604,14 +1604,6 @@ func _handle_skill_fx(body: Dictionary) -> void:
 	if kind == "dispel":
 		var mid4 := String(body.get("mobId", ""))
 		var m4: Mob = mobs.get(mid4)
-		# Debug: что сервер видит для Дезы (должно быть mod="dispel",
-		# before > after, removed != null).
-		print("[deza/dispel] mod=%s before=%d after=%d removed=%s" % [
-			String(body.get("mod", "")),
-			int(body.get("before", -1)),
-			int(body.get("after", -1)),
-			String(body.get("removed", "")),
-		])
 		if m4:
 			m4.flash_dispel()
 		return
