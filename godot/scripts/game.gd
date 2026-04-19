@@ -1341,7 +1341,7 @@ func _apply_mobs(body: Dictionary) -> void:
 			ms.setup(mid, kind)
 			entities.add_child(ms)
 			mobs[mid] = ms
-		ms.position = Vector2(float(m.get("x", 0)), float(m.get("y", 0)))
+		ms.set_server_pos(Vector2(float(m.get("x", 0)), float(m.get("y", 0))))
 		ms.set_hp(float(m.get("hp", 0)), float(m.get("hpMax", 30)))
 		ms.set_alive(String(m.get("st", "alive")) == "alive")
 		ms.set_loot(m.get("loot", []))

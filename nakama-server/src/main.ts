@@ -261,6 +261,9 @@ interface MatchMob {
     nextFireTickAt?: number; // ms timestamp следующего тика огня
     fireDmg?: number;        // урон за тик огня
     armorDebuffUntil?: number; // Mage С2-1п: пока t<armorDebuffUntil у моба дебафф брони
+    knockbackEndAt?: number;   // ms timestamp конца knockback
+    knockbackVx?: number;      // px/sec по X
+    knockbackVy?: number;      // px/sec по Y
 }
 
 // Универсальная сущность карты: портал, сундук, спавн-зона, (позже NPC).
@@ -1961,6 +1964,20 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             mob.fireEndAt = undefined;
             mob.nextFireTickAt = undefined;
             mob.fireDmg = undefined;
+        }
+        // Knockback: двигаем моба по velocity, обычный AI пропускаем.
+        if (mob.knockbackEndAt && t < mob.knockbackEndAt) {
+            const nx = mob.pos.x + (mob.knockbackVx || 0) * TICK_DT;
+            const ny = mob.pos.y + (mob.knockbackVy || 0) * TICK_DT;
+            if (isWalkableAt(currentTiles(state), nx, mob.pos.y)) mob.pos.x = nx;
+            if (isWalkableAt(currentTiles(state), mob.pos.x, ny)) mob.pos.y = ny;
+            mob.dirty = true;
+            continue;
+        }
+        if (mob.knockbackEndAt && t >= mob.knockbackEndAt) {
+            mob.knockbackEndAt = undefined;
+            mob.knockbackVx = undefined;
+            mob.knockbackVy = undefined;
         }
         // Stun: оглушённый моб не двигается и не бьёт. Poison/fire DoT выше
         // продолжают тикать — стан не отменяет эти эффекты.
