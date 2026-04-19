@@ -94,6 +94,18 @@ func _make_card(c: Dictionary) -> PanelContainer:
 	meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(meta)
 
+	# Плашка фракции под уровнем — чтобы из меню выбора было сразу видно
+	# кто западный (синий), кто восточный (красный).
+	var fac := String(c.get("faction", "west"))
+	var fac_lbl := Label.new()
+	fac_lbl.text = "Запад" if fac == "west" else "Восток"
+	fac_lbl.add_theme_font_size_override("font_size", 11)
+	fac_lbl.add_theme_color_override("font_color",
+		Color(0.60, 0.85, 1.0) if fac == "west" else Color(1.0, 0.65, 0.55))
+	fac_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	fac_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(fac_lbl)
+
 	var del := Button.new()
 	del.text = "Удалить"
 	del.focus_mode = Control.FOCUS_NONE
@@ -201,7 +213,9 @@ func _open_create_modal() -> void:
 	_modal.add_child(center)
 
 	var inner := PanelContainer.new()
-	inner.custom_minimum_size = Vector2(440, 380)
+	# С появлением раздела «Фракция» высота выросла — даём модалке простор,
+	# чтобы секцию не обрезало на низких разрешениях.
+	inner.custom_minimum_size = Vector2(480, 520)
 	var sb2 := StyleBoxFlat.new()
 	sb2.bg_color = Color(0.12, 0.09, 0.06, 1)
 	sb2.border_color = Color(0.85, 0.65, 0.30, 1)
