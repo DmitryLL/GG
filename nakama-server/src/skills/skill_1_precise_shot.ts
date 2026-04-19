@@ -60,6 +60,15 @@ registerSkill(1, {
                 kind: "stun", mobId: mob.id, duration: STUN_MS,
             }));
         }
+        if (mob.hp > 0 && mod === "fire") {
+            // 20% урона за тик × 3 тика, первый тик через 1 сек после выстрела.
+            mob.fireDmg = Math.max(1, Math.floor(dmg * 0.2));
+            mob.fireEndAt = t + 3500;
+            mob.nextFireTickAt = t + 1000;
+            dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
+                kind: "fire", mobId: mob.id, duration: 3500,
+            }));
+        }
         if (mob.hp <= 0) killMob(mob, player, t);
         player.skillCd[1] = t + 5000;
     },

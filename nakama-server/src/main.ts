@@ -247,6 +247,9 @@ interface MatchMob {
     dirty: boolean;
     debuff?: MobDebuff;
     stunUntil?: number;  // ms timestamp; пока t<stunUntil моб оглушён (не двигается, не атакует)
+    fireEndAt?: number;      // ms timestamp; пока t<fireEndAt — горит
+    nextFireTickAt?: number; // ms timestamp следующего тика огня
+    fireDmg?: number;        // урон за тик огня
 }
 
 // Универсальная сущность карты: портал, сундук, спавн-зона, (позже NPC).
@@ -1585,8 +1588,27 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             }
         }
         if (mob.debuff && t >= mob.debuff.poisonEndAt) mob.debuff = undefined;
-        // Stun: оглушённый моб не двигается и не бьёт. Poison DoT выше
-        // продолжает тикать, чтобы лучник не терял DoT от стан-моды.
+        // Fire DoT (мода "fire" РДД-удара)
+        if (mob.fireEndAt && t < mob.fireEndAt && mob.nextFireTickAt && t >= mob.nextFireTickAt) {
+            const fdmg = Math.max(1, Math.floor(mob.fireDmg || 0));
+            mob.hp -= fdmg;
+            mob.dirty = true;
+            mob.nextFireTickAt = t + 1000;
+            dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({ mobId: mob.id, dmg: fdmg, fire: true }));
+            if (mob.hp <= 0) {
+                const pKeys3 = Object.keys(state.players);
+                if (pKeys3.length > 0) killMob(mob, state.players[pKeys3[0]], t);
+                else { mob.hp = 0; mob.state = "dead"; mob.respawnAt = t + def.respawnMs; }
+                continue;
+            }
+        }
+        if (mob.fireEndAt && t >= mob.fireEndAt) {
+            mob.fireEndAt = undefined;
+            mob.nextFireTickAt = undefined;
+            mob.fireDmg = undefined;
+        }
+        // Stun: оглушённый моб не двигается и не бьёт. Poison/fire DoT выше
+        // продолжают тикать — стан не отменяет эти эффекты.
         if (mob.stunUntil && t < mob.stunUntil) {
             mob.dirty = true;
             continue;
