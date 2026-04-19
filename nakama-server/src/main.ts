@@ -179,6 +179,8 @@ interface MatchPlayer {
     movePath: Vec2[];         // очередь waypoints (A* путь); шагает по одному
     hp: number;
     hpMax: number;
+    mana: number;
+    manaMax: number;
     level: number;
     xp: number;
     gold: number;
@@ -338,6 +340,19 @@ function computeHpMax(p: MatchPlayer): number {
         if (!id) continue;
         const def = ITEMS[id];
         if (def && def.hp) total += def.hp;
+    }
+    return total;
+}
+// Стартовая мана: 100 у всех классов. Регенерация — 5/сек (в цикле).
+// Предметы с полем `mana` увеличивают пул (на будущее — пока нет ни одного).
+const MANA_REGEN_PER_SEC = 5;
+function computeManaMax(p: MatchPlayer): number {
+    let total = 100;
+    for (const slot of EQUIP_SLOTS) {
+        const id = p.equipment[slot];
+        if (!id) continue;
+        const def = ITEMS[id] as any;
+        if (def && def.mana) total += Number(def.mana) || 0;
     }
     return total;
 }
@@ -1119,6 +1134,7 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             presence: p,
             pos: { x: WORLD.playerSpawn.x, y: WORLD.playerSpawn.y },
             hp: 0, hpMax: 0,
+            mana: 100, manaMax: 100,
             level: activeChar ? activeChar.level : (saved ? saved.level : 1),
             xp: activeChar ? activeChar.xp : (saved ? saved.xp : 0),
             gold: activeChar ? activeChar.gold : (saved ? saved.gold : 0),
@@ -1142,6 +1158,8 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         };
         player.hpMax = computeHpMax(player);
         player.hp = player.hpMax;
+        player.manaMax = computeManaMax(player);
+        player.mana = player.manaMax;
         state.players[p.sessionId] = player;
 
         // Send one-shot snapshots to the newcomer.
@@ -1223,6 +1241,7 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
     const effSpeed = sprintActive ? PLAYER_SPEED + 50 : PLAYER_SPEED;
     const payload = {
         hp: p.hp, hpMax: p.hpMax,
+        mana: Math.floor(p.mana), manaMax: p.manaMax,
         level: p.level, xp: p.xp, xpNeed: XP_FOR_LEVEL(p.level),
         gold: p.gold,
         damage: computeDamage(p),
@@ -1396,6 +1415,8 @@ function grantXp(p: MatchPlayer, amount: number): void {
         p.level += 1;
         p.hpMax = computeHpMax(p);
         p.hp = p.hpMax;
+        p.manaMax = computeManaMax(p);
+        p.mana = p.manaMax;
     }
     if (p.level >= MAX_LEVEL) p.xp = 0;
     markMe(p);
@@ -1708,12 +1729,28 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                         dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill, reason: "no_bow" }), [player.presence]);
                         break;
                     }
+                    const manaCost = Number(spec.manaCost || 0);
+                    if (manaCost > 0 && player.mana < manaCost) {
+                        dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill, reason: "no_mana" }), [player.presence]);
+                        break;
+                    }
                     const baseDmg = computeDamage(player);
                     const cdBefore = player.skillCd[skill] || 0;
+                    const manaBefore = player.mana;
+                    // Списываем ману заранее, чтобы handler с list allies/zones
+                    // не успел быть обманут повторным OP_SKILL в этот же тик.
+                    if (manaCost > 0) {
+                        player.mana = Math.max(0, player.mana - manaCost);
+                        markMe(player);
+                    }
                     spec.handler({ player, body, t, state, dispatcher, baseDmg });
                     // Если handler не поставил cooldown — значит скилл не сработал
-                    // (например, цель не в зоне, мобид невалидный)
+                    // (например, цель не в зоне, мобид невалидный). Ману — возвращаем.
                     if ((player.skillCd[skill] || 0) === cdBefore) {
+                        if (manaCost > 0) {
+                            player.mana = manaBefore;
+                            markMe(player);
+                        }
                         dispatcher.broadcastMessage(OP_SKILL_REJECT, JSON.stringify({ skill, reason: "out_of_range" }), [player.presence]);
                     }
                 } catch (_e) {}
@@ -2084,13 +2121,21 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
 
     // --- player status effects (buffs/debuffs ticking) ---
+    const manaRegenPerTick = MANA_REGEN_PER_SEC * TICK_DT;
     for (const sk of Object.keys(state.players)) {
         const pl = state.players[sk];
         if (pl.hp <= 0) continue;
+        // Регенерация маны: +MANA_REGEN_PER_SEC / сек, не превышая пула.
+        if (pl.mana < pl.manaMax) {
+            const next = Math.min(pl.manaMax, pl.mana + manaRegenPerTick);
+            if (Math.floor(next) !== Math.floor(pl.mana)) markMe(pl);
+            pl.mana = next;
+        }
         tickPlayerEffects(pl, t);
         if (pl.hp <= 0) {
             pl.pos.x = WORLD.playerSpawn.x; pl.pos.y = WORLD.playerSpawn.y;
             pl.hp = pl.hpMax; pl.lastTouchedByMob = {};
+            pl.mana = pl.manaMax;
             pl.effects = [];
             pl.moveTarget = null; pl.movePath = [];
             pl.dirtyPos = true; markMe(pl);

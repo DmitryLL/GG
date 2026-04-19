@@ -5,6 +5,7 @@
 registerSkill(2, {
     requiresBow: true,
     cooldownMs: 6000,
+    manaCost: 15,
     handler: function (ctx: SkillContext): void {
         const { player, body, t, state, dispatcher, baseDmg } = ctx;
 

@@ -9,6 +9,7 @@
 registerSkill(5, {
     requiresBow: true,
     cooldownMs: 15000,
+    manaCost: 30,
     handler: function (ctx: SkillContext): void {
         const { player, t, state, dispatcher } = ctx;
         const mod = player.archerMods ? player.archerMods["5"] : "";
