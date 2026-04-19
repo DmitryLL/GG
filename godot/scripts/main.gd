@@ -4,9 +4,9 @@
 # - Всё готово → Game
 extends Node
 
-const AUTH_SCENE := preload("res://scenes/Auth.tscn")
-const CHAR_SELECT_SCENE := preload("res://scenes/CharacterSelect.tscn")
-const GAME_SCENE := preload("res://scenes/Game.tscn")
+const AUTH_SCENE := preload("res://scenes/core/Auth.tscn")
+const CHAR_SELECT_SCENE := preload("res://scenes/core/CharacterSelect.tscn")
+const GAME_SCENE := preload("res://scenes/core/Game.tscn")
 
 func _ready() -> void:
 	# Session._ready() может делать async refresh токена — дождёмся.
