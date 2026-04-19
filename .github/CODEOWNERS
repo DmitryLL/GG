@@ -6,6 +6,7 @@
 /godot/assets/               @protiik
 /godot/scenes/visual/        @protiik
 /godot/themes/               @protiik
+/godot/data/                 @protiik
 
 # ─── Логика / скелетные сцены / сервер ─── Дима
 /godot/scripts/              @DmitryLL
