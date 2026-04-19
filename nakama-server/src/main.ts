@@ -2803,6 +2803,26 @@ function rpcCharacterSelect(ctx: nkruntime.Context, _logger: nkruntime.Logger, n
     return JSON.stringify({ ok: true, ...summarizeChars(state) });
 }
 
+// Смена фракции персонажа. Изменения на лету применяются только к
+// хранилищу; если персонаж уже в матче, новая фракция подтянется
+// при следующем matchJoin. Для теста/дебага на этапе разработки.
+function rpcCharacterSetFaction(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { id?: string; faction?: string } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const id = String(req.id || "");
+    const wantFaction = String(req.faction || "");
+    if (ALLOWED_FACTIONS.indexOf(wantFaction) < 0) {
+        return JSON.stringify({ ok: false, reason: "unknown_faction", allowed: ALLOWED_FACTIONS });
+    }
+    const state = migrateCharactersIfNeeded(nk, ctx.userId);
+    const found = state.chars.find(c => c.id === id);
+    if (!found) return JSON.stringify({ ok: false, reason: "not_found" });
+    found.faction = wantFaction;
+    saveCharacters(nk, ctx.userId, state);
+    return JSON.stringify({ ok: true, ...summarizeChars(state) });
+}
+
 function rpcCharacterDelete(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
     if (!ctx.userId) throw new Error("auth required");
     let req: { id?: string } = {};
@@ -2996,6 +3016,7 @@ function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkru
     initializer.registerRpc("character_create", rpcCharacterCreate);
     initializer.registerRpc("character_select", rpcCharacterSelect);
     initializer.registerRpc("character_delete", rpcCharacterDelete);
+    initializer.registerRpc("character_set_faction", rpcCharacterSetFaction);
     logger.info("GG runtime loaded. mobs=" + WORLD.mobSpawns.length + " npcs=" + NPCS.length);
 }
 
