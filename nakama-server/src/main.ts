@@ -426,6 +426,73 @@ function saveProgress(nk: nkruntime.Nakama, p: MatchPlayer): void {
 }
 
 // ================================================================== //
+// Archer class: выбор модификаций скиллов.
+// Источник истины — godot/data/skills_archer.json (клиент).
+// На сервере держим канонический список для валидации.
+// ================================================================== //
+
+const ARCHER_MODS_COLLECTION = "gg_archer_mods";
+const ARCHER_MODS_KEY = "archer";
+const ARCHER_POINTS_BUDGET = 5;
+
+// Синхронизировать с godot/data/skills_archer.json при изменении.
+const ARCHER_MOD_COSTS: { [skillId: number]: { [modId: string]: number } } = {
+    1: { "stun": 1, "fire": 2 },
+    2: { "root": 1, "dispel": 2 },
+    3: { "empowered_attack": 1, "sprint": 2 },
+    4: { "slow": 1, "final_stun": 2 },
+    5: { "party_crit": 1, "penetration": 2 },
+};
+
+interface StoredArcherMods {
+    // ключ — skillId как строка (JSON совместимость), значение — modId
+    selected: { [skillId: string]: string };
+}
+
+function loadArcherMods(nk: nkruntime.Nakama, userId: string): StoredArcherMods {
+    try {
+        const objs = nk.storageRead([{ collection: ARCHER_MODS_COLLECTION, key: ARCHER_MODS_KEY, userId: userId }]);
+        if (objs.length === 0) return { selected: {} };
+        const v = objs[0].value as StoredArcherMods;
+        return { selected: (v && v.selected) ? v.selected : {} };
+    } catch (_e) {
+        return { selected: {} };
+    }
+}
+
+function saveArcherMods(nk: nkruntime.Nakama, userId: string, selected: { [k: string]: string }): void {
+    nk.storageWrite([{
+        collection: ARCHER_MODS_COLLECTION,
+        key: ARCHER_MODS_KEY,
+        userId: userId,
+        value: { selected } as unknown as { [k: string]: any },
+        permissionRead: 1,
+        permissionWrite: 0,
+    }]);
+}
+
+// Валидация входящего выбора мод: неизвестные id отсеиваются, бюджет проверяется.
+function sanitizeArcherMods(selected: { [k: string]: any }): { ok: boolean; cleaned: { [k: string]: string }; cost: number; reason?: string } {
+    const cleaned: { [k: string]: string } = {};
+    let cost = 0;
+    for (const k of Object.keys(selected || {})) {
+        const skillId = parseInt(k);
+        if (isNaN(skillId)) continue;
+        const mods = ARCHER_MOD_COSTS[skillId];
+        if (!mods) continue;
+        const modId = String(selected[k] || "");
+        const c = mods[modId];
+        if (c == null) continue;
+        cleaned[String(skillId)] = modId;
+        cost += c;
+    }
+    if (cost > ARCHER_POINTS_BUDGET) {
+        return { ok: false, cleaned: {}, cost, reason: "budget_exceeded" };
+    }
+    return { ok: true, cleaned, cost };
+}
+
+// ================================================================== //
 // Match handlers
 // ================================================================== //
 
@@ -1765,6 +1832,37 @@ function rpcDebugState(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: n
     return JSON.stringify(snap);
 }
 
+// ===== Archer mods =====
+// Клиентские RPC: получить/записать выбор мод скиллов лучника.
+
+function rpcArcherModsGet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    const stored = loadArcherMods(nk, ctx.userId);
+    const sanity = sanitizeArcherMods(stored.selected);
+    return JSON.stringify({
+        selected: sanity.cleaned,
+        cost: sanity.cost,
+        budget: ARCHER_POINTS_BUDGET,
+    });
+}
+
+function rpcArcherModsSet(ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw new Error("auth required");
+    let req: { selected?: { [k: string]: any } } = {};
+    try { req = JSON.parse(payload || "{}"); } catch (_e) { throw new Error("bad_json"); }
+    const sanity = sanitizeArcherMods(req.selected || {});
+    if (!sanity.ok) {
+        return JSON.stringify({ ok: false, reason: sanity.reason, budget: ARCHER_POINTS_BUDGET });
+    }
+    saveArcherMods(nk, ctx.userId, sanity.cleaned);
+    return JSON.stringify({
+        ok: true,
+        selected: sanity.cleaned,
+        cost: sanity.cost,
+        budget: ARCHER_POINTS_BUDGET,
+    });
+}
+
 // ===== ADMIN =====
 // Whitelist админ-имён (lowercase). Нельзя редактировать через API — только в коде.
 const ADMIN_USERNAMES = ["dimka4344", "v_tip"];
@@ -1933,6 +2031,8 @@ function InitModule(_ctx: nkruntime.Context, logger: nkruntime.Logger, _nk: nkru
     initializer.registerRpc("get_world_match", rpcGetWorldMatch);
     initializer.registerRpc("debug_state", rpcDebugState);
     initializer.registerRpc("admin", rpcAdmin);
+    initializer.registerRpc("archer_mods_get", rpcArcherModsGet);
+    initializer.registerRpc("archer_mods_set", rpcArcherModsSet);
     logger.info("GG runtime loaded. mobs=" + WORLD.mobSpawns.length + " npcs=" + NPCS.length);
 }
 

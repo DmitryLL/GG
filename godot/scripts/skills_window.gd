@@ -20,6 +20,7 @@ var _skills_data: Dictionary = {}
 var _points_budget: int = 5
 var _selected_mods: Dictionary = {}  # { skill_id(int): mod_id(String) }
 var _skill_cards: Array = []         # [ { id:int, card:PanelContainer, current_mod_lbl:Label, mods_panel:VBoxContainer } ]
+var _synced_once: bool = false       # сервер опрашиваем лениво — при первом открытии
 
 func _ready() -> void:
 	layer = 19
@@ -291,6 +292,7 @@ func _pick_mod(skill_id: int, mod_id: String, cost: int) -> void:
 	_selected_mods[skill_id] = mod_id
 	_refresh_card(skill_id)
 	_refresh_points()
+	_push_to_server()  # fire-and-forget
 
 func _clear_mod(skill_id: int) -> void:
 	if not _selected_mods.has(skill_id):
@@ -298,6 +300,7 @@ func _clear_mod(skill_id: int) -> void:
 	_selected_mods.erase(skill_id)
 	_refresh_card(skill_id)
 	_refresh_points()
+	_push_to_server()  # fire-and-forget
 
 func _refresh_card(skill_id: int) -> void:
 	for c in _skill_cards:
@@ -330,6 +333,9 @@ func _flash_points_warning() -> void:
 
 func toggle() -> void:
 	panel.visible = not panel.visible
+	if panel.visible and not _synced_once:
+		_synced_once = true
+		_sync_from_server()
 
 func is_open() -> bool:
 	return panel.visible
@@ -337,6 +343,44 @@ func is_open() -> bool:
 func close() -> void:
 	panel.visible = false
 
-# Для будущей серверной синхронизации.
+# Возвращает копию выбранных мод — для чтения другими системами.
 func get_selected_mods() -> Dictionary:
 	return _selected_mods.duplicate(true)
+
+# ─── Серверная синхронизация через Nakama RPC ───
+
+func _sync_from_server() -> void:
+	if Session == null or Session.client == null or Session.auth == null:
+		return
+	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "archer_mods_get", "")
+	if rpc_res == null or rpc_res.is_exception():
+		push_warning("archer_mods_get failed: %s" % (rpc_res.get_exception().message if rpc_res else "null"))
+		return
+	var data: Variant = JSON.parse_string(rpc_res.payload)
+	if typeof(data) != TYPE_DICTIONARY:
+		return
+	var loaded: Dictionary = data.get("selected", {})
+	_selected_mods.clear()
+	for k in loaded.keys():
+		_selected_mods[int(k)] = str(loaded[k])
+	# Обновить UI всех карточек.
+	for c in _skill_cards:
+		_refresh_card(int(c["id"]))
+	_refresh_points()
+
+func _push_to_server() -> void:
+	if Session == null or Session.client == null or Session.auth == null:
+		return
+	var sel := {}
+	for k in _selected_mods.keys():
+		sel[str(k)] = _selected_mods[k]
+	var payload := JSON.stringify({ "selected": sel })
+	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "archer_mods_set", payload)
+	if rpc_res == null or rpc_res.is_exception():
+		push_warning("archer_mods_set failed: %s" % (rpc_res.get_exception().message if rpc_res else "null"))
+		return
+	# Если сервер отреджектил (например, бюджет) — откатываем к серверному состоянию.
+	var data: Variant = JSON.parse_string(rpc_res.payload)
+	if typeof(data) == TYPE_DICTIONARY and data.get("ok", true) == false:
+		push_warning("server rejected mods: %s" % str(data.get("reason", "?")))
+		_sync_from_server()
