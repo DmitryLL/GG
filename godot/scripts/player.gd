@@ -217,7 +217,10 @@ func facing_vector() -> Vector2:
 		Dir.RIGHT: return Vector2(1, 0)
 	return Vector2(0, 1)
 
+var is_friendly: bool = true  # читают миникарта и прочие UI
+
 func set_friendly(friendly: bool) -> void:
+	is_friendly = friendly
 	if label == null:
 		return
 	# Свой персонаж остаётся белым — не меняем.
