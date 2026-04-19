@@ -187,6 +187,7 @@ interface MatchPlayer {
     atkSpeedBoostUntil: number;
     preciseShotReady: boolean;
     effects: PlayerEffect[];
+    archerMods: { [skillId: string]: string };  // выбранные модификации скиллов лучника
 }
 
 const PLAYER_SPEED = 100; // px/sec — должна совпадать с Godot Player.SPEED
@@ -245,6 +246,7 @@ interface MatchMob {
     loot: InvEntry[];
     dirty: boolean;
     debuff?: MobDebuff;
+    stunUntil?: number;  // ms timestamp; пока t<stunUntil моб оглушён (не двигается, не атакует)
 }
 
 // Универсальная сущность карты: портал, сундук, спавн-зона, (позже NPC).
@@ -756,6 +758,7 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             effects: [],
             moveTarget: null,
             movePath: [],
+            archerMods: loadArcherMods(nk, p.userId).selected,
         };
         player.hpMax = computeHpMax(player);
         player.hp = player.hpMax;
@@ -1582,6 +1585,12 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             }
         }
         if (mob.debuff && t >= mob.debuff.poisonEndAt) mob.debuff = undefined;
+        // Stun: оглушённый моб не двигается и не бьёт. Poison DoT выше
+        // продолжает тикать, чтобы лучник не терял DoT от стан-моды.
+        if (mob.stunUntil && t < mob.stunUntil) {
+            mob.dirty = true;
+            continue;
+        }
         const slowed = mob.debuff && t < mob.debuff.slowEndAt;
         const speed = slowed ? def.speed * 0.7 : def.speed;
         if (!mob.target || dist(mob.pos, mob.target) < 4) {

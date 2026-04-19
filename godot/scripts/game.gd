@@ -1515,7 +1515,15 @@ func _on_chat_send(text: String) -> void:
 	Session.socket.send_match_state_async(match_id, OP_CHAT_SEND, JSON.stringify({"text": text}))
 
 func _handle_skill_fx(body: Dictionary) -> void:
-	# Передаём событие каждому скиллу — кто узнал свой kind, тот и обрабатывает.
+	# Общие эффекты (не привязаны к конкретному скиллу): обрабатываем сразу.
+	var kind := String(body.get("kind", ""))
+	if kind == "stun":
+		var mid := String(body.get("mobId", ""))
+		var m: Mob = mobs.get(mid)
+		if m:
+			m.apply_stun(int(body.get("duration", 1000)))
+		return
+	# Скиллы сами слушают свои kind.
 	for def in SkillRegistry.all():
 		if def.on_fx(self, body):
 			return
