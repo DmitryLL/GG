@@ -1318,11 +1318,16 @@ func _apply_positions(body: Dictionary) -> void:
 			remotes[sid] = remote
 		var new_pos := Vector2(x, y)
 		remote.remote_update(new_pos)
-		# wpn приходит от сервера ("bow"/"tome"/"sword"/""), если его нет — fallback на hb.
-		var remote_wpn := String(p.get("wpn", ""))
-		if remote_wpn == "" and has_bow_remote:
-			remote_wpn = "bow"
-		remote.set_weapon_kind(remote_wpn)
+		# eqWeapon — точный item id ("wood_bow", "apprentice_tome"...).
+		# Фалбэк на wpn (kind) если сервер старый, затем на hb.
+		var remote_item := String(p.get("eqWeapon", ""))
+		if remote_item != "":
+			remote.set_weapon_item(remote_item)
+		else:
+			var remote_wpn := String(p.get("wpn", ""))
+			if remote_wpn == "" and has_bow_remote:
+				remote_wpn = "bow"
+			remote.set_weapon_kind(remote_wpn)
 		var hp_max_remote: float = float(p.get("hpMax", 100))
 		remote.set_hp(hp, hp_max_remote)
 
@@ -1396,11 +1401,8 @@ func _apply_me(body: Dictionary) -> void:
 		skillbar.update_skill_cd(body.get("skillCd", {}), int(body.get("t", 0)))
 	var eq_dict: Dictionary = body.get("eq", {})
 	var _wname := String(eq_dict.get("weapon", ""))
-	var _kind := ""
-	if _wname.contains("bow"): _kind = "bow"
-	elif _wname.contains("tome"): _kind = "tome"
-	elif _wname.contains("sword"): _kind = "sword"
-	me.set_weapon_kind(_kind)
+	# Свой персонаж — передаём точный item id (книга/лук с индивидуальным оверлеем).
+	me.set_weapon_item(_wname)
 	# Paper-doll слои: каждый слот → wear-atlas (если существует в assets).
 	const WEAR_SLOT_MAP := {
 		"boots":  "boots",

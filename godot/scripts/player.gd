@@ -220,14 +220,33 @@ func remote_update(new_pos: Vector2) -> void:
 
 var _has_bow := false
 var _weapon_kind: String = ""  # "bow" | "tome" | "sword" | "" — для overlay
+var _weapon_item: String = ""  # конкретный id предмета (для индивидуальных текстур)
 
+# Legacy API — только kind (без item id). Используем как fallback.
 func set_has_bow(on: bool) -> void:
-	# Обратно-совместимо: вызывают места, где только bow-флаг.
 	set_weapon_kind("bow" if on else "")
 
 func set_weapon_kind(kind: String) -> void:
-	if _weapon_kind == kind: return
+	_apply_weapon(kind, "")
+
+# Предпочтительный путь: передаём точный item id из OP_POSITIONS.eqWeapon.
+# Это нужно чтобы у удалённого мага «Мистическая книга» выглядела иначе
+# чем «Книга подмастерья», когда появятся отдельные текстуры.
+func set_weapon_item(item_id: String) -> void:
+	var kind := ""
+	if item_id.find("bow") >= 0:
+		kind = "bow"
+	elif item_id.find("tome") >= 0:
+		kind = "tome"
+	elif item_id.find("sword") >= 0:
+		kind = "sword"
+	_apply_weapon(kind, item_id)
+
+func _apply_weapon(kind: String, item_id: String) -> void:
+	if _weapon_kind == kind and _weapon_item == item_id:
+		return
 	_weapon_kind = kind
+	_weapon_item = item_id
 	_has_bow = (kind == "bow")
 	if bow_string: bow_string.visible = false
 	if bow_arrow: bow_arrow.visible = false
@@ -238,12 +257,28 @@ func set_weapon_kind(kind: String) -> void:
 	if bow_sprite:
 		bow_sprite.visible = (kind == "bow")
 		if kind == "bow":
+			bow_sprite.texture = _weapon_texture("bow", item_id, "res://assets/sprites/characters/bow_hand.png")
 			_update_bow_position()
-	_update_book_position()
 	if book_sprite:
 		book_sprite.visible = (kind == "tome")
 		if kind == "tome":
+			book_sprite.texture = _weapon_texture("tome", item_id, "res://assets/sprites/characters/book_hand.png")
 			_update_book_position()
+
+# Ищет индивидуальный спрайт по имени предмета, иначе — общий.
+# Пример: "wood_bow" → `bow_wood_hand.png`; "apprentice_tome" → `book_apprentice_hand.png`.
+func _weapon_texture(kind: String, item_id: String, fallback: String) -> Texture2D:
+	if item_id != "":
+		var short := item_id
+		if kind == "bow" and short.ends_with("_bow"):
+			short = short.substr(0, short.length() - 4)
+		elif kind == "tome" and short.ends_with("_tome"):
+			short = short.substr(0, short.length() - 5)
+		var prefix := "book" if kind == "tome" else kind  # tome → book_<name>_hand.png
+		var path := "res://assets/sprites/characters/%s_%s_hand.png" % [prefix, short]
+		if ResourceLoader.exists(path):
+			return load(path)
+	return load(fallback)
 
 func _update_bow_position() -> void:
 	if bow_sprite == null or not bow_sprite.visible:
