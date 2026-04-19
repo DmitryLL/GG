@@ -326,29 +326,85 @@ func _update_bow_position() -> void:
 	if bow_sprite == null or not bow_sprite.visible:
 		return
 	bow_sprite.centered = true
+	var shot_p: float = _bow_shot_progress()
+	var draw_pull: float = 0.0
+	var release_push: float = 0.0
+	if shot_p > 0.0:
+		if shot_p < BOW_DRAW_PHASE:
+			draw_pull = shot_p / BOW_DRAW_PHASE
+		elif shot_p < BOW_RELEASE_PHASE:
+			release_push = (shot_p - BOW_DRAW_PHASE) / (BOW_RELEASE_PHASE - BOW_DRAW_PHASE)
 	# Лук держится вертикально в руке (как долгий лук). Персонаж поворачивается —
 	# лук остаётся вертикальным сбоку от него.
 	match facing:
 		Dir.DOWN:
-			bow_sprite.position = Vector2(8, -18)
-			bow_sprite.rotation = 0
+			bow_sprite.position = Vector2(8 - draw_pull * 2.0 + release_push, -18 + draw_pull)
+			bow_sprite.rotation = -0.12 * draw_pull + 0.18 * release_push
 			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
 		Dir.UP:
-			bow_sprite.position = Vector2(-8, -20)
-			bow_sprite.rotation = 0
+			bow_sprite.position = Vector2(-8 + draw_pull * 2.0 - release_push, -20 - draw_pull)
+			bow_sprite.rotation = 0.12 * draw_pull - 0.18 * release_push
 			bow_sprite.flip_h = true
 			bow_sprite.z_index = -1
 		Dir.LEFT:
-			bow_sprite.position = Vector2(-6, -20)
-			bow_sprite.rotation = 0
+			bow_sprite.position = Vector2(-6 - draw_pull * 2.0 + release_push, -20)
+			bow_sprite.rotation = -0.18 * draw_pull + 0.22 * release_push
 			bow_sprite.flip_h = true
 			bow_sprite.z_index = 1
 		Dir.RIGHT:
-			bow_sprite.position = Vector2(6, -20)
-			bow_sprite.rotation = 0
+			bow_sprite.position = Vector2(6 + draw_pull * 2.0 - release_push, -20)
+			bow_sprite.rotation = 0.18 * draw_pull - 0.22 * release_push
 			bow_sprite.flip_h = false
 			bow_sprite.z_index = 1
+	_update_bow_fx(shot_p, draw_pull, release_push)
+
+func _bow_shot_progress() -> float:
+	if _bow_shot_end_ms <= 0:
+		return 0.0
+	var remain: int = _bow_shot_end_ms - Session.server_now_ms()
+	if remain <= 0:
+		return 0.0
+	return clampf(1.0 - float(remain) / (SHOOT_DURATION * 1000.0), 0.0, 1.0)
+
+func _update_bow_fx(shot_p: float, draw_pull: float, release_push: float) -> void:
+	if bow_string == null or bow_arrow == null:
+		return
+	if shot_p <= 0.0 or bow_sprite == null or not bow_sprite.visible:
+		bow_string.visible = false
+		bow_arrow.visible = false
+		return
+	bow_string.visible = true
+	var pull: float = lerpf(0.0, 5.0, draw_pull) * (1.0 - release_push)
+	match facing:
+		Dir.DOWN:
+			bow_string.position = bow_sprite.position
+			bow_string.points = PackedVector2Array([Vector2(0, -12), Vector2(-pull, 0), Vector2(0, 12)])
+			bow_arrow.visible = shot_p < BOW_RELEASE_PHASE
+			bow_arrow.position = bow_sprite.position + Vector2(2, 0)
+			bow_arrow.rotation = PI * 0.5
+			bow_arrow.points = PackedVector2Array([Vector2(0, -8 - pull * 0.25), Vector2(0, 9)])
+		Dir.UP:
+			bow_string.position = bow_sprite.position
+			bow_string.points = PackedVector2Array([Vector2(0, -12), Vector2(pull, 0), Vector2(0, 12)])
+			bow_arrow.visible = shot_p < BOW_RELEASE_PHASE
+			bow_arrow.position = bow_sprite.position + Vector2(-2, 0)
+			bow_arrow.rotation = -PI * 0.5
+			bow_arrow.points = PackedVector2Array([Vector2(0, -8 - pull * 0.25), Vector2(0, 9)])
+		Dir.LEFT:
+			bow_string.position = bow_sprite.position
+			bow_string.points = PackedVector2Array([Vector2(-10, -10), Vector2(-10 - pull, 0), Vector2(-10, 10)])
+			bow_arrow.visible = shot_p < BOW_RELEASE_PHASE
+			bow_arrow.position = bow_sprite.position + Vector2(-4 - pull * 0.3, 0)
+			bow_arrow.rotation = PI
+			bow_arrow.points = PackedVector2Array([Vector2(-9, 0), Vector2(9, 0)])
+		Dir.RIGHT:
+			bow_string.position = bow_sprite.position
+			bow_string.points = PackedVector2Array([Vector2(10, -10), Vector2(10 + pull, 0), Vector2(10, 10)])
+			bow_arrow.visible = shot_p < BOW_RELEASE_PHASE
+			bow_arrow.position = bow_sprite.position + Vector2(4 + pull * 0.3, 0)
+			bow_arrow.rotation = 0.0
+			bow_arrow.points = PackedVector2Array([Vector2(-9, 0), Vector2(9, 0)])
 
 func _update_book_position() -> void:
 	if book_sprite == null or not book_sprite.visible:
@@ -382,6 +438,8 @@ var _roll_end_ms: int = 0
 const BOW_SHOT_DURATION := 0.55
 const ROLL_DURATION := 0.4
 const ROLL_FRAMES := 6
+const BOW_DRAW_PHASE := 0.45
+const BOW_RELEASE_PHASE := 0.72
 
 func play_punch() -> void:
 	# Идемпотентно: уже играется — не перезапускаем. Это нужно, чтобы
@@ -576,10 +634,17 @@ func _animate(delta: float) -> void:
 		var frame_in_row: int = clampi(int(progress * SHOOT_HFRAMES), 0, SHOOT_HFRAMES - 1)
 		sprite.frame = facing * SHOOT_HFRAMES + frame_in_row
 		sprite.offset = Vector2(0, -24)
+		if bow_sprite and bow_sprite.visible:
+			bow_sprite.scale = Vector2(0.6, 0.6)
+			_update_bow_position()
 		_sync_layers()
 		return
 	elif _bow_shot_end_ms > 0:
 		_bow_shot_end_ms = 0
+		if bow_string:
+			bow_string.visible = false
+		if bow_arrow:
+			bow_arrow.visible = false
 		_restore_walk_sprite()
 	# Punch: полная 6-кадровая анимация из char_base_punch.png.
 	if now_s < _punch_end_ms:
@@ -597,6 +662,11 @@ func _animate(delta: float) -> void:
 	if bow_sprite and bow_sprite.visible:
 		bow_sprite.scale = Vector2(0.6, 0.6)
 		_update_bow_position()
+	else:
+		if bow_string:
+			bow_string.visible = false
+		if bow_arrow:
+			bow_arrow.visible = false
 	_update_book_position()
 	if not moving:
 		if _current_anim_state != "idle":
