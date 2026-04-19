@@ -1,7 +1,6 @@
 # Скилл 1: Меткий выстрел — одиночная цель, x2 урон, чёрная стрела.
-const SkillDef = preload("res://scripts/skills/skill_def.gd")
 class_name SkillPreciseShot
-extends SkillDef
+extends "res://scripts/skills/skill_def.gd"
 
 func _init() -> void:
 	display_name = "Меткий выстрел"
