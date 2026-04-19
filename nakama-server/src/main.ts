@@ -1166,6 +1166,9 @@ function snapshotMobsDirty(state: WorldState) {
 }
 
 function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, presences: nkruntime.Presence[]): void {
+    const nowT = now();
+    const critActive = p.critBuffUntil && nowT < p.critBuffUntil;
+    const pierceActive = p.pierceBuffUntil && nowT < p.pierceBuffUntil;
     const payload = {
         hp: p.hp, hpMax: p.hpMax,
         level: p.level, xp: p.xp, xpNeed: XP_FOR_LEVEL(p.level),
@@ -1179,7 +1182,11 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         name: p.username,  // имя активного персонажа (не email аккаунта)
         physDmg: computePhysDmg(p),
         magDmg: computeMagDmg(p),
-        t: now(),
+        // Временные баффы в процентах — для статус-окна.
+        critChance: critActive ? Math.round((p.critBonus || 0) * 100) : 0,
+        critPower: 100,  // базовый крит = ×2 урон, то есть +100%
+        penetration: pierceActive ? Math.round((p.pierceBonus || 0) * 100) : 0,
+        t: nowT,
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
 }
