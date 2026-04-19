@@ -2048,14 +2048,14 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
 
     // --- broadcasts ---
-    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; wpn: string; effects: PlayerEffect[] }[] = [];
+    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; wpn: string; eqWeapon: string; effects: PlayerEffect[] }[] = [];
     const pKeys = Object.keys(state.players);
     for (let i = 0; i < pKeys.length; i++) {
         const p = state.players[pKeys[i]];
         if (!p.dirtyPos) continue;
         const weaponB = p.equipment.weapon || "";
         const hasRangedB = isRangedWeapon(weaponB);
-        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, lv: p.level, hb: hasRangedB, wpn: weaponKind(weaponB), effects: p.effects || [] });
+        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, lv: p.level, hb: hasRangedB, wpn: weaponKind(weaponB), eqWeapon: weaponB, effects: p.effects || [] });
         p.dirtyPos = false;
     }
     if (pUpdates.length > 0) {
