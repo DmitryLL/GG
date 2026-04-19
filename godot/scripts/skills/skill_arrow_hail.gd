@@ -1,10 +1,10 @@
-# Скилл 4: Град стрел — AoE-зона, 30% урона × 3 сек × 5 целей.
-# Старое имя: «Ливень стрел». Механика уже совпадает с дизайном —
-# переименование + исправленная иконка (дождь вместо стрелы).
-class_name SkillArrowRain
+# Град стрел — AoE-зона, 30% урона × 3 сек × 5 целей (GROUND).
+# Модификации: slow 5 целям (1п) / финальный оглушающий тик (2п).
+class_name SkillArrowHail
 extends SkillDef
 
 func _init() -> void:
+	id = "arrow_hail"
 	display_name = "Град стрел"
 	icon_path = "res://assets/sprites/skills/skill_2.png"
 	cooldown = 12.0

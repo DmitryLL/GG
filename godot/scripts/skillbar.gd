@@ -13,7 +13,9 @@ func _build_skills_list() -> void:
 		var d: SkillDef = defs[i]
 		SKILLS.append({
 			"name": d.display_name,
-			"key": str(i + 1),
+			"id": d.id,             # стабильный символьный id
+			"server_id": d.server_id,
+			"key": str(i + 1),      # хоткей = номер слота (1..5)
 			"icon": d.icon_path,
 			"cd": d.cooldown,
 			"targets_mob": d.targets_mob,
@@ -191,7 +193,7 @@ func update_skill_cd(skill_cd: Dictionary, server_t: int) -> void:
 	if server_t > 0:
 		server_offset_ms = server_t - Time.get_ticks_msec()
 	for i in range(SKILLS.size()):
-		var sid: int = i + 1  # server_id = slot index + 1
+		var sid: int = int(SKILLS[i]["server_id"])  # берём из SkillDef, не из слота
 		var end_at: int = int(skill_cd.get(str(sid), skill_cd.get(sid, 0)))
 		cd_ends_at[i] = end_at
 
