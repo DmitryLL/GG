@@ -384,7 +384,12 @@ const ROLL_DURATION := 0.4
 const ROLL_FRAMES := 6
 
 func play_punch() -> void:
-	_punch_end_ms = Session.server_now_ms() + int(PUNCH_DURATION * 1000.0)
+	# Идемпотентно: уже играется — не перезапускаем. Это нужно, чтобы
+	# server-echo через OP_PLAYER_ACTION (повторный вызов) не сбрасывал
+	# локально уже запущенную анимацию на середине.
+	var now_s := Session.server_now_ms()
+	if _punch_end_ms > now_s: return
+	_punch_end_ms = now_s + int(PUNCH_DURATION * 1000.0)
 	sprite.texture = load("res://assets/sprites/characters/char_base_punch.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
@@ -396,7 +401,9 @@ func play_bow_shot() -> void:
 	# 4 кадра × 4 направления. Направление «вверх» пока использует south
 	# до генерации специфического ракурса.
 	if not _has_bow: return
-	_bow_shot_end_ms = Session.server_now_ms() + int(SHOOT_DURATION * 1000.0)
+	var now_s := Session.server_now_ms()
+	if _bow_shot_end_ms > now_s: return
+	_bow_shot_end_ms = now_s + int(SHOOT_DURATION * 1000.0)
 	sprite.texture = load("res://assets/sprites/characters/char_base_shoot.png")
 	sprite.hframes = SHOOT_HFRAMES
 	sprite.vframes = 4
@@ -404,11 +411,31 @@ func play_bow_shot() -> void:
 
 func play_roll() -> void:
 	# Временно: перекат = короткий punch-sprite (пока нет отдельного rig).
-	_roll_end_ms = Session.server_now_ms() + int(ROLL_DURATION * 1000.0)
+	var now_s := Session.server_now_ms()
+	if _roll_end_ms > now_s: return
+	_roll_end_ms = now_s + int(ROLL_DURATION * 1000.0)
 	sprite.texture = load("res://assets/sprites/characters/char_base_punch.png")
 	sprite.hframes = PUNCH_HFRAMES
 	sprite.vframes = 4
 	_apply_layer_state("punch")
+
+# Универсальный диспатчер анимаций. Сервер шлёт OP_PLAYER_ACTION{kind},
+# клиент вызывает play_action(kind) на нужном Player — одна точка входа
+# для всех классов/скиллов. Добавить новую анимацию = новый case.
+func play_action(kind: String) -> void:
+	match kind:
+		"bow_shot":         play_bow_shot()
+		"punch":            play_punch()
+		"roll":             play_roll()
+		"bow_shot_upward":  play_bow_shot_upward()
+		"cast":             play_cast()
+		_: pass
+
+# Заглушка каста книжника: пока нет отдельной cast-рiг, reuse punch-анимация
+# (замах рукой с книгой — выглядит как жест). Перехватывается в Player,
+# поэтому когда Вова добавит нормальный cast, достаточно заменить только её.
+func play_cast() -> void:
+	play_punch()
 
 func play_bow_shot_upward() -> void:
 	if not _has_bow: return

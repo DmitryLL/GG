@@ -75,6 +75,9 @@ registerSkill(3, {
             });
             markMe(player);
         }
+        broadcastPlayerAction(dispatcher, player, "roll");
+        // Tween позиции и ghost-trail — отдельный визуальный FX; анимация roll
+        // больше не зовётся в клиенте on_fx, она идёт через OP_PLAYER_ACTION.
         dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
             kind: "dodge", sid: player.sessionId,
             fx: player.pos.x, fy: player.pos.y,

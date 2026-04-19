@@ -92,6 +92,7 @@ const OP_PARTY_UPDATE        := 43
 const OP_PARTY_LEAVE         := 44
 const OP_PLAYER_DEAD         := 45
 const OP_RESPAWN             := 46
+const OP_PLAYER_ACTION       := 47
 
 const ARROW_SCRIPT := preload("res://scripts/arrow.gd")
 
@@ -1202,6 +1203,8 @@ func _on_match_state(state: NakamaRTAPI.MatchData) -> void:
 			var dx := float(body.get("deathX", 0))
 			var dy := float(body.get("deathY", 0))
 			_show_death_screen(Vector2(dx, dy))
+		OP_PLAYER_ACTION:
+			_apply_player_action(body)
 		OP_SKILL_REJECT:
 			# Сервер отверг скилл — сбрасываем локальный кулдаун слота,
 			# в котором стоит этот скилл. Server.skill = server_id.
@@ -2127,24 +2130,12 @@ func _spawn_damage_label(pos: Vector2, dmg: int, is_crit: bool = false, is_poiso
 	tween.finished.connect(lbl.queue_free)
 
 func _spawn_arrow(body: Dictionary) -> void:
+	# OP_ARROW теперь — только визуал снаряда. Анимация стрелка идёт
+	# через OP_PLAYER_ACTION (источник истины единый для всех классов).
+	if bool(body.get("melee", false)):
+		return
 	var from := Vector2(float(body.get("fx", 0)), float(body.get("fy", 0)))
 	var to := Vector2(float(body.get("tx", 0)), float(body.get("ty", 0)))
-	var is_melee := bool(body.get("melee", false))
-	# Синхронизация анимаций remote-атакующего: свою уже играем локально
-	# при отправке, но для remote (sid != me) нужно триггернуть здесь.
-	var sid := String(body.get("sid", ""))
-	if sid != "" and sid != my_session_id:
-		var shooter: Player = remotes.get(sid)
-		if shooter != null and is_instance_valid(shooter):
-			shooter.face_toward(to)
-			if is_melee:
-				shooter.play_punch()
-			else:
-				shooter.play_bow_shot()
-	if is_melee:
-		return
-	# Стрела вылетает из лука (рука), а не от ног. Подъём 22px + небольшой
-	# сдвиг в сторону цели, чтобы визуально стартовала из руки.
 	var dir: Vector2 = (to - from).normalized()
 	from = Vector2(from.x + dir.x * 10.0, from.y - 22.0)
 	var style := "normal"
@@ -2154,6 +2145,24 @@ func _spawn_arrow(body: Dictionary) -> void:
 	var arrow: Arrow = ARROW_SCRIPT.new()
 	entities.add_child(arrow)
 	arrow.shoot(from, to, style)
+
+# Универсальный обработчик OP_PLAYER_ACTION. Server шлёт {sid, kind, tx?, ty?}
+# при любом действии игрока, которое имеет визуальную анимацию. Клиент
+# находит нужного Player'а (свой или remote) и зовёт play_action(kind).
+# Добавить новый класс/скилл = выбрать имя kind на сервере, клиент
+# автоматически его проиграет.
+func _apply_player_action(body: Dictionary) -> void:
+	var sid := String(body.get("sid", ""))
+	var kind := String(body.get("kind", ""))
+	if kind == "":
+		return
+	var p: Player = me if sid == my_session_id else remotes.get(sid)
+	if p == null or not is_instance_valid(p):
+		return
+	if body.has("tx") and body.has("ty"):
+		var tgt := Vector2(float(body.get("tx", 0)), float(body.get("ty", 0)))
+		p.face_toward(tgt)
+	p.play_action(kind)
 
 func _mm_me() -> Vector2:
 	return me.position if me != null else Vector2.ZERO
