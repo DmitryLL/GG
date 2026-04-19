@@ -383,6 +383,8 @@ func _make_effect_icon(eff: Dictionary) -> Control:
 			"haste":     fallback_sym = "»"
 			"regen":     fallback_sym = "+"
 			"shield":    fallback_sym = "▲"
+			"crit_buff": fallback_sym = "✧"
+			"pierce":    fallback_sym = "↯"
 		if fallback_sym != "":
 			var sym := Label.new()
 			sym.text = fallback_sym
