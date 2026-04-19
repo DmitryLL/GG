@@ -209,6 +209,9 @@ func update_target(target) -> void:
 		if target.has_method("stun_active") and target.stun_active():
 			var stun_ms: int = target.stun_remaining_ms()
 			target_effects.add_child(_make_target_effect_icon("stun", stun_ms))
+		if target.has_method("fire_active") and target.fire_active():
+			var fire_ms: int = target.fire_remaining_ms()
+			target_effects.add_child(_make_target_effect_icon("fire", fire_ms))
 	elif "display_name" in target:
 		# Player (PvP)
 		target_name.text = target.display_name
@@ -226,6 +229,8 @@ func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
 	var col := Color(0.95, 0.30, 0.28, 1.0)  # debuff red по умолчанию
 	if eff_type == "stun":
 		col = Color(1.0, 0.95, 0.4, 1.0)  # жёлтый для стана
+	elif eff_type == "fire":
+		col = Color(1.0, 0.5, 0.15, 1.0)  # оранжевый для огня
 	var wrap := Panel.new()
 	wrap.custom_minimum_size = Vector2(20, 26)
 	var sb := StyleBoxFlat.new()
@@ -234,17 +239,17 @@ func _make_target_effect_icon(eff_type: String, remain_ms: int) -> Control:
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(3)
 	wrap.add_theme_stylebox_override("panel", sb)
-	if eff_type == "stun":
-		# Для стана — текстовая звёздочка (иконки в атласе нет).
-		var star := Label.new()
-		star.text = "✦"
-		star.add_theme_font_size_override("font_size", 16)
-		star.add_theme_color_override("font_color", col)
-		star.position = Vector2(3, -3)
-		star.size = Vector2(16, 20)
-		star.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		star.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		wrap.add_child(star)
+	if eff_type == "stun" or eff_type == "fire":
+		# Текстовый символ (иконки в атласе нет для stun/fire).
+		var sym := Label.new()
+		sym.text = "✦" if eff_type == "stun" else "✶"
+		sym.add_theme_font_size_override("font_size", 16)
+		sym.add_theme_color_override("font_color", col)
+		sym.position = Vector2(3, -3)
+		sym.size = Vector2(16, 20)
+		sym.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sym.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		wrap.add_child(sym)
 	else:
 		var icon := TextureRect.new()
 		icon.texture = POISON_ICON if eff_type == "poison" else null
