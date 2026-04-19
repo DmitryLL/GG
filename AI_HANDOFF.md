@@ -110,6 +110,114 @@
   это плейсхолдер-fallback и используется всеми, у кого ещё нет
   индивидуальной текстуры.
 
+### Оружие и анимации по типу оружия
+
+Цель:
+- общий `walk/idle` остаётся у базового тела персонажа
+- атакующая анимация зависит от типа оружия
+- внешний вид конкретного оружия зависит от `item_id`
+
+Базовое разделение:
+- `weapon_family`:
+  - `bow`
+  - `tome`
+  - `sword`
+- `weapon_visual`:
+  - `wood_bow`
+  - `iron_bow`
+  - `golden_bow`
+  - `apprentice_tome`
+  - `mystic_tome`
+  - `arcane_tome`
+
+Правило:
+- `weapon_family` определяет действие персонажа
+- `weapon_visual` определяет внешний вид оружия
+
+Что должно быть общим:
+- `idle`
+- `walk`
+- базовые стойки тела
+
+Что должно зависеть от `weapon_family`:
+- `bow_attack`
+- `tome_cast`
+- `sword_slash`
+
+Что должно зависеть от `weapon_visual`:
+- форма оружия
+- размер оружия
+- положение в руке
+- overlay-кадры для `idle/walk/attack`
+
+Рекомендуемый контракт предмета:
+
+```gdscript
+"golden_bow": {
+  "slot": "weapon",
+  "weapon_family": "bow",
+  "weapon_visual": "golden_bow",
+  "action_profile": "bow_attack"
+}
+```
+
+```gdscript
+"mystic_tome": {
+  "slot": "weapon",
+  "weapon_family": "tome",
+  "weapon_visual": "mystic_tome",
+  "action_profile": "tome_cast"
+}
+```
+
+Рекомендуемая структура ассетов:
+
+```text
+godot/assets/sprites/weapons/bows/wood_bow/
+  idle.png
+  walk.png
+  attack.png
+
+godot/assets/sprites/weapons/bows/iron_bow/
+  idle.png
+  walk.png
+  attack.png
+
+godot/assets/sprites/weapons/bows/golden_bow/
+  idle.png
+  walk.png
+  attack.png
+
+godot/assets/sprites/weapons/tomes/apprentice_tome/
+  idle.png
+  walk.png
+  attack.png
+```
+
+Важно:
+- не делать полный новый sprite sheet персонажа под каждый предмет
+- делать общее тело + overlay оружия
+- тогда одна и та же логика атаки работает для всех луков и всех книг
+
+Что нужно от `dima`:
+- в логике персонажа разделить:
+  - `weapon_family`
+  - `weapon_visual`
+  - `action_profile`
+- атакующее действие выбирать по `weapon_family`, а не по конкретному item id
+- конкретную текстуру/атлас оружия выбирать по `weapon_visual`
+- игровые события привязать к кадру action profile:
+  - вылет стрелы
+  - выпуск фаербола
+  - момент удара мечом
+- для локальных и remote игроков использовать один и тот же контракт `eq.weapon`
+
+Что нельзя ломать:
+- общий `walk` тела должен оставаться общим
+- книга у мага должна оставаться в левой руке
+- маг кастует правой рукой
+- у лучника должен быть виден именно экипированный лук, а не абстрактный общий overlay
+
 ## Готовый промпт для Claude
 
 Скопируй этот текст в Claude, если нужно подключить его к проекту по нашей схеме:
