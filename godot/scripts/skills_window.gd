@@ -8,7 +8,12 @@
 class_name SkillsWindow
 extends CanvasLayer
 
-const SKILLS_DATA_PATH := "res://data/skills_archer.json"
+const SKILLS_DATA_BY_CLASS := {
+	"archer": "res://data/skills_archer.json",
+	"mage":   "res://data/skills_mage.json",
+}
+var _class_id: String = "archer"
+var _mods_rpc_prefix: String = "archer_mods"  # archer_mods_get / mage_mods_get
 
 var root_ctrl: Control
 var panel: PanelContainer
@@ -24,18 +29,45 @@ var _synced_once: bool = false       # сервер опрашиваем лен�
 
 func _ready() -> void:
 	layer = 19
+	# Класс берём из Session; позже сервер уточнит через OP_ME.
+	if Session and Session.selected_character != "":
+		_class_id = Session.selected_character
+	_mods_rpc_prefix = "%s_mods" % _class_id
 	_load_data()
 	_build_ui()
 
+# Вызывается game.gd при получении класса от сервера (например, в OP_ME).
+# Если класс изменился — перестраиваем окно и синкаемся заново.
+func set_class(class_id: String) -> void:
+	if class_id == "" or class_id == _class_id:
+		return
+	if not SKILLS_DATA_BY_CLASS.has(class_id):
+		push_warning("skills_window: unknown class %s" % class_id)
+		return
+	_class_id = class_id
+	_mods_rpc_prefix = "%s_mods" % _class_id
+	_synced_once = false
+	_selected_mods.clear()
+	_skill_cards.clear()
+	if list:
+		for ch in list.get_children():
+			ch.queue_free()
+	_load_data()
+	var skills: Array = _skills_data.get("skills", [])
+	for s in skills:
+		_skill_cards.append(_build_skill_card(s))
+	_refresh_points()
+
 func _load_data() -> void:
-	var f := FileAccess.open(SKILLS_DATA_PATH, FileAccess.READ)
+	var path: String = SKILLS_DATA_BY_CLASS.get(_class_id, SKILLS_DATA_BY_CLASS["archer"])
+	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
-		push_error("skills_archer.json not found at %s" % SKILLS_DATA_PATH)
+		push_error("skills data not found at %s" % path)
 		_skills_data = {"skills": [], "points_budget": 5}
 		return
 	var parsed: Variant = JSON.parse_string(f.get_as_text())
 	if typeof(parsed) != TYPE_DICTIONARY:
-		push_error("skills_archer.json is not a JSON object")
+		push_error("skills data not JSON object: %s" % path)
 		_skills_data = {"skills": [], "points_budget": 5}
 		return
 	_skills_data = parsed
@@ -352,7 +384,7 @@ func get_selected_mods() -> Dictionary:
 func _sync_from_server() -> void:
 	if Session == null or Session.client == null or Session.auth == null:
 		return
-	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "archer_mods_get", "")
+	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "%s_get" % _mods_rpc_prefix, "")
 	if rpc_res == null or rpc_res.is_exception():
 		push_warning("archer_mods_get failed: %s" % (rpc_res.get_exception().message if rpc_res else "null"))
 		return
@@ -375,7 +407,7 @@ func _push_to_server() -> void:
 	for k in _selected_mods.keys():
 		sel[str(k)] = _selected_mods[k]
 	var payload := JSON.stringify({ "selected": sel })
-	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "archer_mods_set", payload)
+	var rpc_res: NakamaAPI.ApiRpc = await Session.client.rpc_async(Session.auth, "%s_set" % _mods_rpc_prefix, payload)
 	if rpc_res == null or rpc_res.is_exception():
 		push_warning("archer_mods_set failed: %s" % (rpc_res.get_exception().message if rpc_res else "null"))
 		return

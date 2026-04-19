@@ -1321,6 +1321,12 @@ func _apply_me(body: Dictionary) -> void:
 	last_me = body
 	if body.has("t"):
 		Session.server_offset_ms = int(body["t"]) - Time.get_ticks_msec()
+	# Класс от сервера — источник истины (может отличаться от локального выбора).
+	var server_class: String = str(body.get("charClass", ""))
+	if server_class != "" and server_class != Session.selected_character:
+		Session.selected_character = server_class
+		if skills_win and skills_win.has_method("set_class"):
+			skills_win.set_class(server_class)
 	hud.update_me(body)
 	if nameplate:
 		nameplate.update_me(body)

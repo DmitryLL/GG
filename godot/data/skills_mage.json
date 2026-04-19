@@ -1,0 +1,108 @@
+{
+  "_comment": "Скиллы и модификации для класса Маг. Параллельно с skills_archer.json — skills_window.gd выбирает файл по классу игрока. Правила: одна мода на скилл, бюджет 5 поинтов.",
+
+  "class": "mage",
+  "points_budget": 5,
+  "skills": [
+    {
+      "id": 1,
+      "name": "Магическая стрела",
+      "description": "Одиночный магический снаряд. Урон: 150% от маг. урона.",
+      "icon": "res://assets/sprites/skills/skill_1.png",
+      "modifications": [
+        {
+          "id": "armor_pierce",
+          "cost": 1,
+          "name": "Пробив",
+          "description": "Игнорирует 30% магической защиты. Если цель имеет дебафф брони — +20% урона."
+        },
+        {
+          "id": "slow",
+          "cost": 2,
+          "name": "Замедление",
+          "description": "Цель замедлена на 25% на 1 сек."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Землетрясение",
+      "description": "AoE 2×2, до 5 врагов. Замедление на 10%.",
+      "icon": "res://assets/sprites/skills/skill_2.png",
+      "modifications": [
+        {
+          "id": "armor_debuff",
+          "cost": 1,
+          "name": "Дебафф брони",
+          "description": "Враги в зоне получают −15% физ. и маг. защиты."
+        },
+        {
+          "id": "freeze_legs",
+          "cost": 2,
+          "name": "Заморозка ног",
+          "description": "До 5 врагов не могут передвигаться 2 сек (атаковать могут)."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Прилив маны",
+      "description": "+35% маны мгновенно. На себя замедление 40% на 2 сек.",
+      "icon": "res://assets/sprites/skills/skill_3.png",
+      "modifications": [
+        {
+          "id": "no_slow",
+          "cost": 1,
+          "name": "Без замедления",
+          "description": "Убирает штрафное замедление после каста."
+        },
+        {
+          "id": "mana_hunger",
+          "cost": 2,
+          "name": "Магический голод",
+          "description": "+25% маны за 5 сек (5%/сек). Нельзя получать ману из др. источников. Урон прерывает восстановление на 1 сек."
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Блинк",
+      "description": "Телепорт на 5 тайлов.",
+      "icon": "res://assets/sprites/skills/skill_4.png",
+      "modifications": [
+        {
+          "id": "cd_reduce",
+          "cost": 1,
+          "name": "Короткий откат",
+          "description": "КД −30%."
+        },
+        {
+          "id": "blink_explode",
+          "cost": 2,
+          "name": "Взрывной блинк",
+          "description": "В точке прибытия волна 120% маг. урона, до 5 целей."
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Щит стихий",
+      "description": "Блокирует 15% урона 3 сек.",
+      "icon": "res://assets/sprites/skills/skill_5.png",
+      "modifications": [
+        {
+          "id": "reactive_slow",
+          "cost": 1,
+          "name": "Ответное замедление",
+          "description": "Первая атаковавшая цель замедлена на 35% на 2 сек."
+        },
+        {
+          "id": "shield_burst",
+          "cost": 2,
+          "name": "Взрывной щит",
+          "description": "После 3 ударов по щиту — взрыв 80% урона вокруг, до 5 целей."
+        }
+      ]
+    }
+  ]
+}
