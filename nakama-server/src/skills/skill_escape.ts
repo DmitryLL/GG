@@ -64,7 +64,15 @@ registerSkill(3, {
             markMe(player);
         }
         if (mod === "sprint") {
-            player.sprintUntil = t + 2000;
+            const SPRINT_MS = 2000;
+            player.sprintUntil = t + SPRINT_MS;
+            applyPlayerEffect(player, {
+                id: "sprint",
+                kind: "buff",
+                type: "sprint",
+                endAt: t + SPRINT_MS,
+            });
+            markMe(player);
         }
         dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
             kind: "dodge", sid: player.sessionId,
