@@ -559,8 +559,18 @@ function validCharacterName(name: string): boolean {
     if (typeof name !== "string") return false;
     const trimmed = name.trim();
     if (trimmed.length < CHAR_NAME_MIN || trimmed.length > CHAR_NAME_MAX) return false;
-    // Буквы/цифры/пробел/дефис, без спец-символов.
-    return /^[\p{L}0-9 _\-]+$/u.test(trimmed);
+    // Проверяем вручную по code points — Goja (Nakama runtime) не
+    // поддерживает \p{L} / флаг `u`, из-за чего \p{L}-regex падал
+    // на любом русском имени.
+    for (let i = 0; i < trimmed.length; i++) {
+        const c = trimmed.charCodeAt(i);
+        const latin = (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A);
+        const cyr = (c >= 0x0410 && c <= 0x044F) || c === 0x0401 || c === 0x0451;  // А-Я а-я Ёё
+        const digit = c >= 0x30 && c <= 0x39;
+        const puncto = c === 0x20 /* пробел */ || c === 0x2D /* - */ || c === 0x5F /* _ */;
+        if (!(latin || cyr || digit || puncto)) return false;
+    }
+    return true;
 }
 
 // ================================================================== //
