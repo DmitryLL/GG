@@ -27,6 +27,8 @@ var _flash_t := 0.0
 var _glow_t := 0.0
 var _highlight := false
 var _highlight_ring: Sprite2D
+var _stun_end_ms: int = 0
+var _stun_label: Label
 
 func setup(id: String, p_kind: String) -> void:
 	mob_id = id
@@ -173,6 +175,31 @@ func set_debuff(d, server_now_ms: int) -> void:
 	if server_now_ms > 0:
 		_server_offset_ms = server_now_ms - Time.get_ticks_msec()
 
+func apply_stun(duration_ms: int) -> void:
+	# Используем локальный таймер (не зависим от server_offset): сервер
+	# шлёт продолжительность, клиент сам меряет от текущего момента.
+	_stun_end_ms = Time.get_ticks_msec() + maxi(200, duration_ms)
+	_show_stun_icon()
+
+func _show_stun_icon() -> void:
+	if _stun_label == null:
+		_stun_label = Label.new()
+		_stun_label.text = "✦"
+		_stun_label.add_theme_font_size_override("font_size", 18)
+		_stun_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.4))
+		_stun_label.position = Vector2(-7, -42)
+		add_child(_stun_label)
+	_stun_label.visible = true
+
+func _hide_stun_icon() -> void:
+	if _stun_label:
+		_stun_label.visible = false
+
+func stun_active() -> bool:
+	if _stun_end_ms <= 0:
+		return false
+	return _stun_end_ms > Time.get_ticks_msec()
+
 func poison_active() -> bool:
 	if _poison_end_ms <= 0:
 		return false
@@ -195,6 +222,13 @@ func flash() -> void:
 func _process(delta: float) -> void:
 	_glow_t += delta
 	_update_debuff_visible()
+	# Снять stun-иконку когда оглушение истекло.
+	if _stun_end_ms > 0 and not stun_active():
+		_stun_end_ms = 0
+		_hide_stun_icon()
+	# Покачивание иконки стана для читаемости.
+	if _stun_label and _stun_label.visible:
+		_stun_label.position.y = -42 + 2.0 * sin(_glow_t * 6.0)
 	if glow and glow.visible:
 		var g_pulse: float = 0.5 + 0.4 * sin(_glow_t * 3.0)
 		glow.modulate.a = g_pulse

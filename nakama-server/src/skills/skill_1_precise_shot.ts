@@ -1,10 +1,15 @@
-// Скилл 1: Меткий выстрел — одиночный x2 урон.
+// Скилл 1: РДД-удар — одиночный x2 урон.
+// Модификации (см. godot/data/skills_archer.json):
+//   "stun" (1п) — после попадания враг оглушён на 1 сек.
+//   "fire" (2п) — поджог: пока не реализован.
 registerSkill(1, {
     requiresBow: true,
     cooldownMs: 5000,
     handler: function (ctx: SkillContext): void {
         const { player, body, t, state, dispatcher, baseDmg } = ctx;
         const dmg = baseDmg * 2;
+        const mod = player.archerMods ? player.archerMods["1"] : "";
+        const STUN_MS = 1000;
 
         // PvP: цель — другой игрок
         if (body.sid && body.sid !== player.sessionId) {
@@ -29,6 +34,8 @@ registerSkill(1, {
                 foe.hp = foe.hpMax; foe.lastTouchedByMob = {};
                 foe.dirtyPos = true; markMe(foe);
             }
+            // Стан мода пока применяется только к мобам (PvP-стан игроков —
+            // отдельная механика с прерыванием движения/каста).
             player.skillCd[1] = t + 5000;
             return;
         }
@@ -47,6 +54,12 @@ registerSkill(1, {
         dispatcher.broadcastMessage(OP_HIT_FLASH, JSON.stringify({
             mobId: mob.id, dmg: dmg, crit: true,
         }));
+        if (mob.hp > 0 && mod === "stun") {
+            mob.stunUntil = t + STUN_MS;
+            dispatcher.broadcastMessage(OP_SKILL_FX, JSON.stringify({
+                kind: "stun", mobId: mob.id, duration: STUN_MS,
+            }));
+        }
         if (mob.hp <= 0) killMob(mob, player, t);
         player.skillCd[1] = t + 5000;
     },
