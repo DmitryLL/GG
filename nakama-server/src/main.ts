@@ -149,6 +149,12 @@ const OP_OBJ_DEL       = 35; // admin: client→server {id}
 const OP_OBJS          = 36; // server→client: {objects: MapObject[], full: bool} — snapshot/delta
 const OP_OBJ_INTERACT  = 37; // client→server {id} — игрок кликнул на объект (сундук etc.)
 const OP_ZONE_SWITCH   = 38; // server→client {zone, matchId, x, y} — клиент переподключается
+const OP_PARTY_INVITE        = 39; // client→server {targetSid}
+const OP_PARTY_INVITE_NOTIFY = 40; // server→target {fromSid, fromName}
+const OP_PARTY_ACCEPT        = 41; // client→server {fromSid}
+const OP_PARTY_DECLINE       = 42; // client→server {fromSid}
+const OP_PARTY_UPDATE        = 43; // server→members {partyId, members:[{sid, name, level, hp, hpMax}]}
+const OP_PARTY_LEAVE         = 44; // client→server {} — выйти из группы
 
 const PLAYER_HP_BASE = BALANCE_DATA.player.hpBase;
 const PLAYER_ATTACK_DAMAGE = BALANCE_DATA.player.attackDamage;
@@ -197,6 +203,7 @@ interface MatchPlayer {
     critBonus?: number;             // доп вероятность крита (0..1)
     pierceBuffUntil?: number;       // Мода penetration: окно
     pierceBonus?: number;           // доп множитель урона (заглушка пока нет брони мобов)
+    partyId?: string;               // id группы, в которой состоит игрок
 }
 
 const PLAYER_SPEED = 100; // px/sec — должна совпадать с Godot Player.SPEED
@@ -287,6 +294,18 @@ interface MapObject {
                         // spawn: {mobType, radius, maxCount}
 }
 
+interface Party {
+    id: string;
+    leader: string;           // sessionId владельца
+    members: string[];        // sessionIds всех участников (включая leader)
+}
+
+interface PartyInvite {
+    fromSid: string;
+    partyId: string;
+    expires: number;  // ms timestamp
+}
+
 interface WorldState {
     players: { [sessionId: string]: MatchPlayer };
     mobs: { [mobId: string]: MatchMob };
@@ -296,6 +315,8 @@ interface WorldState {
     objects: { [id: string]: MapObject };           // порталы, сундуки и т.п.
     portalCooldowns: { [sessionId: string]: number }; // антидребезг телепорта (server-ms)
     zoneId: string;                                 // "village" | "forest" | "dungeon"
+    parties: { [partyId: string]: Party };          // активные группы
+    partyInvites: { [toSid: string]: PartyInvite }; // текущие приглашения (по получателю)
 }
 
 function currentTiles(state: WorldState): number[] {
@@ -1008,6 +1029,7 @@ function matchInit(_ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkrunt
     const state: WorldState = {
         players: {}, mobs: mobs, zones: [], tick: 0, tiles: tiles,
         objects: objects, portalCooldowns: {}, zoneId: zoneId,
+        parties: {}, partyInvites: {},
     };
     return { state: state, tickRate: TICK_RATE, label: MATCH_LABEL_PREFIX + zoneId };
 }
@@ -1120,11 +1142,16 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     return { state: state };
 }
 
-function matchLeave(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, _dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
+function matchLeave(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkruntime.Nakama, dispatcher: nkruntime.MatchDispatcher, _tick: number, state: WorldState, presences: nkruntime.Presence[]): { state: WorldState } | null {
     for (let i = 0; i < presences.length; i++) {
-        const p = state.players[presences[i].sessionId];
-        if (p) saveProgress(nk, p);
-        delete state.players[presences[i].sessionId];
+        const sid = presences[i].sessionId;
+        const p = state.players[sid];
+        if (p) {
+            if (p.partyId) leaveParty(state, dispatcher, p);
+            delete state.partyInvites[sid];
+            saveProgress(nk, p);
+        }
+        delete state.players[sid];
     }
     return { state: state };
 }
@@ -1192,6 +1219,89 @@ function broadcastMeTo(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer, pr
         t: nowT,
     };
     dispatcher.broadcastMessage(OP_ME, JSON.stringify(payload), presences);
+}
+
+// ─── Группы (party) ────────────────────────────────────────────────
+
+function newPartyId(): string {
+    return "p_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function partySnapshot(state: WorldState, party: Party): any[] {
+    const out: any[] = [];
+    for (const sid of party.members) {
+        const p = state.players[sid];
+        if (!p) continue;
+        out.push({
+            sid: p.sessionId,
+            uid: p.userId,
+            name: p.username,
+            level: p.level,
+            hp: p.hp,
+            hpMax: p.hpMax,
+        });
+    }
+    return out;
+}
+
+function broadcastPartyUpdate(state: WorldState, dispatcher: nkruntime.MatchDispatcher, party: Party): void {
+    const payload = JSON.stringify({
+        partyId: party.id,
+        leader: party.leader,
+        members: partySnapshot(state, party),
+    });
+    const presences: nkruntime.Presence[] = [];
+    for (const sid of party.members) {
+        const p = state.players[sid];
+        if (p) presences.push(p.presence);
+    }
+    if (presences.length > 0) {
+        dispatcher.broadcastMessage(OP_PARTY_UPDATE, payload, presences);
+    }
+}
+
+// Слать пустой «ты больше не в группе» одиночному игроку.
+function broadcastPartyEmpty(dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer): void {
+    dispatcher.broadcastMessage(OP_PARTY_UPDATE, JSON.stringify({
+        partyId: "", leader: "", members: [],
+    }), [p.presence]);
+}
+
+function leaveParty(state: WorldState, dispatcher: nkruntime.MatchDispatcher, p: MatchPlayer): void {
+    if (!p.partyId) return;
+    const party = state.parties[p.partyId];
+    const leavingId = p.partyId;
+    p.partyId = undefined;
+    if (!party) return;
+    const idx = party.members.indexOf(p.sessionId);
+    if (idx >= 0) party.members.splice(idx, 1);
+    // Если leader ушёл — передаём следующему; если <2 участников — группа распадается.
+    if (party.members.length < 2) {
+        for (const sid of party.members) {
+            const mp = state.players[sid];
+            if (mp) {
+                mp.partyId = undefined;
+                broadcastPartyEmpty(dispatcher, mp);
+            }
+        }
+        delete state.parties[leavingId];
+    } else {
+        if (party.leader === p.sessionId) party.leader = party.members[0];
+        broadcastPartyUpdate(state, dispatcher, party);
+    }
+    // Покинувшему тоже шлём пустое обновление.
+    broadcastPartyEmpty(dispatcher, p);
+}
+
+function createParty(state: WorldState, leader: MatchPlayer): Party {
+    const party: Party = {
+        id: newPartyId(),
+        leader: leader.sessionId,
+        members: [leader.sessionId],
+    };
+    state.parties[party.id] = party;
+    leader.partyId = party.id;
+    return party;
 }
 
 function applyPlayerEffect(p: MatchPlayer, eff: PlayerEffect): void {
@@ -1810,7 +1920,64 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
                 } catch (_e) {}
                 break;
             }
+            case OP_PARTY_INVITE: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { targetSid?: string };
+                    const targetSid = String(body.targetSid || "");
+                    if (!targetSid || targetSid === player.sessionId) break;
+                    const target = state.players[targetSid];
+                    if (!target) break;
+                    if (target.partyId && target.partyId === player.partyId) break; // уже в одной
+                    // Если у приглашающего нет группы — создаём.
+                    let myParty = player.partyId ? state.parties[player.partyId] : null;
+                    if (!myParty) myParty = createParty(state, player);
+                    state.partyInvites[targetSid] = {
+                        fromSid: player.sessionId,
+                        partyId: myParty.id,
+                        expires: t + 60_000,
+                    };
+                    dispatcher.broadcastMessage(OP_PARTY_INVITE_NOTIFY, JSON.stringify({
+                        fromSid: player.sessionId,
+                        fromName: player.username,
+                    }), [target.presence]);
+                } catch (_e) {}
+                break;
+            }
+            case OP_PARTY_ACCEPT: {
+                try {
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { fromSid?: string };
+                    const inv = state.partyInvites[player.sessionId];
+                    if (!inv || t >= inv.expires) { delete state.partyInvites[player.sessionId]; break; }
+                    if (body.fromSid && body.fromSid !== inv.fromSid) break;
+                    const party = state.parties[inv.partyId];
+                    if (!party) { delete state.partyInvites[player.sessionId]; break; }
+                    // Если принимающий уже в другой группе — выходим.
+                    if (player.partyId && player.partyId !== party.id) {
+                        leaveParty(state, dispatcher, player);
+                    }
+                    if (party.members.indexOf(player.sessionId) < 0) {
+                        party.members.push(player.sessionId);
+                    }
+                    player.partyId = party.id;
+                    delete state.partyInvites[player.sessionId];
+                    broadcastPartyUpdate(state, dispatcher, party);
+                } catch (_e) {}
+                break;
+            }
+            case OP_PARTY_DECLINE: {
+                delete state.partyInvites[player.sessionId];
+                break;
+            }
+            case OP_PARTY_LEAVE: {
+                leaveParty(state, dispatcher, player);
+                break;
+            }
         }
+    }
+
+    // --- expired party invites ---
+    for (const toSid of Object.keys(state.partyInvites)) {
+        if (t >= state.partyInvites[toSid].expires) delete state.partyInvites[toSid];
     }
 
     // --- active zones (arrow rain / град стрел) ---
