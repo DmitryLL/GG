@@ -163,6 +163,10 @@ func _ready() -> void:
 	butterflies.setup(world)
 	world.add_child(butterflies)
 
+	# Статуя возрождения — визуальный якорь точки player_spawn, возле
+	# которой появляются игроки после выбора «В городе» на экране смерти.
+	_spawn_respawn_statue(world.player_spawn())
+
 	me = PLAYER_SCRIPT.new()
 	me.setup(world, display, PLAYER_SCRIPT.variant_from(Session.auth.user_id))
 	me.position = world.player_spawn()
@@ -1815,6 +1819,68 @@ func _handle_skill_fx(body: Dictionary) -> void:
 			return
 
 var _rain_zones: Array = []  # [{node, square, center, half, end_server_ms, next_arrow_ms}]
+
+# Алтарь возрождения: пока без ассета, рисуем процедурно — подставка,
+# крест, пульсирующая аура. Точка совпадает с world.player_spawn(), куда
+# сервер телепортирует игроков по кнопке «В городе» на экране смерти.
+func _spawn_respawn_statue(pos: Vector2) -> void:
+	var root := Node2D.new()
+	root.position = pos
+	root.z_index = 0
+	world.add_child(root)
+
+	# Аура (полупрозрачный круг, мигающий).
+	var aura := ColorRect.new()
+	aura.color = Color(0.6, 0.85, 1.0, 0.16)
+	aura.size = Vector2(64, 64)
+	aura.position = Vector2(-32, -52)
+	aura.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var aura_sb := StyleBoxFlat.new()
+	aura_sb.bg_color = aura.color
+	aura_sb.set_corner_radius_all(32)
+	root.add_child(aura)
+	var tw_aura := create_tween()
+	tw_aura.set_loops()
+	tw_aura.tween_property(aura, "modulate:a", 0.4, 1.5).set_trans(Tween.TRANS_SINE)
+	tw_aura.tween_property(aura, "modulate:a", 1.0, 1.5).set_trans(Tween.TRANS_SINE)
+
+	# Подставка (тёмно-серый прямоугольник с каменной окантовкой).
+	var base := ColorRect.new()
+	base.color = Color(0.40, 0.36, 0.32)
+	base.size = Vector2(22, 8)
+	base.position = Vector2(-11, -6)
+	root.add_child(base)
+
+	# Столб статуи (светло-серый).
+	var pillar := ColorRect.new()
+	pillar.color = Color(0.68, 0.66, 0.62)
+	pillar.size = Vector2(10, 20)
+	pillar.position = Vector2(-5, -24)
+	root.add_child(pillar)
+
+	# Крест сверху (символ возрождения).
+	var cross_v := ColorRect.new()
+	cross_v.color = Color(0.92, 0.86, 0.55)
+	cross_v.size = Vector2(3, 14)
+	cross_v.position = Vector2(-1, -38)
+	root.add_child(cross_v)
+	var cross_h := ColorRect.new()
+	cross_h.color = Color(0.92, 0.86, 0.55)
+	cross_h.size = Vector2(9, 3)
+	cross_h.position = Vector2(-4, -34)
+	root.add_child(cross_h)
+
+	# Подпись.
+	var lbl := Label.new()
+	lbl.text = "Алтарь возрождения"
+	lbl.add_theme_font_size_override("font_size", 10)
+	lbl.add_theme_color_override("font_color", Color(0.98, 0.90, 0.70))
+	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	lbl.add_theme_constant_override("outline_size", 3)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.size = Vector2(140, 14)
+	lbl.position = Vector2(-70, -54)
+	root.add_child(lbl)
 
 func _spawn_rain_zone(pos: Vector2, half: float, duration_ms: int, start_server_t: int = 0) -> void:
 	# half — половина стороны квадрата.
