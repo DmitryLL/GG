@@ -397,6 +397,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Сундук (объект карты) — приоритет выше мобов/NPC.
 		var obj_hit := _object_at(world_pos)
 		if obj_hit != "":
+			# Новое намерение — отменить всё предыдущее, чтобы персонаж
+			# не «прыгал» обратно к прошлой цели/точке каста.
+			_cancel_queued_action()
+			attack_target = null; pvp_target = null
+			friendly_target = null; friendly_target_sid = ""
+			_set_mob_highlight(null)
 			var node: Node2D = _map_objects.get(obj_hit)
 			if node and node.position.distance_to(me.position) <= 60:
 				Session.socket.send_match_state_async(match_id, OP_OBJ_INTERACT,
@@ -407,7 +413,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		# NPC takes priority over mobs/move.
 		var npc := _npc_at(world_pos)
 		if not npc.is_empty():
+			_cancel_queued_action()
 			attack_target = null
+			pvp_target = null
+			friendly_target = null; friendly_target_sid = ""
 			var d_n: float = me.position.distance_to(Vector2(float(npc["x"]), float(npc["y"])))
 			if d_n <= 80.0:
 				shop.open(String(npc["id"]), npc.get("stock", []), last_me)
@@ -417,6 +426,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		var mob_hit := _mob_at(world_pos)
 		if mob_hit != null:
 			if mob_hit.alive:
+				# Если стоял в очереди ground-скилл (Град стрел) — клик по
+				# мобу отменяет его. Target-скиллы переключаются на новую
+				# цель (сохраняются намеренно).
+				if queued_skill >= 0:
+					var q_sk: Dictionary = skillbar.SKILLS[queued_skill]
+					if bool(q_sk.get("targets_ground", false)):
+						_cancel_queued_action()
 				attack_target = mob_hit
 				pvp_target = null
 				friendly_target = null
@@ -424,6 +440,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_mob_highlight(mob_hit)
 				_hide_marker()
 				return
+			_cancel_queued_action()
 			attack_target = null
 			pvp_target = null
 			friendly_target = null
@@ -451,6 +468,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			# позиции + показываем инфо/HP в nameplate. Для auto-chase-а
 			# при движении цели — в _process обновляем move_intent.
 			if clicked != null and clicked.is_friendly:
+				_cancel_queued_action()
 				friendly_target = clicked
 				friendly_target_sid = sid_hit
 				pvp_target = null
@@ -460,6 +478,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				_hide_marker()
 				_send_move_intent(clicked.position)
 				return
+			# Ground-скилл в очереди → отменяем. Target-скилл сохраняется
+			# на нового игрока (кастанётся при входе в радиус).
+			if queued_skill >= 0:
+				var q_sk2: Dictionary = skillbar.SKILLS[queued_skill]
+				if bool(q_sk2.get("targets_ground", false)):
+					_cancel_queued_action()
 			friendly_target = null
 			friendly_target_sid = ""
 			pvp_target = clicked
@@ -468,6 +492,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_set_mob_highlight(null)
 			_hide_marker()
 			return
+		# Чистый клик по земле — новое намерение двигаться. Отменяем всё:
+		# queued skill, цели, highlight.
+		_cancel_queued_action()
 		attack_target = null
 		pvp_target = null
 		friendly_target = null
@@ -2242,6 +2269,19 @@ func _on_admin_action(action: String, extra: Dictionary = {}) -> void:
 	# Если что-то дали/выдали — обновить список
 	if action.begins_with("give_") or action.begins_with("level_up"):
 		_on_admin_action("list_users", {})
+
+# Сбросить отложенный каст (queued_skill и ground-координаты) + режим
+# таргетинга. Зовётся при новом «движенческом» клике (земля / NPC /
+# сундук / союзник), чтобы персонаж не «прыгал» обратно к старой точке
+# каста. Для клика по живому мобу/враждебному игроку НЕ зовём — там
+# queued_skill намеренно переиспользуется на новую цель.
+func _cancel_queued_action() -> void:
+	queued_skill = -1
+	queued_ground_pos = Vector2.ZERO
+	queued_approach_pos = Vector2.ZERO
+	if targeting_skill >= 0:
+		targeting_skill = -1
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 
 func _on_skill_activated(index: int) -> void:
 	# Единая точка входа для всех скиллов. Диспетчеризует по SkillDef.kind():
