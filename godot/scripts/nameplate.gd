@@ -256,9 +256,13 @@ func update_target(target) -> void:
 				var rem: int = max(0, end_at - int(Time.get_unix_time_from_system() * 1000.0))
 				target_effects.add_child(_make_target_effect_icon("buff_" + btype, rem))
 	elif "display_name" in target:
-		# Player (PvP)
+		# Player: враг — красный, союзник — зелёный.
 		target_name.text = target.display_name
-		target_name.add_theme_color_override("font_color", Color(1.0, 0.4, 0.35))
+		var friendly: bool = false
+		if "is_friendly" in target:
+			friendly = target.is_friendly
+		target_name.add_theme_color_override("font_color",
+			Color(0.55, 0.95, 0.60) if friendly else Color(1.0, 0.4, 0.35))
 		target_hp_bar.max_value = target.hp_max
 		target_hp_bar.value = target.hp
 		target_hp_text.text = "%d / %d" % [int(target.hp), int(target.hp_max)]

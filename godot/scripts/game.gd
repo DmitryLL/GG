@@ -124,6 +124,10 @@ var last_sent_pos: Vector2 = Vector2.INF
 var attack_target: Mob = null
 var pvp_target: Player = null
 var pvp_target_sid: String = ""
+# Дружественная цель: клик по игроку своей фракции. Не атакуем, а
+# подходим к позиции и отображаем его инфо в nameplate.
+var friendly_target: Player = null
+var friendly_target_sid: String = ""
 # attack_ready_at_ms — абсолютное server-time (мс), когда следующий
 # авто-удар станет разрешён. Заменяет старый client-side counter.
 var attack_ready_at_ms: int = 0
@@ -415,11 +419,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			if mob_hit.alive:
 				attack_target = mob_hit
 				pvp_target = null
+				friendly_target = null
+				friendly_target_sid = ""
 				_set_mob_highlight(mob_hit)
 				_hide_marker()
 				return
 			attack_target = null
 			pvp_target = null
+			friendly_target = null
+			friendly_target_sid = ""
 			_set_mob_highlight(null)
 			var d_corpse: float = me.position.distance_to(mob_hit.position)
 			if d_corpse <= 60.0:
@@ -438,7 +446,23 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.reset_actions_mode()
 				_hide_marker()
 				return
-			pvp_target = remotes.get(sid_hit)
+			var clicked: Player = remotes.get(sid_hit)
+			# Дружественный клик (своя фракция): не атакуем. Подходим к
+			# позиции + показываем инфо/HP в nameplate. Для auto-chase-а
+			# при движении цели — в _process обновляем move_intent.
+			if clicked != null and clicked.is_friendly:
+				friendly_target = clicked
+				friendly_target_sid = sid_hit
+				pvp_target = null
+				pvp_target_sid = ""
+				attack_target = null
+				_set_mob_highlight(null)
+				_hide_marker()
+				_send_move_intent(clicked.position)
+				return
+			friendly_target = null
+			friendly_target_sid = ""
+			pvp_target = clicked
 			pvp_target_sid = sid_hit
 			attack_target = null
 			_set_mob_highlight(null)
@@ -446,6 +470,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		attack_target = null
 		pvp_target = null
+		friendly_target = null
+		friendly_target_sid = ""
 		_set_mob_highlight(null)
 		# Снап к центру клетки: персонаж всегда встаёт в центр тайла (A*-сетка),
 		# поэтому маркер должен быть там же — иначе «кликнул сюда, а пришёл туда».
@@ -471,6 +497,22 @@ func _process(delta: float) -> void:
 			var cam_speed: float = 600.0 * editor_camera.zoom.x
 			editor_camera.position += dir.normalized() * cam_speed * delta
 		_send_editor_cursor()
+
+	# Friendly follow — подходим к дружественному игроку и стоим рядом
+	# (в пределах 1 тайла). Цель может двигаться — обновляем move_intent.
+	if friendly_target != null:
+		if not is_instance_valid(friendly_target):
+			friendly_target = null; friendly_target_sid = ""
+		else:
+			var d_f: float = me.position.distance_to(friendly_target.position)
+			if d_f > 36.0:
+				_send_move_intent(friendly_target.position)
+			else:
+				# Встали рядом — остановиться и смотреть на союзника.
+				if me.has_target:
+					_send_stop_move()
+					me.has_target = false
+				me.face_toward(friendly_target.position)
 
 	# PvP auto-pursuit — атаковать другого игрока (включая queued skill)
 	if pvp_target != null:
@@ -596,6 +638,8 @@ func _process(delta: float) -> void:
 			nameplate.update_target(attack_target)
 		elif pvp_target != null:
 			nameplate.update_target(pvp_target)
+		elif friendly_target != null:
+			nameplate.update_target(friendly_target)
 		else:
 			nameplate.update_target(null)
 
