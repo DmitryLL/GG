@@ -1303,6 +1303,25 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         const objList: MapObject[] = [];
         for (const ok of Object.keys(state.objects)) objList.push(state.objects[ok]);
         dispatcher.broadcastMessage(OP_OBJS, JSON.stringify({ objects: objList, full: true }), [p]);
+        // Снимок позиций всех игроков в матче — иначе стоящие на месте
+        // игроки не попадают в обычный broadcastPositions (он шлёт только
+        // dirtyPos) и остаются невидимыми для новичка пока не двинутся.
+        const pSnap: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; wpn: string; eqWeapon: string; faction: string; effects: PlayerEffect[] }[] = [];
+        for (const otherSid of Object.keys(state.players)) {
+            const op = state.players[otherSid];
+            const owpn = op.equipment.weapon || "";
+            pSnap.push({
+                sid: op.sessionId, uid: op.userId, n: op.username,
+                x: op.pos.x, y: op.pos.y,
+                hp: op.hp, hpMax: op.hpMax, lv: op.level,
+                hb: isRangedWeapon(owpn), wpn: weaponKind(owpn), eqWeapon: owpn,
+                faction: op.faction || "west",
+                effects: op.effects || [],
+            });
+        }
+        if (pSnap.length > 0) {
+            dispatcher.broadcastMessage(OP_POSITIONS, JSON.stringify({ players: pSnap, t: Date.now() }), [p]);
+        }
     }
     return { state: state };
 }
