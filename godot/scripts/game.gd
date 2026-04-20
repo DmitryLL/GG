@@ -1417,6 +1417,12 @@ func _apply_positions(body: Dictionary) -> void:
 		remote.set_weapon_item(remote_wpn)
 		var hp_max_remote: float = float(p.get("hpMax", 100))
 		remote.set_hp(hp, hp_max_remote)
+		# Поля для target-панели: уровень, класс, мана, эффекты.
+		remote.level = lv
+		remote.char_class = String(p.get("cls", remote.char_class))
+		remote.mana = int(p.get("mp", 0))
+		remote.mana_max = int(p.get("mpMax", 0))
+		remote.effects = p.get("effects", [])
 		# Фракция: союзник — зелёный, враг — красный.
 		var remote_fac := String(p.get("faction", ""))
 		if remote_fac != "":

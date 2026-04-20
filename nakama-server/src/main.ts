@@ -1306,14 +1306,17 @@ function matchJoin(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
         // Снимок позиций всех игроков в матче — иначе стоящие на месте
         // игроки не попадают в обычный broadcastPositions (он шлёт только
         // dirtyPos) и остаются невидимыми для новичка пока не двинутся.
-        const pSnap: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; wpn: string; eqWeapon: string; faction: string; effects: PlayerEffect[] }[] = [];
+        const pSnap: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; mp: number; mpMax: number; cls: string; lv: number; hb: boolean; wpn: string; eqWeapon: string; faction: string; effects: PlayerEffect[] }[] = [];
         for (const otherSid of Object.keys(state.players)) {
             const op = state.players[otherSid];
             const owpn = op.equipment.weapon || "";
             pSnap.push({
                 sid: op.sessionId, uid: op.userId, n: op.username,
                 x: op.pos.x, y: op.pos.y,
-                hp: op.hp, hpMax: op.hpMax, lv: op.level,
+                hp: op.hp, hpMax: op.hpMax,
+                mp: Math.floor(op.mana), mpMax: op.manaMax,
+                cls: op.charClass || "archer",
+                lv: op.level,
                 hb: isRangedWeapon(owpn), wpn: weaponKind(owpn), eqWeapon: owpn,
                 faction: op.faction || "west",
                 effects: op.effects || [],
@@ -2550,14 +2553,14 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
     }
 
     // --- broadcasts ---
-    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; lv: number; hb: boolean; wpn: string; eqWeapon: string; faction: string; effects: PlayerEffect[] }[] = [];
+    const pUpdates: { sid: string; uid: string; n: string; x: number; y: number; hp: number; hpMax: number; mp: number; mpMax: number; cls: string; lv: number; hb: boolean; wpn: string; eqWeapon: string; faction: string; effects: PlayerEffect[] }[] = [];
     const pKeys = Object.keys(state.players);
     for (let i = 0; i < pKeys.length; i++) {
         const p = state.players[pKeys[i]];
         if (!p.dirtyPos) continue;
         const weaponB = p.equipment.weapon || "";
         const hasRangedB = isRangedWeapon(weaponB);
-        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, lv: p.level, hb: hasRangedB, wpn: weaponKind(weaponB), eqWeapon: weaponB, faction: p.faction || "west", effects: p.effects || [] });
+        pUpdates.push({ sid: p.sessionId, uid: p.userId, n: p.username, x: p.pos.x, y: p.pos.y, hp: p.hp, hpMax: p.hpMax, mp: Math.floor(p.mana), mpMax: p.manaMax, cls: p.charClass || "archer", lv: p.level, hb: hasRangedB, wpn: weaponKind(weaponB), eqWeapon: weaponB, faction: p.faction || "west", effects: p.effects || [] });
         p.dirtyPos = false;
     }
     if (pUpdates.length > 0) {

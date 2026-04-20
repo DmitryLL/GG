@@ -15,8 +15,12 @@ var xp_bar: ProgressBar
 
 var target_panel: PanelContainer
 var target_name: Label
+var target_level: Label
+var target_class_icon: TextureRect
 var target_hp_bar: ProgressBar
 var target_hp_text: Label
+var target_mana_bar: ProgressBar
+var target_mana_text: Label
 
 var effects_row: HBoxContainer
 var target_effects: HBoxContainer
@@ -178,13 +182,31 @@ func _ready() -> void:
 	tv.add_theme_constant_override("separation", 4)
 	target_panel.add_child(tv)
 
+	# Верхняя строка — иконка класса + имя + уровень. Тот же паттерн,
+	# что у моей панели сверху (_build_status_bar).
+	var ttop := HBoxContainer.new()
+	ttop.add_theme_constant_override("separation", 4)
+	tv.add_child(ttop)
+
+	target_class_icon = TextureRect.new()
+	target_class_icon.custom_minimum_size = Vector2(24, 24)
+	target_class_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	target_class_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	ttop.add_child(target_class_icon)
+
 	target_name = Label.new()
 	target_name.text = ""
 	target_name.add_theme_font_size_override("font_size", 18)
 	target_name.add_theme_color_override("font_color", Color(0.95, 0.65, 0.65))
-	target_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tv.add_child(target_name)
+	target_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ttop.add_child(target_name)
 
+	target_level = Label.new()
+	target_level.text = ""
+	target_level.add_theme_color_override("font_color", Color(0.99, 0.89, 0.51, 1))
+	ttop.add_child(target_level)
+
+	# HP бар.
 	target_hp_bar = ProgressBar.new()
 	target_hp_bar.min_value = 0
 	target_hp_bar.max_value = 100
@@ -213,6 +235,35 @@ func _ready() -> void:
 	target_hp_bar.add_child(target_hp_text)
 	target_hp_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
+	# Мана бар (паттерн как у моей панели — синяя полоса с числом).
+	target_mana_bar = ProgressBar.new()
+	target_mana_bar.min_value = 0
+	target_mana_bar.max_value = 100
+	target_mana_bar.value = 100
+	target_mana_bar.show_percentage = false
+	target_mana_bar.custom_minimum_size = Vector2(220, 10)
+	var tmp_fg := StyleBoxFlat.new()
+	tmp_fg.bg_color = Color(0.35, 0.55, 0.95, 1.0)
+	tmp_fg.set_corner_radius_all(2)
+	target_mana_bar.add_theme_stylebox_override("fill", tmp_fg)
+	var tmp_bg := StyleBoxFlat.new()
+	tmp_bg.bg_color = Color(0.08, 0.10, 0.14, 1.0)
+	tmp_bg.set_corner_radius_all(2)
+	target_mana_bar.add_theme_stylebox_override("background", tmp_bg)
+	tv.add_child(target_mana_bar)
+
+	target_mana_text = Label.new()
+	target_mana_text.text = ""
+	target_mana_text.add_theme_font_size_override("font_size", 9)
+	target_mana_text.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95))
+	target_mana_text.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	target_mana_text.add_theme_constant_override("outline_size", 3)
+	target_mana_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	target_mana_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	target_mana_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	target_mana_bar.add_child(target_mana_text)
+	target_mana_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
 	target_effects = HBoxContainer.new()
 	target_effects.add_theme_constant_override("separation", 2)
 	target_effects.custom_minimum_size = Vector2(0, 26)
@@ -226,6 +277,15 @@ func update_target(target) -> void:
 		return
 	target_panel.visible = true
 	_clear_target_effects()
+	# У Player — своя разметка (класс/уровень/HP/MP/эффекты). Для мобов
+	# иконку класса и мана-бар прячем.
+	var is_player: bool = "display_name" in target
+	if target_class_icon:
+		target_class_icon.visible = is_player
+	if target_level:
+		target_level.visible = is_player
+	if target_mana_bar:
+		target_mana_bar.visible = is_player
 	# Mob или Player — у обоих есть kind или display_name
 	if "kind" in target:
 		# Mob
@@ -266,6 +326,27 @@ func update_target(target) -> void:
 		target_hp_bar.max_value = target.hp_max
 		target_hp_bar.value = target.hp
 		target_hp_text.text = "%d / %d" % [int(target.hp), int(target.hp_max)]
+		# Уровень.
+		if target_level and "level" in target:
+			target_level.text = "Ур. %d" % int(target.level)
+		# Иконка класса — тот же набор что у моей панели.
+		if target_class_icon and "char_class" in target:
+			var cls_path := "res://assets/sprites/skills/class_archer.png"
+			if target.char_class == "mage":
+				cls_path = "res://assets/sprites/skills/class_mage.png"
+			if ResourceLoader.exists(cls_path):
+				target_class_icon.texture = load(cls_path)
+		# Мана-бар.
+		if target_mana_bar and "mana" in target:
+			var mp_max: int = int(target.mana_max)
+			target_mana_bar.max_value = float(max(1, mp_max))
+			target_mana_bar.value = float(int(target.mana))
+			if target_mana_text:
+				target_mana_text.text = "%d / %d" % [int(target.mana), mp_max]
+		# Эффекты (баффы/дебаффы) — тот же _make_effect_icon паттерн.
+		if "effects" in target:
+			for eff in target.effects:
+				target_effects.add_child(_make_effect_icon(eff))
 
 func _clear_target_effects() -> void:
 	if target_effects == null: return
