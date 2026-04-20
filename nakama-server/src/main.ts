@@ -1430,6 +1430,10 @@ function partySnapshot(state: WorldState, party: Party): any[] {
             level: p.level,
             hp: p.hp,
             hpMax: p.hpMax,
+            mp: Math.floor(p.mana),
+            mpMax: p.manaMax,
+            cls: p.charClass || "archer",
+            effects: p.effects || [],
         });
     }
     return out;

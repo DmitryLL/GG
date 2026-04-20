@@ -1,5 +1,7 @@
-# UI группы: модалка входящего приглашения + панель участников слева
-# под nameplate-статусом.
+# UI группы: модалка входящего приглашения + компактный список
+# участников слева под nameplate. Без фона — только строки с
+# иконкой класса, именем, уровнем, HP-bar, мана-bar и эффектами.
+# Себя в списке не показываем — видим себя в собственной панели.
 class_name PartyUI
 extends CanvasLayer
 
@@ -7,15 +9,21 @@ signal invite_accepted(from_sid: String)
 signal invite_declined(from_sid: String)
 signal party_leave_requested
 
+const ROW_BAR_WIDTH := 160
+
 var _root: Control
-# Панель участников (слева, под nameplate ≈ y=110).
-var _party_panel: PanelContainer
+# Панель участников (слева, под nameplate ≈ y=140).
+var _party_panel: Control
 var _party_list: VBoxContainer
 var _leave_btn: Button
 # Модалка приглашения.
 var _invite_modal: PanelContainer
 var _invite_label: Label
 var _invite_from_sid: String = ""
+
+# Ссылки на game для чтения live-данных (HP/мана/эффекты берём из
+# реального Player-ноды remotes[sid]/me, а не из snapshot-а).
+var game: Node = null
 
 func _ready() -> void:
 	layer = 17
@@ -27,24 +35,20 @@ func _ready() -> void:
 	_build_invite_modal()
 
 func _build_party_panel() -> void:
-	_party_panel = PanelContainer.new()
+	# Без фона и рамки — пустой Control как контейнер.
+	_party_panel = Control.new()
 	_party_panel.anchor_left = 0.0; _party_panel.anchor_top = 0.0
 	_party_panel.offset_left = 8
-	_party_panel.offset_top = 120  # под nameplate
-	_party_panel.offset_right = 248
+	_party_panel.offset_top = 140  # под nameplate
+	_party_panel.offset_right = 200
+	_party_panel.offset_bottom = 600
 	_party_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	_party_panel.visible = false
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.08, 0.10, 0.08, 0.95)
-	sb.border_color = Color(0.35, 0.65, 0.40, 1.0)
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(6)
-	sb.set_content_margin_all(8)
-	_party_panel.add_theme_stylebox_override("panel", sb)
 	_root.add_child(_party_panel)
 
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 4)
+	v.add_theme_constant_override("separation", 3)
+	v.anchor_right = 1.0; v.anchor_bottom = 1.0
 	_party_panel.add_child(v)
 
 	var header := HBoxContainer.new()
@@ -52,16 +56,19 @@ func _build_party_panel() -> void:
 	v.add_child(header)
 	var t := Label.new()
 	t.text = "Группа"
-	t.add_theme_font_size_override("font_size", 14)
+	t.add_theme_font_size_override("font_size", 12)
 	t.add_theme_color_override("font_color", Color(0.6, 1.0, 0.65))
+	t.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	t.add_theme_constant_override("outline_size", 3)
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(t)
 	_leave_btn = Button.new()
 	_leave_btn.text = "Выйти"
 	_leave_btn.focus_mode = Control.FOCUS_NONE
+	_leave_btn.flat = true
 	_leave_btn.add_theme_font_size_override("font_size", 10)
 	_leave_btn.add_theme_color_override("font_color", Color(0.95, 0.55, 0.45))
-	_leave_btn.custom_minimum_size = Vector2(52, 20)
+	_leave_btn.custom_minimum_size = Vector2(44, 18)
 	_leave_btn.pressed.connect(func(): party_leave_requested.emit())
 	header.add_child(_leave_btn)
 
@@ -124,6 +131,9 @@ func _build_invite_modal() -> void:
 
 # ─── Публичный API, вызываемый из game.gd при OP_PARTY_* ───
 
+func set_game(g: Node) -> void:
+	game = g
+
 func show_invite(from_sid: String, from_name: String) -> void:
 	_invite_from_sid = from_sid
 	_invite_label.text = "%s приглашает в группу" % from_name
@@ -133,54 +143,163 @@ func hide_invite() -> void:
 	_invite_modal.visible = false
 	_invite_from_sid = ""
 
-# members: Array of dicts {sid, name, level, hp, hpMax}. my_sid — чтобы
-# подсветить себя и не показывать «выйти» если мы одни.
+# members: Array of dicts {sid, name, level, hp, hpMax, mp, mpMax, cls, effects}.
+# my_sid — чтобы исключить себя из списка (я вижу себя в своей панели).
 func update_party(members: Array, my_sid: String) -> void:
 	for c in _party_list.get_children():
 		c.queue_free()
-	if members.is_empty():
+	# Фильтруем: показываем только других участников группы.
+	var others: Array = []
+	for m in members:
+		if str(m.get("sid", "")) != my_sid:
+			others.append(m)
+	if others.is_empty():
 		_party_panel.visible = false
 		return
 	_party_panel.visible = true
-	for m in members:
-		var row := _make_member_row(m, my_sid)
-		_party_list.add_child(row)
+	for m in others:
+		_party_list.add_child(_make_member_row(m))
 
-func _make_member_row(m: Dictionary, my_sid: String) -> Control:
+# Строим ряд компактно: сверху [class-icon] имя Ур.N, под ним HP-bar,
+# под ним мана-bar, под ней эффекты.
+func _make_member_row(m: Dictionary) -> Control:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 1)
+
+	# Live-данные из Player-ноды, если он в remotes — там HP/мана/эффекты
+	# обновляются каждый OP_POSITIONS. Snapshot из OP_PARTY_UPDATE — fallback.
+	var sid := str(m.get("sid", ""))
+	var live: Player = null
+	if game != null and "remotes" in game:
+		var rmt: Dictionary = game.remotes
+		if rmt.has(sid):
+			live = rmt[sid]
+
+	var hp: float = live.hp if live != null else float(m.get("hp", 0))
+	var hp_max: float = live.hp_max if live != null else float(m.get("hpMax", 1))
+	var mp: int = live.mana if live != null else int(m.get("mp", 0))
+	var mp_max: int = live.mana_max if live != null else int(m.get("mpMax", 1))
+	var cls: String = live.char_class if live != null else String(m.get("cls", "archer"))
+	var effects: Array = live.effects if live != null else Array(m.get("effects", []))
 
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 4)
 	v.add_child(top)
+
+	var class_ic := TextureRect.new()
+	var cls_path := "res://assets/sprites/skills/class_archer.png"
+	if cls == "mage":
+		cls_path = "res://assets/sprites/skills/class_mage.png"
+	if ResourceLoader.exists(cls_path):
+		class_ic.texture = load(cls_path)
+	class_ic.custom_minimum_size = Vector2(16, 16)
+	class_ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	class_ic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	top.add_child(class_ic)
+
 	var name_lbl := Label.new()
 	name_lbl.text = str(m.get("name", "?"))
-	name_lbl.add_theme_font_size_override("font_size", 12)
-	var mine := str(m.get("sid", "")) == my_sid
-	name_lbl.add_theme_color_override("font_color",
-		Color(1.0, 1.0, 0.6) if mine else Color(0.9, 0.95, 0.9))
+	name_lbl.add_theme_font_size_override("font_size", 11)
+	name_lbl.add_theme_color_override("font_color", Color(0.90, 0.95, 0.90))
+	name_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	name_lbl.add_theme_constant_override("outline_size", 3)
 	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(name_lbl)
+
 	var lvl_lbl := Label.new()
-	lvl_lbl.text = "Ур. %d" % int(m.get("level", 1))
+	lvl_lbl.text = "Ур.%d" % int(m.get("level", 1))
 	lvl_lbl.add_theme_font_size_override("font_size", 10)
 	lvl_lbl.add_theme_color_override("font_color", Color(0.99, 0.89, 0.51))
+	lvl_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	lvl_lbl.add_theme_constant_override("outline_size", 3)
 	top.add_child(lvl_lbl)
 
-	var hp_bar := ProgressBar.new()
-	hp_bar.min_value = 0
-	hp_bar.max_value = max(1, int(m.get("hpMax", 1)))
-	hp_bar.value = clamp(int(m.get("hp", 0)), 0, int(m.get("hpMax", 1)))
-	hp_bar.show_percentage = false
-	hp_bar.custom_minimum_size = Vector2(220, 8)
-	var fg := StyleBoxFlat.new()
-	fg.bg_color = Color(0.55, 0.85, 0.45, 1.0)
-	fg.set_corner_radius_all(2)
-	hp_bar.add_theme_stylebox_override("fill", fg)
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.10, 0.10, 0.10, 1.0)
-	bg.set_corner_radius_all(2)
-	hp_bar.add_theme_stylebox_override("background", bg)
-	v.add_child(hp_bar)
+	v.add_child(_build_stat_bar(
+		hp, max(1.0, hp_max),
+		Color(0.55, 0.85, 0.45, 1.0), Color(0.10, 0.10, 0.10, 1.0)
+	))
+	v.add_child(_build_stat_bar(
+		float(mp), float(max(1, mp_max)),
+		Color(0.35, 0.55, 0.95, 1.0), Color(0.08, 0.10, 0.14, 1.0),
+		6
+	))
+
+	var eff_row := HBoxContainer.new()
+	eff_row.add_theme_constant_override("separation", 1)
+	eff_row.custom_minimum_size = Vector2(0, 14)
+	for eff in effects:
+		eff_row.add_child(_make_small_effect_icon(eff))
+	v.add_child(eff_row)
 
 	return v
+
+func _build_stat_bar(value: float, maxv: float, fg: Color, bg: Color, height: int = 7) -> ProgressBar:
+	var bar := ProgressBar.new()
+	bar.min_value = 0
+	bar.max_value = maxv
+	bar.value = clamp(value, 0.0, maxv)
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(ROW_BAR_WIDTH, height)
+	var fg_sb := StyleBoxFlat.new()
+	fg_sb.bg_color = fg
+	fg_sb.set_corner_radius_all(2)
+	bar.add_theme_stylebox_override("fill", fg_sb)
+	var bg_sb := StyleBoxFlat.new()
+	bg_sb.bg_color = bg
+	bg_sb.set_corner_radius_all(2)
+	bar.add_theme_stylebox_override("background", bg_sb)
+	return bar
+
+# Маленькая иконка баф/дебаф для строки группы. Fallback-символ если
+# нет PNG (как в nameplate).
+func _make_small_effect_icon(eff: Dictionary) -> Control:
+	var kind := String(eff.get("kind", "buff"))
+	var eff_type := String(eff.get("type", ""))
+	var is_buff := kind == "buff"
+	var col: Color = Color(0.30, 0.85, 0.35, 1.0) if is_buff else Color(0.95, 0.30, 0.28, 1.0)
+
+	var wrap := Panel.new()
+	wrap.custom_minimum_size = Vector2(12, 14)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.06, 0.04, 0.85)
+	sb.border_color = col
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(2)
+	wrap.add_theme_stylebox_override("panel", sb)
+
+	var tex_path := "res://assets/sprites/ui/effect_%s.png" % eff_type
+	if ResourceLoader.exists(tex_path):
+		var icon := TextureRect.new()
+		icon.texture = load(tex_path)
+		icon.custom_minimum_size = Vector2(10, 10)
+		icon.position = Vector2(1, 1)
+		icon.size = Vector2(10, 10)
+		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		wrap.add_child(icon)
+	else:
+		var sym_text := ""
+		match eff_type:
+			"empowered": sym_text = "⚔"
+			"sprint":    sym_text = "»"
+			"haste":     sym_text = "»"
+			"regen":     sym_text = "+"
+			"shield":    sym_text = "▲"
+			"crit_buff": sym_text = "✧"
+			"pierce":    sym_text = "↯"
+			"poison":    sym_text = "☠"
+			"stun":      sym_text = "✦"
+			"fire":      sym_text = "✶"
+			"slow":      sym_text = "▼"
+		if sym_text != "":
+			var sym := Label.new()
+			sym.text = sym_text
+			sym.add_theme_font_size_override("font_size", 9)
+			sym.add_theme_color_override("font_color", col)
+			sym.anchor_right = 1.0; sym.anchor_bottom = 1.0
+			sym.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			sym.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			sym.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			wrap.add_child(sym)
+	return wrap
