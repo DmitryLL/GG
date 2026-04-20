@@ -430,9 +430,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Check for remote player click (PvP или дружественное действие).
 		var sid_hit: String = _player_at(world_pos)
 		if sid_hit != "":
-			# Режим «Действия с игроками» → приглашение в группу.
+			# Режим «Действия с игроками» → меню «ЛС / пригласить в группу».
 			if hud and hud.actions_mode:
-				_send_party_invite(sid_hit)
+				var target_player: Player = remotes.get(sid_hit)
+				var anchor: Vector2 = target_player.position if target_player != null else world_pos
+				_show_action_menu(sid_hit, anchor)
 				hud.reset_actions_mode()
 				_hide_marker()
 				return
@@ -1606,6 +1608,147 @@ func _handle_kicked() -> void:
 
 # Вышвырнуть игрока из игры в меню выбора персонажа (общий путь для
 # «кик с другого устройства» и ручного выхода по «×»).
+# Меню «Действия с игроком» — всплывает над выбранным remote-игроком
+# по клику в режиме hud.actions_mode. Две кнопки: ЛС / в группу.
+var _action_menu: CanvasLayer = null
+
+func _show_action_menu(target_sid: String, anchor_world: Vector2) -> void:
+	_close_action_menu()
+	_action_menu = CanvasLayer.new()
+	_action_menu.layer = 30
+	add_child(_action_menu)
+
+	var target_player: Player = remotes.get(target_sid)
+	var target_name := target_player.display_name if target_player != null else "игрок"
+
+	var panel := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.10, 0.08, 0.06, 0.98)
+	sb.border_color = Color(0.85, 0.65, 0.30, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	sb.set_content_margin_all(10)
+	panel.add_theme_stylebox_override("panel", sb)
+	# Положение: прикрепляем к экранной позиции цели через камеру.
+	var cam := get_viewport().get_camera_2d()
+	var screen_pos := anchor_world
+	if cam:
+		screen_pos = (anchor_world - cam.global_position) + get_viewport_rect().size * 0.5
+	panel.position = Vector2(screen_pos.x - 90, screen_pos.y - 100)
+	panel.custom_minimum_size = Vector2(180, 0)
+	_action_menu.add_child(panel)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 6)
+	panel.add_child(col)
+
+	var title := Label.new()
+	title.text = target_name
+	title.add_theme_font_size_override("font_size", 13)
+	title.add_theme_color_override("font_color", Color(1, 0.92, 0.65))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(title)
+
+	var dm_btn := Button.new()
+	dm_btn.text = "Написать в ЛС"
+	dm_btn.focus_mode = Control.FOCUS_NONE
+	dm_btn.custom_minimum_size = Vector2(0, 32)
+	dm_btn.pressed.connect(func():
+		_close_action_menu()
+		_show_dm_prompt(target_sid, target_name)
+	)
+	col.add_child(dm_btn)
+
+	var inv_btn := Button.new()
+	inv_btn.text = "Пригласить в группу"
+	inv_btn.focus_mode = Control.FOCUS_NONE
+	inv_btn.custom_minimum_size = Vector2(0, 32)
+	inv_btn.pressed.connect(func():
+		_close_action_menu()
+		_send_party_invite(target_sid)
+	)
+	col.add_child(inv_btn)
+
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Отмена"
+	cancel_btn.focus_mode = Control.FOCUS_NONE
+	cancel_btn.add_theme_color_override("font_color", Color(0.9, 0.7, 0.7))
+	cancel_btn.custom_minimum_size = Vector2(0, 28)
+	cancel_btn.pressed.connect(_close_action_menu)
+	col.add_child(cancel_btn)
+
+func _close_action_menu() -> void:
+	if _action_menu != null and is_instance_valid(_action_menu):
+		_action_menu.queue_free()
+	_action_menu = null
+
+# Окно ввода личного сообщения. Отправляет OP_CHAT_SEND с ch="dm", to=sid.
+# Сервер фильтрует получателей: только отправитель и адресат.
+func _show_dm_prompt(target_sid: String, target_name: String) -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 30
+	add_child(layer)
+
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.55)
+	bg.anchor_right = 1.0; bg.anchor_bottom = 1.0
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	layer.add_child(bg)
+
+	var card := PanelContainer.new()
+	card.anchor_left = 0.5; card.anchor_top = 0.5
+	card.anchor_right = 0.5; card.anchor_bottom = 0.5
+	card.offset_left = -220; card.offset_top = -80
+	card.offset_right = 220; card.offset_bottom = 80
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.10, 0.08, 0.06, 0.98)
+	sb.border_color = Color(0.55, 0.80, 1.0, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	sb.set_content_margin_all(14)
+	card.add_theme_stylebox_override("panel", sb)
+	layer.add_child(card)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 8)
+	card.add_child(col)
+
+	var title := Label.new()
+	title.text = "ЛС → " + target_name
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(0.70, 0.90, 1.0))
+	col.add_child(title)
+
+	var input := LineEdit.new()
+	input.placeholder_text = "Сообщение (до 140 символов)"
+	input.max_length = 140
+	col.add_child(input)
+	input.grab_focus()
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_child(row)
+
+	var send := Button.new()
+	send.text = "Отправить"
+	send.custom_minimum_size = Vector2(120, 30)
+	var send_fn := func():
+		var txt := input.text.strip_edges()
+		if txt != "" and match_id != "":
+			Session.socket.send_match_state_async(match_id, OP_CHAT_SEND,
+				JSON.stringify({"text": txt, "ch": "dm", "to": target_sid}))
+		layer.queue_free()
+	send.pressed.connect(send_fn)
+	input.text_submitted.connect(func(_t): send_fn.call())
+	row.add_child(send)
+
+	var cancel := Button.new()
+	cancel.text = "Отмена"
+	cancel.custom_minimum_size = Vector2(100, 30)
+	cancel.pressed.connect(func(): layer.queue_free())
+	row.add_child(cancel)
+
 func _leave_to_character_select() -> void:
 	if Session.socket and Session.socket.is_connected_to_host():
 		Session.socket.close()
