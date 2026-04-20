@@ -640,13 +640,8 @@ func _tick_rain_zones() -> void:
 
 func _on_logout() -> void:
 	# HUD «×» — выход из мира к выбору персонажа (аккаунт остаётся).
-	# Закрываем сокет, чтобы сервер корректно прокинул matchLeave и
-	# сохранил прогресс активного персонажа.
-	if Session.socket and Session.socket.is_connected_to_host():
-		Session.socket.close()
-	Session.socket = null
-	Session.selected_character = ""
-	auth_changed.emit()
+	# Закрываем сокет, чтобы сервер прокинул matchLeave и сохранил прогресс.
+	_leave_to_character_select()
 
 func _send_tile_update(c: int, r: int, id: int) -> void:
 	if match_id == "" or Session.socket == null:
@@ -1544,29 +1539,75 @@ func _on_presence(ev: NakamaRTAPI.MatchPresenceEvent) -> void:
 	if status_label:
 		status_label.text = "В мире · игроков: %d" % (remotes.size() + 1)
 
+var _kicked_shown: bool = false
+
 func _handle_kicked() -> void:
+	# Идемпотентно: если OP_LEAVE и WebSocket close прилетят оба —
+	# модалку не создаём дважды.
+	if _kicked_shown:
+		return
+	_kicked_shown = true
 	if status_label:
-		status_label.text = "Заход с другого устройства — соединение разорвано"
-	# Прячем игровой UI и блокируем дальнейший ввод
+		status_label.text = "Произведен вход с другого устройства"
+	# Прячем игровой UI.
 	if hud: hud.visible = false
 	if skillbar: skillbar.visible = false
 	if minimap: minimap.visible = false
-	# Показать оверлей
-	var overlay := ColorRect.new()
-	overlay.color = Color(0, 0, 0, 0.85)
-	overlay.anchor_right = 1.0
-	overlay.anchor_bottom = 1.0
-	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(overlay)
-	var lbl := Label.new()
-	lbl.text = "Зашёл с другого устройства\n\nЭта сессия отключена.\nОбнови страницу чтобы перезайти."
-	lbl.add_theme_font_size_override("font_size", 22)
-	lbl.add_theme_color_override("font_color", Color(1, 0.85, 0.85))
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.anchor_right = 1.0
-	lbl.anchor_bottom = 1.0
-	overlay.add_child(lbl)
+
+	var layer := CanvasLayer.new()
+	layer.layer = 100
+	add_child(layer)
+
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.75)
+	bg.anchor_right = 1.0
+	bg.anchor_bottom = 1.0
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	layer.add_child(bg)
+
+	var card := PanelContainer.new()
+	card.anchor_left = 0.5; card.anchor_top = 0.5
+	card.anchor_right = 0.5; card.anchor_bottom = 0.5
+	card.offset_left = -220; card.offset_top = -100
+	card.offset_right = 220; card.offset_bottom = 100
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.12, 0.09, 0.06, 0.98)
+	sb.border_color = Color(0.85, 0.30, 0.30, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(18)
+	card.add_theme_stylebox_override("panel", sb)
+	layer.add_child(card)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 14)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	card.add_child(col)
+
+	var title := Label.new()
+	title.text = "Произведен вход с другого устройства"
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(title)
+
+	var ok := Button.new()
+	ok.text = "ОК"
+	ok.focus_mode = Control.FOCUS_ALL
+	ok.custom_minimum_size = Vector2(140, 38)
+	ok.pressed.connect(_leave_to_character_select)
+	col.add_child(ok)
+	ok.grab_focus()
+
+# Вышвырнуть игрока из игры в меню выбора персонажа (общий путь для
+# «кик с другого устройства» и ручного выхода по «×»).
+func _leave_to_character_select() -> void:
+	if Session.socket and Session.socket.is_connected_to_host():
+		Session.socket.close()
+	Session.socket = null
+	Session.selected_character = ""
+	auth_changed.emit()
 
 func _player_at(world_pos: Vector2) -> String:
 	var best_sid := ""
