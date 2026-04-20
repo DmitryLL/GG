@@ -1518,6 +1518,9 @@ function applyPlayerEffect(p: MatchPlayer, eff: PlayerEffect): void {
         });
     }
     markMe(p);
+    // Эффекты шлются в OP_POSITIONS вместе с позицией игрока; чтобы
+    // другие клиенты увидели новый бафф, нужно пометить dirtyPos.
+    p.dirtyPos = true;
 }
 
 function removePlayerEffect(p: MatchPlayer, type: string): void {
@@ -1527,6 +1530,9 @@ function removePlayerEffect(p: MatchPlayer, type: string): void {
         if (p.effects[i].type !== type) next.push(p.effects[i]);
     }
     p.effects = next;
+    // Синхронизация target-панелей у remote-клиентов.
+    p.dirtyPos = true;
+    markMe(p);
 }
 
 function tickPlayerEffects(p: MatchPlayer, t: number): void {
@@ -1546,7 +1552,11 @@ function tickPlayerEffects(p: MatchPlayer, t: number): void {
             changed = true;
         }
     }
-    if (changed) markMe(p);
+    if (changed) {
+        markMe(p);
+        // Исчезновение баффа / тик яда должны отразиться и у remote-клиентов.
+        p.dirtyPos = true;
+    }
 }
 
 const MAX_LEVEL = 20;
