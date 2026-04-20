@@ -254,6 +254,7 @@ func _ready() -> void:
 
 	party_ui = PARTY_UI_SCRIPT.new()
 	add_child(party_ui)
+	party_ui.set_game(self)
 	party_ui.invite_accepted.connect(_on_invite_accepted)
 	party_ui.invite_declined.connect(_on_invite_declined)
 	party_ui.party_leave_requested.connect(_on_party_leave_request)
@@ -524,6 +525,12 @@ func _process(delta: float) -> void:
 			var cam_speed: float = 600.0 * editor_camera.zoom.x
 			editor_camera.position += dir.normalized() * cam_speed * delta
 		_send_editor_cursor()
+
+	# Party UI — данные HP/маны/эффектов живые (из remotes[sid]), но сам
+	# виджет пересобирается только на OP_PARTY_UPDATE. Лёгкий rebuild
+	# каждый тик для актуальных баров и иконок — O(members) ≤ 5.
+	if party_ui and party_members_cache != null and not party_members_cache.is_empty():
+		party_ui.update_party(party_members_cache, my_session_id)
 
 	# Friendly — просто держим цель для nameplate. Движение было отправлено
 	# один раз при клике (snapshot позиции). За союзником не следуем: если
