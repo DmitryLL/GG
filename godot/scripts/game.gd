@@ -1510,6 +1510,7 @@ func _apply_me(body: Dictionary) -> void:
 	me.set_hp(float(body.get("hp", 0)), float(body.get("hpMax", 100)))
 	if skillbar:
 		skillbar.update_skill_cd(body.get("skillCd", {}), int(body.get("t", 0)))
+		skillbar.update_mana(int(body.get("mana", 0)), int(body.get("manaMax", 0)))
 	var eq_dict: Dictionary = body.get("eq", {})
 	var _wname := String(eq_dict.get("weapon", ""))
 	var _kind := ""

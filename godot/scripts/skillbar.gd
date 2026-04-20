@@ -135,6 +135,15 @@ func _make_slot(i: int) -> Control:
 	btn.add_child(dim)
 	btn.set_meta("dim", dim)
 
+	# Синий оверлей «не хватает маны» — поверх иконки, под cd-лейблом.
+	var mana_overlay := ColorRect.new()
+	mana_overlay.color = Color(0.30, 0.55, 0.95, 0.40)
+	mana_overlay.anchor_right = 1.0; mana_overlay.anchor_bottom = 1.0
+	mana_overlay.visible = false
+	mana_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(mana_overlay)
+	btn.set_meta("mana_overlay", mana_overlay)
+
 	# Цифра cooldown — крупная по центру
 	var cd_label := Label.new()
 	cd_label.anchor_right = 1.0; cd_label.anchor_bottom = 1.0
@@ -206,6 +215,30 @@ func trigger_cooldown(index: int) -> void:
 	cd_ends_at[index] = server_now + int(float(SKILLS[index]["cd"]) * 1000.0)
 	cooldowns[index] = float(SKILLS[index]["cd"])
 
+var _cur_mana: int = 0
+var _max_mana: int = 100
+
+# Обновление текущей маны из OP_ME. Слоты со стоимостью больше _cur_mana
+# получают синий оверлей и disabled=true — клик не проходит. Серверная
+# проверка остаётся как fallback.
+func update_mana(cur: int, max_val: int) -> void:
+	_cur_mana = cur
+	if max_val > 0:
+		_max_mana = max_val
+	for i in range(SKILLS.size()):
+		var cost: int = int(SKILLS[i].get("mana_cost", 0))
+		var enough: bool = cost <= 0 or _cur_mana >= cost
+		_set_slot_mana(i, not enough)
+
+func _set_slot_mana(i: int, insufficient: bool) -> void:
+	if i < 0 or i >= slots.size(): return
+	var btn: Button = slots[i]
+	if btn == null: return
+	var overlay: ColorRect = btn.get_meta("mana_overlay")
+	if overlay:
+		overlay.visible = insufficient
+	btn.disabled = insufficient
+
 func update_skill_cd(skill_cd: Dictionary, server_t: int) -> void:
 	# Вызывается из game._apply_me при каждом OP_ME.
 	# skill_cd: {"1": server_ms_end, "2": ...} — server_id → absolute ms.
@@ -269,4 +302,11 @@ func _input(event: InputEvent) -> void:
 			KEY_4: idx = 3
 			KEY_5: idx = 4
 		if idx >= 0:
+			# Клавиша тоже блокируется, если маны недостаточно — клиент
+			# даёт короткий синий флэш как при клике по задизейбленной
+			# кнопке, серверный no_mana-reject не нужен.
+			var cost: int = int(SKILLS[idx].get("mana_cost", 0))
+			if cost > 0 and _cur_mana < cost:
+				flash_slot(idx, Color(0.4, 0.6, 1.0))
+				return
 			skill_activated.emit(idx)
