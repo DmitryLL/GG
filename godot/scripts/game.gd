@@ -525,21 +525,12 @@ func _process(delta: float) -> void:
 			editor_camera.position += dir.normalized() * cam_speed * delta
 		_send_editor_cursor()
 
-	# Friendly follow — подходим к дружественному игроку и стоим рядом
-	# (в пределах 1 тайла). Цель может двигаться — обновляем move_intent.
-	if friendly_target != null:
-		if not is_instance_valid(friendly_target):
-			friendly_target = null; friendly_target_sid = ""
-		else:
-			var d_f: float = me.position.distance_to(friendly_target.position)
-			if d_f > 36.0:
-				_send_move_intent(friendly_target.position)
-			else:
-				# Встали рядом — остановиться и смотреть на союзника.
-				if me.has_target:
-					_send_stop_move()
-					me.has_target = false
-				me.face_toward(friendly_target.position)
+	# Friendly — просто держим цель для nameplate. Движение было отправлено
+	# один раз при клике (snapshot позиции). За союзником не следуем: если
+	# он ушёл, у меня цель в nameplate остаётся пока я сам не кликну в другое
+	# место. Автоподгонка позиции нарушала бы ожидание «встать, где он был».
+	if friendly_target != null and not is_instance_valid(friendly_target):
+		friendly_target = null; friendly_target_sid = ""
 
 	# PvP auto-pursuit — атаковать другого игрока (включая queued skill)
 	if pvp_target != null:
