@@ -1,12 +1,12 @@
-; Engine configuration file for the GG Godot client.
+; Engine configuration file for the Aetherlands Godot client.
 ; Godot 4.x project file format.
 
 config_version=5
 
 [application]
 
-config/name="GG"
-config/description="2D top-down MMORPG client (Godot 4 + Nakama)"
+config/name="Aetherlands"
+config/description="Aetherlands — 2D top-down MMORPG client (Godot 4 + Nakama)"
 run/main_scene="res://scenes/core/Main.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"

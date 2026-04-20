@@ -20,6 +20,8 @@ var _mobile_form_active := false
 var _js_callback: JavaScriptObject = null
 
 func _ready() -> void:
+	_build_game_title()
+	_spawn_ether_particles()
 	_apply_card_style()
 	enter_btn.pressed.connect(func(): _do_login_action())
 	register_btn.pressed.connect(func(): _do_register_action())
@@ -30,6 +32,72 @@ func _ready() -> void:
 	hint.text = "E-mail и пароль (мин %d символов)" % MIN_PASSWORD_LEN
 	name_input.placeholder_text = "E-mail"
 	pass_input.secret = true
+
+# Большой титул «Aetherlands» — градиентный текст с золотистой обводкой,
+# плюс подзаголовок. Кладём отдельным Control-ом, чтобы не трогать Card.
+func _build_game_title() -> void:
+	var holder := Control.new()
+	holder.name = "GameTitle"
+	holder.anchor_left = 0.5; holder.anchor_top = 0.0
+	holder.anchor_right = 0.5; holder.anchor_bottom = 0.0
+	holder.offset_left = -260; holder.offset_top = 30
+	holder.offset_right = 260; holder.offset_bottom = 130
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(holder)
+
+	var game_title := Label.new()
+	game_title.text = "Aetherlands"
+	game_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	game_title.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	game_title.anchor_right = 1.0; game_title.anchor_bottom = 1.0
+	game_title.add_theme_font_size_override("font_size", 56)
+	game_title.add_theme_color_override("font_color", Color(1.0, 0.92, 0.68))
+	game_title.add_theme_color_override("font_outline_color", Color(0.08, 0.04, 0.15, 1.0))
+	game_title.add_theme_constant_override("outline_size", 8)
+	holder.add_child(game_title)
+
+	var subtitle := Label.new()
+	subtitle.text = "земли эфира"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.anchor_right = 1.0; subtitle.anchor_bottom = 1.0
+	subtitle.offset_top = 70
+	subtitle.add_theme_font_size_override("font_size", 16)
+	subtitle.add_theme_color_override("font_color", Color(0.72, 0.86, 1.0, 0.95))
+	subtitle.add_theme_color_override("font_outline_color", Color(0.05, 0.04, 0.12, 0.9))
+	subtitle.add_theme_constant_override("outline_size", 3)
+	holder.add_child(subtitle)
+
+# Лёгкий эфирный шум: 40 медленно плывущих точек поверх фона. Чистый
+# процедурный визуал, без новых ассетов — даёт ощущение тумана/частиц
+# пока Вова не подменит auth_bg.png на тематическую картинку.
+func _spawn_ether_particles() -> void:
+	var layer := Control.new()
+	layer.name = "EtherParticles"
+	layer.anchor_right = 1.0; layer.anchor_bottom = 1.0
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.z_index = -5  # под картой ввода, но над фоном
+	add_child(layer)
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	for i in range(40):
+		var dot := ColorRect.new()
+		var size: float = rng.randf_range(2.0, 6.0)
+		dot.size = Vector2(size, size)
+		dot.color = Color(0.55, 0.80, 1.0, rng.randf_range(0.25, 0.55))
+		var sx: float = rng.randf_range(0.0, 800.0)
+		var sy: float = rng.randf_range(0.0, 608.0)
+		dot.position = Vector2(sx, sy)
+		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.add_child(dot)
+		var tw := create_tween()
+		tw.set_loops()
+		var dur := rng.randf_range(3.5, 7.0)
+		tw.tween_property(dot, "position:y", sy - 80.0, dur).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(dot, "position:y", sy, dur).set_trans(Tween.TRANS_SINE)
+		var tw2 := create_tween()
+		tw2.set_loops()
+		tw2.tween_property(dot, "modulate:a", 0.15, dur * 0.6).set_trans(Tween.TRANS_SINE)
+		tw2.tween_property(dot, "modulate:a", 1.0, dur * 0.6).set_trans(Tween.TRANS_SINE)
 
 	var saved := Session.get_saved_email()
 	if saved != "":
