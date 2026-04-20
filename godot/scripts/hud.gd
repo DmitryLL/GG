@@ -85,9 +85,10 @@ func _ready() -> void:
 	stats_btn.pressed.connect(func(): stats_button_pressed.emit())
 	root.add_child(stats_btn)
 
-	# «Скиллы» — слева от параметров. Иконка — звезда-заглушка
-	# (позже заменим на настоящий арт из assets/sprites/ui/).
-	skills_btn = _make_icon_button(null, "★", Color(0.95, 0.90, 0.55), "Скиллы (K)")
+	# «Скиллы» — слева от параметров. Иконка — процедурная звезда
+	# (Polygon2D), пока Вова не добавит финальный спрайт.
+	skills_btn = _make_icon_button(null, "", Color(0.95, 0.90, 0.55), "Скиллы (K)")
+	_decorate_skills_button(skills_btn)
 	skills_btn.anchor_left = 1.0; skills_btn.anchor_right = 1.0
 	skills_btn.anchor_top = 1.0; skills_btn.anchor_bottom = 1.0
 	var skills_right: int = stats_right - BTN_SIZE - BTN_GAP
@@ -99,8 +100,9 @@ func _ready() -> void:
 	root.add_child(skills_btn)
 
 	# «Действия с игроками» — toggle-режим; по нажатию клики в мире
-	# становятся «дружественными» (пригласить в группу и т.п.).
-	actions_btn = _make_icon_button(null, "👥", Color(0.55, 0.95, 0.70), "Действия с игроками")
+	# становятся «дружественными» (пригласить в группу / ЛС).
+	actions_btn = _make_icon_button(null, "", Color(0.55, 0.95, 0.70), "Действия с игроками")
+	_decorate_actions_button(actions_btn)
 	actions_btn.anchor_left = 1.0; actions_btn.anchor_right = 1.0
 	actions_btn.anchor_top = 1.0; actions_btn.anchor_bottom = 1.0
 	var actions_right: int = skills_right - BTN_SIZE - BTN_GAP
@@ -147,6 +149,71 @@ func _refresh_actions_style() -> void:
 func reset_actions_mode() -> void:
 	actions_mode = false
 	_refresh_actions_style()
+
+# Пятиконечная звезда по центру кнопки «Скиллы» — процедурный Polygon2D,
+# чтобы не заводить PNG. Заменить на готовый спрайт, когда Вова сделает
+# `icon_skills.png` в `godot/assets/sprites/ui/`.
+func _decorate_skills_button(btn: Button) -> void:
+	var holder := Control.new()
+	holder.anchor_right = 1.0; holder.anchor_bottom = 1.0
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(holder)
+	var star := Polygon2D.new()
+	var cx := float(BTN_SIZE) * 0.5
+	var cy := float(BTN_SIZE) * 0.5
+	var rOut := 18.0
+	var rIn := 7.0
+	var pts := PackedVector2Array()
+	for i in range(10):
+		var r: float = rOut if (i % 2 == 0) else rIn
+		var a: float = -PI / 2.0 + float(i) * PI / 5.0
+		pts.append(Vector2(cx + cos(a) * r, cy + sin(a) * r))
+	star.polygon = pts
+	star.color = Color(0.98, 0.85, 0.35, 1.0)
+	# Мягкая обводка через второй polygon сверху чуть меньше.
+	var glow := Polygon2D.new()
+	var pts2 := PackedVector2Array()
+	for p in pts: pts2.append((p - Vector2(cx, cy)) * 1.12 + Vector2(cx, cy))
+	glow.polygon = pts2
+	glow.color = Color(0.60, 0.40, 0.10, 0.35)
+	holder.add_child(glow)
+	holder.add_child(star)
+
+# Две стилизованные фигуры (голова + тело) для кнопки «Действия».
+# Сигнализирует «взаимодействие с игроками». Тоже Polygon2D.
+func _decorate_actions_button(btn: Button) -> void:
+	var holder := Control.new()
+	holder.anchor_right = 1.0; holder.anchor_bottom = 1.0
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(holder)
+	var col := Color(0.60, 0.95, 0.70, 1.0)
+	var col_dim := Color(0.35, 0.75, 0.50, 1.0)
+	# Правая фигура.
+	_draw_person(holder, Vector2(34, 22), 7.0, col, 14.0, 14.0)
+	# Левая (чуть глубже, темнее — для плоского эффекта глубины).
+	_draw_person(holder, Vector2(18, 26), 6.5, col_dim, 13.0, 12.0)
+
+func _draw_person(holder: Control, center_head: Vector2, head_r: float, col: Color, body_w: float, body_h: float) -> void:
+	var head := Polygon2D.new()
+	var pts := PackedVector2Array()
+	for i in range(16):
+		var a: float = float(i) * TAU / 16.0
+		pts.append(center_head + Vector2(cos(a) * head_r, sin(a) * head_r))
+	head.polygon = pts
+	head.color = col
+	holder.add_child(head)
+	var body := Polygon2D.new()
+	# Трапеция плеч.
+	var bx: float = center_head.x
+	var by: float = center_head.y + head_r
+	body.polygon = PackedVector2Array([
+		Vector2(bx - body_w * 0.5 - 2.0, by + body_h),
+		Vector2(bx - body_w * 0.5, by + 2.0),
+		Vector2(bx + body_w * 0.5, by + 2.0),
+		Vector2(bx + body_w * 0.5 + 2.0, by + body_h),
+	])
+	body.color = col
+	holder.add_child(body)
 
 func _make_icon_button(icon_tex: Texture2D, fallback_text: String, tint: Color, tip: String) -> Button:
 	var b := Button.new()

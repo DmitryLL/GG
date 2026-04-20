@@ -56,17 +56,6 @@ func _build_game_title() -> void:
 	game_title.add_theme_constant_override("outline_size", 8)
 	holder.add_child(game_title)
 
-	var subtitle := Label.new()
-	subtitle.text = "земли эфира"
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.anchor_right = 1.0; subtitle.anchor_bottom = 1.0
-	subtitle.offset_top = 70
-	subtitle.add_theme_font_size_override("font_size", 16)
-	subtitle.add_theme_color_override("font_color", Color(0.72, 0.86, 1.0, 0.95))
-	subtitle.add_theme_color_override("font_outline_color", Color(0.05, 0.04, 0.12, 0.9))
-	subtitle.add_theme_constant_override("outline_size", 3)
-	holder.add_child(subtitle)
-
 # Лёгкий эфирный шум: 40 медленно плывущих точек поверх фона. Чистый
 # процедурный визуал, без новых ассетов — даёт ощущение тумана/частиц
 # пока Вова не подменит auth_bg.png на тематическую картинку.

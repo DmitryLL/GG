@@ -9,12 +9,15 @@ const COMPACT_KEEP := 7     # сколько сообщений показыва
 const HISTORY_MAX := 200    # сколько хранится в локальной истории для модала
 
 # Каналы: global — всем в матче; faction — только своей фракции;
-# party — только группе. Сервер фильтрует получателей по ch.
+# party — только группе; dm — только отправителю и адресату (сервер
+# решает по полю `to`). Канал dm из селектора не достигается — только
+# через меню «Действия с игроками» (см. _show_dm_prompt).
 const CHANNELS := ["global", "faction", "party"]
 const CHANNEL_LABEL := {
 	"global":  { "short": "Гл",  "full": "Общий",   "color": Color(0.97, 0.97, 0.97) },
 	"faction": { "short": "Фр",  "full": "Фракция", "color": Color(0.60, 0.85, 1.0) },
 	"party":   { "short": "Гр",  "full": "Группа",  "color": Color(0.70, 0.95, 0.60) },
+	"dm":      { "short": "ЛС",  "full": "Личное",  "color": Color(1.0, 0.80, 1.0) },
 }
 var current_channel: String = "global"
 

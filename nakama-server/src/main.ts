@@ -1838,17 +1838,20 @@ function matchLoop(_ctx: nkruntime.Context, _logger: nkruntime.Logger, nk: nkrun
             }
             case OP_CHAT_SEND: {
                 try {
-                    const body = JSON.parse(nk.binaryToString(msg.data)) as { text?: string; ch?: string };
+                    const body = JSON.parse(nk.binaryToString(msg.data)) as { text?: string; ch?: string; to?: string };
                     const text = String(body.text || "").slice(0, 140).trim();
                     if (text.length === 0) break;
-                    // Поддерживаемые каналы: "global" (default), "faction", "party".
-                    // Для неизвестных значений — global. Сервер решает набор
-                    // получателей: faction → те же фракции, party → члены
-                    // одной группы, global → все.
+                    // Поддерживаемые каналы: "global" (default), "faction",
+                    // "party", "dm". Для неизвестных значений — global.
+                    // dm требует поле `to` (sid получателя).
                     let ch = String(body.ch || "global");
-                    if (ch !== "global" && ch !== "faction" && ch !== "party") ch = "global";
+                    if (ch !== "global" && ch !== "faction" && ch !== "party" && ch !== "dm") ch = "global";
                     let targets: nkruntime.Presence[] | undefined = undefined;
-                    if (ch === "faction") {
+                    if (ch === "dm") {
+                        const toSid = String(body.to || "");
+                        const receiver = state.players[toSid];
+                        targets = receiver ? [receiver.presence, player.presence] : [player.presence];
+                    } else if (ch === "faction") {
                         targets = [];
                         for (const sk of Object.keys(state.players)) {
                             const o = state.players[sk];
