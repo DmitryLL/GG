@@ -15,7 +15,6 @@ var _root: Control
 # Панель участников (слева, под nameplate ≈ y=140).
 var _party_panel: Control
 var _party_list: VBoxContainer
-var _leave_btn: Button
 # Модалка приглашения.
 var _invite_modal: PanelContainer
 var _invite_label: Label
@@ -35,46 +34,25 @@ func _ready() -> void:
 	_build_invite_modal()
 
 func _build_party_panel() -> void:
-	# Без фона и рамки — пустой Control как контейнер.
+	# Без общей рамки: каждая строка участника — своя тёмная карточка
+	# с зелёной обводкой. Так виджет «плавает» поверх мира, но каждый
+	# участник чётко читается.
 	_party_panel = Control.new()
 	_party_panel.anchor_left = 0.0; _party_panel.anchor_top = 0.0
 	_party_panel.offset_left = 8
 	_party_panel.offset_top = 140  # под nameplate
-	_party_panel.offset_right = 200
+	_party_panel.offset_right = 210
 	_party_panel.offset_bottom = 600
 	_party_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	_party_panel.visible = false
 	_root.add_child(_party_panel)
 
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 3)
-	v.anchor_right = 1.0; v.anchor_bottom = 1.0
-	_party_panel.add_child(v)
-
-	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 4)
-	v.add_child(header)
-	var t := Label.new()
-	t.text = "Группа"
-	t.add_theme_font_size_override("font_size", 12)
-	t.add_theme_color_override("font_color", Color(0.6, 1.0, 0.65))
-	t.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	t.add_theme_constant_override("outline_size", 3)
-	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(t)
-	_leave_btn = Button.new()
-	_leave_btn.text = "Выйти"
-	_leave_btn.focus_mode = Control.FOCUS_NONE
-	_leave_btn.flat = true
-	_leave_btn.add_theme_font_size_override("font_size", 10)
-	_leave_btn.add_theme_color_override("font_color", Color(0.95, 0.55, 0.45))
-	_leave_btn.custom_minimum_size = Vector2(44, 18)
-	_leave_btn.pressed.connect(func(): party_leave_requested.emit())
-	header.add_child(_leave_btn)
-
+	# Без заголовка «Группа» и кнопки «Выйти» — только список карточек.
+	# Каждая карточка сама по себе читается, это и есть «группа».
 	_party_list = VBoxContainer.new()
-	_party_list.add_theme_constant_override("separation", 3)
-	v.add_child(_party_list)
+	_party_list.add_theme_constant_override("separation", 4)
+	_party_list.anchor_right = 1.0; _party_list.anchor_bottom = 1.0
+	_party_panel.add_child(_party_list)
 
 func _build_invite_modal() -> void:
 	_invite_modal = PanelContainer.new()
@@ -161,10 +139,21 @@ func update_party(members: Array, my_sid: String) -> void:
 		_party_list.add_child(_make_member_row(m))
 
 # Строим ряд компактно: сверху [class-icon] имя Ур.N, под ним HP-bar,
-# под ним мана-bar, под ней эффекты.
+# под ним мана-bar, под ней эффекты. Обёрнуто в тёмную карточку с
+# зелёной обводкой — чтобы читалось на любом фоне мира.
 func _make_member_row(m: Dictionary) -> Control:
+	var card := PanelContainer.new()
+	var card_sb := StyleBoxFlat.new()
+	card_sb.bg_color = Color(0.05, 0.08, 0.06, 0.78)
+	card_sb.border_color = Color(0.40, 0.75, 0.45, 0.80)
+	card_sb.set_border_width_all(1)
+	card_sb.set_corner_radius_all(4)
+	card_sb.set_content_margin_all(5)
+	card.add_theme_stylebox_override("panel", card_sb)
+
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 1)
+	v.add_theme_constant_override("separation", 2)
+	card.add_child(v)
 
 	# Live-данные из Player-ноды, если он в remotes — там HP/мана/эффекты
 	# обновляются каждый OP_POSITIONS. Snapshot из OP_PARTY_UPDATE — fallback.
@@ -216,24 +205,27 @@ func _make_member_row(m: Dictionary) -> Control:
 
 	v.add_child(_build_stat_bar(
 		hp, max(1.0, hp_max),
-		Color(0.55, 0.85, 0.45, 1.0), Color(0.10, 0.10, 0.10, 1.0)
+		Color(0.55, 0.85, 0.45, 1.0), Color(0.10, 0.10, 0.10, 1.0),
+		9, "%d / %d" % [int(hp), int(hp_max)]
 	))
 	v.add_child(_build_stat_bar(
 		float(mp), float(max(1, mp_max)),
 		Color(0.35, 0.55, 0.95, 1.0), Color(0.08, 0.10, 0.14, 1.0),
-		6
+		7, "%d / %d" % [mp, int(mp_max)]
 	))
 
-	var eff_row := HBoxContainer.new()
-	eff_row.add_theme_constant_override("separation", 1)
-	eff_row.custom_minimum_size = Vector2(0, 14)
-	for eff in effects:
-		eff_row.add_child(_make_small_effect_icon(eff))
-	v.add_child(eff_row)
+	# Эффекты показываем только если они есть — пустой ряд не занимает место.
+	if not effects.is_empty():
+		var eff_row := HBoxContainer.new()
+		eff_row.add_theme_constant_override("separation", 1)
+		eff_row.custom_minimum_size = Vector2(0, 14)
+		for eff in effects:
+			eff_row.add_child(_make_small_effect_icon(eff))
+		v.add_child(eff_row)
 
-	return v
+	return card
 
-func _build_stat_bar(value: float, maxv: float, fg: Color, bg: Color, height: int = 7) -> ProgressBar:
+func _build_stat_bar(value: float, maxv: float, fg: Color, bg: Color, height: int = 7, overlay_text: String = "") -> ProgressBar:
 	var bar := ProgressBar.new()
 	bar.min_value = 0
 	bar.max_value = maxv
@@ -248,6 +240,18 @@ func _build_stat_bar(value: float, maxv: float, fg: Color, bg: Color, height: in
 	bg_sb.bg_color = bg
 	bg_sb.set_corner_radius_all(2)
 	bar.add_theme_stylebox_override("background", bg_sb)
+	if overlay_text != "":
+		var lbl := Label.new()
+		lbl.text = overlay_text
+		lbl.add_theme_font_size_override("font_size", 8)
+		lbl.add_theme_color_override("font_color", Color(0.98, 0.98, 0.98))
+		lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+		lbl.add_theme_constant_override("outline_size", 3)
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar.add_child(lbl)
+		lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	return bar
 
 # Маленькая иконка баф/дебаф для строки группы. Fallback-символ если
