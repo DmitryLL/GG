@@ -6,28 +6,31 @@
 	<title>$GODOT_PROJECT_NAME</title>
 	<style>
 		html, body { padding: 0; margin: 0; }
-		body { background: #0f0f0f; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; touch-action: none; }
+		body { background: #0a0814; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; touch-action: none; }
 		#canvas { display: block; outline: none; image-rendering: pixelated; image-rendering: crisp-edges; }
 
 		#status {
 			position: absolute; left: 0; top: 0; right: 0; bottom: 0;
 			display: flex; flex-direction: column; align-items: center; justify-content: center;
-			background: #0f0f0f; z-index: 10;
+			background: radial-gradient(ellipse at center, #171028 0%, #080510 70%);
+			z-index: 10;
 			pointer-events: none;
 		}
 		#status-title {
-			font-size: 42px; font-weight: 600; letter-spacing: 6px;
-			color: #f5f5f5; margin-bottom: 12px;
+			font-size: 56px; font-weight: 700; letter-spacing: 4px;
+			color: #f8e7b0;
+			text-shadow: 0 0 16px rgba(140, 200, 255, 0.45), 0 0 2px rgba(0, 0, 0, 0.9);
+			margin-bottom: 14px;
 		}
-		#status-sub { font-size: 13px; color: #888; margin-bottom: 22px; }
+		#status-sub { font-size: 13px; color: #8aa7c8; margin-bottom: 22px; letter-spacing: 1px; }
 		#status-progress {
 			-webkit-appearance: none; appearance: none;
-			width: 220px; height: 6px; border: none;
-			background: #222; border-radius: 3px; overflow: hidden;
+			width: 240px; height: 6px; border: none;
+			background: #1b1430; border-radius: 3px; overflow: hidden;
 		}
-		#status-progress::-webkit-progress-bar { background: #222; }
-		#status-progress::-webkit-progress-value { background: #6b8f4d; }
-		#status-progress::-moz-progress-bar { background: #6b8f4d; }
+		#status-progress::-webkit-progress-bar { background: #1b1430; }
+		#status-progress::-webkit-progress-value { background: linear-gradient(90deg, #5a88c8, #b7a3ff); }
+		#status-progress::-moz-progress-bar { background: #8da0ff; }
 		#status-notice {
 			margin-top: 12px; font-size: 12px; color: #c66;
 			max-width: 80vw; text-align: center; white-space: pre-line;
@@ -40,7 +43,7 @@
 	<noscript>Your browser does not support JavaScript.</noscript>
 
 	<div id="status">
-		<div id="status-title">GG</div>
+		<div id="status-title">Aetherlands</div>
 		<div id="status-sub">Загрузка…</div>
 		<progress id="status-progress"></progress>
 		<div id="status-notice"></div>
