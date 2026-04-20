@@ -219,6 +219,15 @@ func facing_vector() -> Vector2:
 
 var is_friendly: bool = true  # читают миникарта и прочие UI
 
+# Данные для target-панели nameplate — обновляются из OP_POSITIONS и
+# _apply_positions() на каждый тик. Нужны чтобы target-панель показывала
+# тот же набор инфы (класс/уровень/мана/эффекты) что своя панель.
+var mana: int = 0
+var mana_max: int = 0
+var level: int = 1
+var char_class: String = "archer"
+var effects: Array = []
+
 func set_friendly(friendly: bool) -> void:
 	is_friendly = friendly
 	if label == null:
