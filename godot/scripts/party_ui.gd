@@ -15,7 +15,6 @@ var _root: Control
 # Панель участников (слева, под nameplate ≈ y=140).
 var _party_panel: Control
 var _party_list: VBoxContainer
-var _leave_btn: Button
 # Модалка приглашения.
 var _invite_modal: PanelContainer
 var _invite_label: Label
@@ -48,47 +47,12 @@ func _build_party_panel() -> void:
 	_party_panel.visible = false
 	_root.add_child(_party_panel)
 
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 4)
-	v.anchor_right = 1.0; v.anchor_bottom = 1.0
-	_party_panel.add_child(v)
-
-	# Заголовок-капсула «Группа» + «Выйти»: полупрозрачная подложка
-	# чисто чтобы заголовок не сливался с миром.
-	var header_panel := PanelContainer.new()
-	var hsb := StyleBoxFlat.new()
-	hsb.bg_color = Color(0.05, 0.09, 0.06, 0.70)
-	hsb.border_color = Color(0.45, 0.80, 0.50, 0.85)
-	hsb.set_border_width_all(1)
-	hsb.set_corner_radius_all(4)
-	hsb.set_content_margin_all(4)
-	header_panel.add_theme_stylebox_override("panel", hsb)
-	v.add_child(header_panel)
-
-	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 4)
-	header_panel.add_child(header)
-	var t := Label.new()
-	t.text = "★ Группа"
-	t.add_theme_font_size_override("font_size", 12)
-	t.add_theme_color_override("font_color", Color(0.75, 1.0, 0.75))
-	t.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	t.add_theme_constant_override("outline_size", 3)
-	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(t)
-	_leave_btn = Button.new()
-	_leave_btn.text = "Выйти"
-	_leave_btn.focus_mode = Control.FOCUS_NONE
-	_leave_btn.flat = true
-	_leave_btn.add_theme_font_size_override("font_size", 10)
-	_leave_btn.add_theme_color_override("font_color", Color(0.95, 0.55, 0.45))
-	_leave_btn.custom_minimum_size = Vector2(48, 18)
-	_leave_btn.pressed.connect(func(): party_leave_requested.emit())
-	header.add_child(_leave_btn)
-
+	# Без заголовка «Группа» и кнопки «Выйти» — только список карточек.
+	# Каждая карточка сама по себе читается, это и есть «группа».
 	_party_list = VBoxContainer.new()
 	_party_list.add_theme_constant_override("separation", 4)
-	v.add_child(_party_list)
+	_party_list.anchor_right = 1.0; _party_list.anchor_bottom = 1.0
+	_party_panel.add_child(_party_list)
 
 func _build_invite_modal() -> void:
 	_invite_modal = PanelContainer.new()
